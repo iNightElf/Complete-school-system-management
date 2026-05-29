@@ -7,12 +7,59 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  role      String   // "admin" | "viewer"
-  createdAt DateTime @default(now())
+model user {
+  id            String    @id @default(uuid())
+  name          String
+  email         String    @unique
+  emailVerified DateTime  @default(now())
+  image         String?
+  role          String    @default("viewer") // "admin" | "viewer"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  session       session[]
+  account       account[]
+}
+
+model session {
+  id           String    @id @default(uuid())
+  expiresAt    DateTime
+  token        String    @unique
+  ipAddress    String?
+  userAgent    String?
+  userId       String
+  user         user      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model account {
+  id                    String    @id @default(uuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  user      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([accountId, providerId])
+}
+
+model verification {
+  id         String    @id @default(uuid())
+  identifier String
+  expiresAt  DateTime
+  token      String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([identifier, token])
 }
 
 model Student {
@@ -51,6 +98,7 @@ model Staff {
 model SchoolClass {
   id        String    @id @default(uuid())
   name      String    @unique
+  order     Int       @default(0)
   subjects  Subject[]
   books     Book[]
 }
