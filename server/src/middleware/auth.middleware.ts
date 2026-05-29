@@ -1,34 +1,55 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
-
-const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
+import { auth } from "../lib/auth.js";
 
 export interface AuthRequest extends Request {
-  user?: {
-    userId: string;
-    role: string;
+  session?: {
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      emailVerified: Date;
+      image: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+    };
+    session: {
+      id: string;
+      expiresAt: Date;
+      token: string;
+      ipAddress: string | null;
+      userAgent: string | null;
+      userId: string;
+      createdAt: Date;
+      updatedAt: Date;
+    };
   };
 }
 
-export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const token = req.headers.authorization?.split(" ")[1];
-
-  if (!token) {
-    return res.status(401).json({ error: "Access denied" });
-  }
-
+export const authenticate = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-    req.user = decoded;
+    const session = await auth.api.getSession({
+      headers: req.headers,
+    });
+
+    if (!session) {
+      return res.status(401).json({ error: "Access denied" });
+    }
+
+    req.session = session;
     next();
-  } catch (error) {
-    res.status(401).json({ error: "Invalid token" });
+  } catch {
+    res.status(401).json({ error: "Invalid session" });
   }
 };
 
 export const authorize = (roles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.session || !roles.includes(req.session.user.role)) {
       return res.status(403).json({ error: "Unauthorized" });
     }
     next();
