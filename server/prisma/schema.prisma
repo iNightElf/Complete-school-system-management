@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      String   // "admin" | "viewer"
+  createdAt DateTime @default(now())
+}
+
+model Student {
+  id          String   @id @default(uuid())
+  class       String
+  roll        String?
+  name        String
+  fatherName  String?
+  motherName  String?
+  contact     String?
+  photo       Bytes?   // Binary storage (BYTEA)
+  createdAt   DateTime @default(now())
+  results     Result[]
+}
+
+model Teacher {
+  id          String   @id @default(uuid())
+  designation String
+  name        String
+  email       String?
+  contact     String?
+  photo       Bytes?   // Binary storage (BYTEA)
+  createdAt   DateTime @default(now())
+}
+
+model Staff {
+  id          String   @id @default(uuid())
+  role        String
+  name        String
+  email       String?
+  contact     String?
+  photo       Bytes?   // Binary storage (BYTEA)
+  createdAt   DateTime @default(now())
+}
+
+model SchoolClass {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  subjects  Subject[]
+  books     Book[]
+}
+
+model Subject {
+  id          String      @id @default(uuid())
+  name        String
+  fullMarks   Int
+  classId     String
+  class       SchoolClass @relation(fields: [classId], references: [id])
+}
+
+model Book {
+  id          String      @id @default(uuid())
+  name        String
+  publication String?
+  mrp         Decimal     @db.Decimal(12, 2)
+  discounted  Decimal     @db.Decimal(12, 2)
+  sell        Decimal     @db.Decimal(12, 2)
+  classId     String
+  class       SchoolClass @relation(fields: [classId], references: [id])
+}
+
+model Result {
+  id          String   @id @default(uuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id])
+  term        String   // "1" | "2" | "3"
+  marks       Json     // Map of subject name to marks
+  attendance  Json?    // { days: number, present: number }
+  createdAt   DateTime @default(now())
+}
+
+model Transaction {
+  id                    String   @id @default(uuid()) @db.Uuid
+  transactionDate       DateTime @map("transaction_date")
+  transactionType       String   @map("transaction_type") @db.VarChar(50)
+  sourceAccount         String?  @map("source_account") @db.VarChar(100)
+  destinationAccount    String?  @map("destination_account") @db.VarChar(100)
+  amount                Decimal  @db.Decimal(12, 2)
+  category              String?  @db.VarChar(100)
+  description           String?  @db.Text
+  affectsIncomeLedger   Boolean  @default(false) @map("affects_income_ledger")
+  affectsExpenseLedger  Boolean  @default(false) @map("affects_expense_ledger")
+  createdBy             String?  @map("created_by") @db.VarChar(100)
+  approvedBy            String?  @map("approved_by") @db.VarChar(100)
+  referenceId           String?  @map("reference_id") @db.VarChar(255)
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@map("transactions")
+}

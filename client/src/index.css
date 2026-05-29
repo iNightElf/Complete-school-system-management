@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #1a1a2e;
+  --secondary: #16213e;
+  --accent: #e94560;
+  --accent2: #0f3460;
+  --paper: #f5f0e8;
+  --ink: #1a1a2e;
+  --border: #dcd7cc;
+  --muted: #8c8c8c;
+  --success: #10b981;
+}
+
+body {
+  @apply bg-school-paper text-school-primary font-sans;
+}
+
+/* Custom styles for result parity */
+.marks-table {
+  @apply w-full border-collapse;
+}
+
+.marks-table th, .marks-table td {
+  @apply border border-school-primary p-2;
+}
