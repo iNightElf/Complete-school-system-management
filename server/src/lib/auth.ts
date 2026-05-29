@@ -13,11 +13,11 @@ export const auth = betterAuth({
   trustedOrigins: ["http://localhost:5173", "http://localhost:3000"],
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: false,
+    requireEmailVerification: true,
     autoSignIn: true,
   },
   emailVerification: {
-    sendOnSignUp: false,
+    sendOnSignUp: true,
     autoSignInAfterVerification: false,
     sendVerificationEmail: async ({ user, url }) => {
       await sendVerificationEmail(user.email, url);

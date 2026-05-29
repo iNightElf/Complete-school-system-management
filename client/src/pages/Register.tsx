@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { UserPlus, ShieldAlert } from 'lucide-react';
+import { UserPlus, ShieldAlert, MailCheck } from 'lucide-react';
 
 const API_URL = 'http://localhost:5000/api';
 
@@ -12,6 +12,7 @@ const Register: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [registered, setRegistered] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,7 +35,7 @@ const Register: React.FC = () => {
         setError(res.data.error.message || 'Failed to register.');
         return;
       }
-      navigate('/login');
+      setRegistered(true);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || 'Failed to register. Please try again.');
     } finally {
@@ -50,6 +51,27 @@ const Register: React.FC = () => {
           <p className="text-xs uppercase tracking-[0.3em] opacity-60">English School</p>
         </div>
 
+        {registered ? (
+          <div className="p-8 text-center space-y-4">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <MailCheck size={32} className="text-green-600" />
+            </div>
+            <h2 className="text-xl font-bold text-school-primary">Check Your Email</h2>
+            <p className="text-sm text-school-muted">
+              We sent a verification link to<br />
+              <span className="font-semibold text-school-primary">{email}</span>
+            </p>
+            <p className="text-xs text-school-muted">
+              Click the link in the email to verify your account, then sign in.
+            </p>
+            <a
+              href="/login"
+              className="inline-block w-full bg-school-primary hover:bg-school-secondary text-white font-bold py-4 rounded-xl shadow-lg transition-all text-center"
+            >
+              Go to Sign In
+            </a>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           <div>
             <h2 className="text-xl font-bold text-school-primary mb-1 text-center">Register</h2>
@@ -133,6 +155,7 @@ const Register: React.FC = () => {
             <a href="/login" className="text-school-accent font-semibold hover:underline">Sign In</a>
           </p>
         </form>
+        )}
       </div>
     </div>
   );
