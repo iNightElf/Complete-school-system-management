@@ -3,22 +3,32 @@ import { useAuthStore } from '../store';
 import axios from 'axios';
 import { LogIn, ShieldAlert } from 'lucide-react';
 
+const API_URL = 'http://localhost:5000/api';
+
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const setAuth = useAuthStore((state) => state.setAuth);
+  const fetchSession = useAuthStore((state) => state.fetchSession);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/auth/login', { email, password });
-      setAuth(res.data.token, res.data.role);
+      const res = await axios.post(
+        `${API_URL}/auth/sign-in/email`,
+        { email, password },
+        { withCredentials: true }
+      );
+      if (res.data?.error) {
+        setError(res.data.error.message || 'Invalid credentials.');
+        return;
+      }
+      await fetchSession();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to login. Please try again.');
+      setError(err.response?.data?.error?.message || 'Failed to login. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -31,7 +41,7 @@ const Login: React.FC = () => {
           <h1 className="font-serif text-3xl mb-1">AL RAWA</h1>
           <p className="text-xs uppercase tracking-[0.3em] opacity-60">English School</p>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           <div>
             <h2 className="text-xl font-bold text-school-primary mb-1 text-center">Staff Login</h2>
@@ -89,6 +99,11 @@ const Login: React.FC = () => {
           <p className="text-center text-[10px] text-school-muted leading-relaxed">
             Authorized Personnel Only. All access is logged and monitored.<br/>
             Contact Admin if you forgot your credentials.
+          </p>
+
+          <p className="text-center text-xs text-school-muted">
+            Don't have an account?{' '}
+            <a href="/register" className="text-school-accent font-semibold hover:underline">Register</a>
           </p>
         </form>
       </div>
