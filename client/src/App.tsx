@@ -1,42 +1,40 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
-import Layout from './components/Layout';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import Students from './pages/Students';
-import StudentDetail from './pages/StudentDetail';
-import Finance from './pages/Finance';
-import Teachers from './pages/Teachers';
-import Staff from './pages/Staff';
-import Books from './pages/Books';
 
 const App: React.FC = () => {
-  const { token } = useAuthStore();
+  const { user, loading, fetchSession } = useAuthStore();
+
+  useEffect(() => {
+    fetchSession();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-school-paper flex items-center justify-center">
+        <div className="w-8 h-8 border-3 border-school-primary/20 border-t-school-primary rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
     <Router>
       <Routes>
-        {/* Public Route */}
-        <Route 
-          path="/login" 
-          element={!token ? <Login /> : <Navigate to="/" />} 
+        <Route
+          path="/login"
+          element={!user ? <Login /> : <Navigate to="/" />}
         />
-
-        {/* Protected Routes */}
-        <Route 
-          path="/" 
-          element={token ? <Layout><Dashboard /></Layout> : <Navigate to="/login" />} 
+        <Route
+          path="/register"
+          element={!user ? <Register /> : <Navigate to="/" />}
         />
-        
-        <Route path="/students" element={token ? <Layout title="Students" showBack><Students /></Layout> : <Navigate to="/login" />} />
-        <Route path="/students/:id" element={token ? <StudentDetail /> : <Navigate to="/login" />} />
-        <Route path="/teachers" element={token ? <Teachers /> : <Navigate to="/login" />} />
-        <Route path="/staff" element={token ? <Staff /> : <Navigate to="/login" />} />
-        <Route path="/books" element={token ? <Books /> : <Navigate to="/login" />} />
-        <Route path="/finance" element={token ? <Layout title="Finance" showBack><Finance /></Layout> : <Navigate to="/login" />} />
-
-        {/* Fallback */}
+        <Route
+          path="/"
+          element={user ? <Dashboard /> : <Navigate to="/login" />}
+        />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>

@@ -1,61 +1,27 @@
-import React, { useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuthStore } from './store';
+import { useAuthStore, useUIStore } from '../store';
 import { ChevronLeft, Lock } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
-  title?: string;
-  showBack?: boolean;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, title, showBack = false }) => {
+const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { logout, role } = useAuthStore();
-
-  // Swipe gesture detection
-  const [touchStart, setTouchStart] = React.useState<number | null>(null);
-  const [touchEnd, setTouchEnd] = React.useState<number | null>(null);
-
-  const minSwipeDistance = 50;
-
-  const onTouchStart = (e: React.TouchEvent) => {
-    setTouchEnd(null);
-    setTouchStart(e.targetTouches[0].clientX);
-  };
-
-  const onTouchMove = (e: React.TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
-
-  const onTouchEnd = () => {
-    if (!touchStart || !touchEnd) return;
-    const distance = touchStart - touchEnd;
-    const isLeftSwipe = distance > minSwipeDistance;
-    const isRightSwipe = distance < -minSwipeDistance;
-
-    if (isRightSwipe) {
-      // Right to Left (actually Left to Right swipe) -> Go Back
-      navigate(-1);
-    } else if (isLeftSwipe) {
-      // Left to Right (actually Right to Left swipe) -> Go Forward
-      window.history.forward();
-    }
-  };
+  const { logout, user } = useAuthStore();
+  const role = user?.role;
+  const { activeMode, setMode } = useUIStore();
 
   return (
-    <div 
-      className="min-h-screen bg-school-paper flex flex-col selection:bg-school-accent selection:text-white"
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-    >
+    <div className="min-h-screen bg-school-paper flex flex-col selection:bg-school-accent selection:text-white">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-school-primary text-school-paper shadow-lg px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {showBack && (
-            <button 
-              onClick={() => navigate(-1)}
+          {activeMode && (
+            <button
+              onClick={() => setMode(null)}
               className="p-1 hover:bg-white/10 rounded-full transition-colors"
             >
               <ChevronLeft size={24} />
@@ -72,7 +38,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title, showBack = false }) =>
             <span className="text-[10px] font-bold uppercase tracking-tighter opacity-50">Logged in as</span>
             <span className="text-xs font-semibold">{role === 'admin' ? '👑 Admin' : '👁️ Viewer'}</span>
           </div>
-          <button 
+          <button
             onClick={logout}
             className="p-2 hover:bg-white/10 rounded-full transition-colors group"
             title="Lock App"
@@ -82,29 +48,23 @@ const Layout: React.FC<LayoutProps> = ({ children, title, showBack = false }) =>
         </div>
       </header>
 
-      {/* Main Content with Page Transitions */}
+      {/* Main Content */}
       <main className="flex-1 overflow-x-hidden relative">
         <AnimatePresence mode="wait">
           <motion.div
-            key={location.pathname}
+            key={activeMode || 'home'}
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.2 }}
             className="p-4 md:p-6 max-w-7xl mx-auto w-full"
           >
-            {title && (
-              <div className="mb-6">
-                <h2 className="text-2xl font-serif text-school-primary">{title}</h2>
-                <div className="h-1 w-12 bg-school-accent mt-1 rounded-full"></div>
-              </div>
-            )}
             {children}
           </motion.div>
         </AnimatePresence>
       </main>
 
-      {/* Footer / Status Bar */}
+      {/* Footer */}
       <footer className="bg-school-secondary text-white/50 text-[10px] py-2 px-4 flex justify-between items-center border-t border-white/5">
         <span>© 2026 AL RAWA English School</span>
         <div className="flex items-center gap-2">
