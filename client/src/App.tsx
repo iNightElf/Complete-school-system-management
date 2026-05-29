@@ -6,12 +6,10 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Students from './pages/Students';
 import StudentDetail from './pages/StudentDetail';
-
-// Placeholder components for other pages
-const Teachers = () => <Layout title="Teachers" showBack><div className="bg-white p-8 rounded-2xl shadow-sm border border-school-border">Teacher directory module coming soon...</div></Layout>;
-const Staff = () => <Layout title="Staff" showBack><div className="bg-white p-8 rounded-2xl shadow-sm border border-school-border">Staff records module coming soon...</div></Layout>;
-const Books = () => <Layout title="Book List" showBack><div className="bg-white p-8 rounded-2xl shadow-sm border border-school-border">Inventory and pricing module coming soon...</div></Layout>;
-const Finance = () => <Layout title="Finance" showBack><div className="bg-white p-8 rounded-2xl shadow-sm border border-school-border">Financial ledger and transfers module coming soon...</div></Layout>;
+import Finance from './pages/Finance';
+import Teachers from './pages/Teachers';
+import Staff from './pages/Staff';
+import Books from './pages/Books';
 
 const App: React.FC = () => {
   const { token } = useAuthStore();
@@ -36,7 +34,7 @@ const App: React.FC = () => {
         <Route path="/teachers" element={token ? <Teachers /> : <Navigate to="/login" />} />
         <Route path="/staff" element={token ? <Staff /> : <Navigate to="/login" />} />
         <Route path="/books" element={token ? <Books /> : <Navigate to="/login" />} />
-        <Route path="/finance" element={token ? <Finance /> : <Navigate to="/login" />} />
+        <Route path="/finance" element={token ? <Layout title="Finance" showBack><Finance /></Layout> : <Navigate to="/login" />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" />} />

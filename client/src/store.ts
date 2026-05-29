@@ -32,9 +32,13 @@ interface SchoolState {
   books: any[];
   results: any[];
   subjects: any[];
+  transactions: any[];
   balances: any;
   fetchStudents: () => Promise<void>;
+  fetchTeachers: () => Promise<void>;
+  fetchStaff: () => Promise<void>;
   fetchFinance: () => Promise<void>;
+  fetchTransactions: () => Promise<void>;
   fetchResults: (studentId: string) => Promise<void>;
   fetchSubjects: (classId: string) => Promise<void>;
 }
@@ -48,6 +52,7 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   books: [],
   results: [],
   subjects: [],
+  transactions: [],
   balances: { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 },
   fetchStudents: async () => {
     const token = useAuthStore.getState().token;
@@ -56,6 +61,27 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     });
     set({ students: res.data });
   },
+  fetchTeachers: async () => {
+    const token = useAuthStore.getState().token;
+    const res = await axios.get(`${API_URL}/teachers`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    set({ teachers: res.data });
+  },
+  fetchStaff: async () => {
+    const token = useAuthStore.getState().token;
+    const res = await axios.get(`${API_URL}/staff`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    set({ staff: res.data });
+  },
+  fetchBooks: async () => {
+    const token = useAuthStore.getState().token;
+    const res = await axios.get(`${API_URL}/books`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    set({ books: res.data });
+  },
   fetchFinance: async () => {
     const token = useAuthStore.getState().token;
     const res = await axios.get(`${API_URL}/finance/balances`, {
@@ -63,9 +89,15 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     });
     set({ balances: res.data });
   },
+  fetchTransactions: async () => {
+    const token = useAuthStore.getState().token;
+    const res = await axios.get(`${API_URL}/finance/transactions`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    set({ transactions: res.data });
+  },
   fetchResults: async (studentId: string) => {
     const token = useAuthStore.getState().token;
-    // Note: Assuming a generic results endpoint exists or results are included in student
     const res = await axios.get(`${API_URL}/students/${studentId}/results`, {
       headers: { Authorization: `Bearer ${token}` }
     });
