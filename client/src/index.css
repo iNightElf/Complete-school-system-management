@@ -1,28 +1,59 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
-  --primary: #1a1a2e;
-  --secondary: #16213e;
-  --accent: #e94560;
-  --accent2: #0f3460;
-  --paper: #f5f0e8;
-  --ink: #1a1a2e;
-  --border: #dcd7cc;
-  --muted: #8c8c8c;
-  --success: #10b981;
+@theme {
+  --color-school-primary: #1a1a2e;
+  --color-school-secondary: #16213e;
+  --color-school-accent: #c84b31;
+  --color-school-accent2: #0f3460;
+  --color-school-paper: #f5f0e8;
+  --color-school-ink: #1a1a2e;
+  --color-school-border: #d4cfc4;
+  --color-school-muted: #8c8c8c;
+  --color-school-success: #10b981;
+
+  --font-serif: "DM Serif Display", serif;
+  --font-sans: "DM Sans", sans-serif;
+
+  --animate-fade-in: fadeIn 0.3s ease-out;
+  --animate-slide-in: slideIn 0.3s ease-out;
+  --animate-shake: shake 0.3s ease-in-out;
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+  }
+}
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
-  @apply bg-school-paper text-school-primary font-sans;
+  font-family: "DM Sans", sans-serif;
+  background: var(--color-school-paper);
+  color: var(--color-school-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom styles for result parity */
-.marks-table {
-  @apply w-full border-collapse;
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-school-border); border-radius: 10px; }
 
-.marks-table th, .marks-table td {
-  @apply border border-school-primary p-2;
+@media print {
+  header, footer, .no-print { display: none !important; }
+  main { padding: 0 !important; }
 }

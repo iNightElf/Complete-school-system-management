@@ -1,7 +1,7 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
-import { classifyTransaction, AccountName } from "../lib/finance-rules.js";
-import { AuthRequest } from "../middleware/auth.middleware.js";
+import { classifyTransaction } from "../lib/finance-rules.js";
+import type { AuthRequest } from "../middleware/auth.middleware.js";
 
 const prisma = new PrismaClient();
 

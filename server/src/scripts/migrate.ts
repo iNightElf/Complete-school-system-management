@@ -104,7 +104,7 @@ async function migrate() {
           let cleanAttendance = null;
           if (studentResult.attendance) {
             if (Array.isArray(studentResult.attendance)) {
-              cleanAttendance = studentResult.attendance.filter(a => a !== null && a !== undefined);
+              cleanAttendance = studentResult.attendance.filter((a: any) => a !== null && a !== undefined);
             } else {
               cleanAttendance = studentResult.attendance;
             }

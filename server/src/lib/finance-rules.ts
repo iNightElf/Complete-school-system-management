@@ -1,12 +1,10 @@
-import { TransactionType } from "@prisma/client";
-
 export type AccountName =
   | "AL_RAWA_BANK"
   | "GLOBAL_FORUM_BANK"
   | "CASH_IN_HAND";
 
 interface RuleResult {
-  transactionType: TransactionType;
+  transactionType: string;
   affectsIncomeLedger: boolean;
   affectsExpenseLedger: boolean;
 }
@@ -21,7 +19,7 @@ export function classifyTransaction(
     destination === "AL_RAWA_BANK"
   ) {
     return {
-      transactionType: "INCOME" as any, // Cast because we need to match Prisma enum
+      transactionType: "INCOME",
       affectsIncomeLedger: true,
       affectsExpenseLedger: false,
     };
@@ -33,7 +31,7 @@ export function classifyTransaction(
     destination === "GLOBAL_FORUM_BANK"
   ) {
     return {
-      transactionType: "EXPENSE" as any,
+      transactionType: "EXPENSE",
       affectsIncomeLedger: false,
       affectsExpenseLedger: true,
     };
@@ -45,7 +43,7 @@ export function classifyTransaction(
     destination === "CASH_IN_HAND"
   ) {
     return {
-      transactionType: "INTERNAL_TRANSFER" as any,
+      transactionType: "INTERNAL_TRANSFER",
       affectsIncomeLedger: false,
       affectsExpenseLedger: false,
     };
@@ -53,7 +51,7 @@ export function classifyTransaction(
 
   // DEFAULT INTERNAL TRANSFER
   return {
-    transactionType: "INTERNAL_TRANSFER" as any,
+    transactionType: "INTERNAL_TRANSFER",
     affectsIncomeLedger: false,
     affectsExpenseLedger: false,
   };

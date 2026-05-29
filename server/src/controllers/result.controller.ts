@@ -1,0 +1,164 @@
+import type { Request, Response } from "express";
+import { PrismaClient } from "@prisma/client";
+import { param } from "../lib/param.js";
+
+const prisma = new PrismaClient();
+
+export const getSubjectsByClass = async (req: Request, res: Response) => {
+  try {
+    const classId = param(req, "classId");
+    const cls = await prisma.schoolClass.findUnique({ where: { id: classId } });
+    if (!cls) return res.status(404).json({ error: "Class not found" });
+
+    const subjects = await prisma.subject.findMany({
+      where: { classId },
+      orderBy: { name: "asc" },
+    });
+
+    res.json(subjects);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const createSubject = async (req: Request, res: Response) => {
+  try {
+    const classId = param(req, "classId");
+    const { name, fullMarks } = req.body;
+
+    const cls = await prisma.schoolClass.findUnique({ where: { id: classId } });
+    if (!cls) return res.status(404).json({ error: "Class not found" });
+    if (!name?.trim() || !fullMarks) {
+      return res.status(400).json({ error: "Name and fullMarks are required" });
+    }
+
+    const subject = await prisma.subject.create({
+      data: { name: name.trim(), fullMarks: Number(fullMarks), classId },
+    });
+
+    res.status(201).json(subject);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+export const updateSubject = async (req: Request, res: Response) => {
+  try {
+    const id = param(req, "id");
+    const { name, fullMarks } = req.body;
+
+    const subject = await prisma.subject.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name: name.trim() }),
+        ...(fullMarks !== undefined && { fullMarks: Number(fullMarks) }),
+      },
+    });
+
+    res.json(subject);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+export const deleteSubject = async (req: Request, res: Response) => {
+  try {
+    const id = param(req, "id");
+    await prisma.subject.delete({ where: { id } });
+    res.json({ message: "Subject deleted" });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getStudentResults = async (req: Request, res: Response) => {
+  try {
+    const id = param(req, "id");
+    const results = await prisma.result.findMany({
+      where: { studentId: id },
+      orderBy: { term: "asc" },
+    });
+
+    res.json(results);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const saveStudentResult = async (req: Request, res: Response) => {
+  try {
+    const id = param(req, "id");
+    const { term, marks, attendance } = req.body;
+
+    if (!term || marks === undefined) {
+      return res.status(400).json({ error: "Term and marks are required" });
+    }
+
+    const existing = await prisma.result.findFirst({
+      where: { studentId: id, term: String(term) },
+    });
+
+    let result;
+    if (existing) {
+      result = await prisma.result.update({
+        where: { id: existing.id },
+        data: { marks, attendance },
+      });
+    } else {
+      result = await prisma.result.create({
+        data: {
+          studentId: id,
+          term: String(term),
+          marks,
+          attendance,
+        },
+      });
+    }
+
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+export const getClassResults = async (req: Request, res: Response) => {
+  try {
+    const classId = param(req, "classId");
+    const cls = await prisma.schoolClass.findUnique({ where: { id: classId } });
+    if (!cls) return res.status(404).json({ error: "Class not found" });
+
+    const students = await prisma.student.findMany({
+      where: { class: cls.name },
+      include: { results: true },
+    });
+
+    res.json(students);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const deleteClassResults = async (req: Request, res: Response) => {
+  try {
+    const classId = param(req, "classId");
+    const cls = await prisma.schoolClass.findUnique({ where: { id: classId } });
+    if (!cls) return res.status(404).json({ error: "Class not found" });
+
+    const students = await prisma.student.findMany({
+      where: { class: cls.name },
+      select: { id: true },
+    });
+
+    const studentIds = students.map((s) => s.id);
+
+    await prisma.result.deleteMany({
+      where: { studentId: { in: studentIds } },
+    });
+
+    await prisma.subject.deleteMany({ where: { classId } });
+
+    res.json({ message: "All results and subjects for this class deleted" });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
