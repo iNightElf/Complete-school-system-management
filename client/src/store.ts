@@ -1,113 +1,196 @@
 import { create } from 'zustand';
 import axios from 'axios';
 
+// ── API ──
+
+const API_URL = 'http://localhost:5000/api';
+
+const api = axios.create({
+  baseURL: API_URL,
+  withCredentials: true,
+});
+
+// ── Auth Store ──
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  image: string | null;
+}
+
 interface AuthState {
-  token: string | null;
-  role: string | null;
-  user: any | null;
-  setAuth: (token: string, role: string) => void;
-  logout: () => void;
+  user: User | null;
+  loading: boolean;
+  fetchSession: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  token: localStorage.getItem('token'),
-  role: localStorage.getItem('role'),
   user: null,
-  setAuth: (token, role) => {
-    localStorage.setItem('token', token);
-    localStorage.setItem('role', role);
-    set({ token, role });
+  loading: true,
+
+  fetchSession: async () => {
+    try {
+      const res = await api.get('/auth/get-session');
+      set({ user: res.data?.user ?? null, loading: false });
+    } catch {
+      set({ user: null, loading: false });
+    }
   },
-  logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('role');
-    set({ token: null, role: null, user: null });
+
+  logout: async () => {
+    try {
+      await api.post('/auth/sign-out');
+    } finally {
+      set({ user: null });
+    }
   },
 }));
 
+// ── UI Store (mode switching like old app) ──
+
+type MainMode = null | 'idcard' | 'accessories' | 'result' | 'finance';
+type IdSubMode = 'student' | 'teacher' | 'staff';
+
+interface UIState {
+  activeMode: MainMode;
+  activeSubMode: IdSubMode;
+  setMode: (mode: MainMode) => void;
+  setIdSubMode: (sub: IdSubMode) => void;
+}
+
+export const useUIStore = create<UIState>((set) => ({
+  activeMode: null,
+  activeSubMode: 'student',
+  setMode: (mode) => set({ activeMode: mode }),
+  setIdSubMode: (sub) => set({ activeSubMode: sub }),
+}));
+
+// ── School Store ──
+
+interface ClassItem {
+  id: string;
+  name: string;
+  order: number;
+  studentCount: number;
+  bookCount: number;
+  subjectCount: number;
+}
+
+interface Subject {
+  id: string;
+  name: string;
+  fullMarks: number;
+  classId: string;
+}
+
 interface SchoolState {
+  classes: ClassItem[];
   students: any[];
   teachers: any[];
   staff: any[];
   books: any[];
-  results: any[];
-  subjects: any[];
+  subjects: Subject[];
   transactions: any[];
   balances: any;
+
+  fetchClasses: () => Promise<void>;
   fetchStudents: () => Promise<void>;
   fetchTeachers: () => Promise<void>;
   fetchStaff: () => Promise<void>;
+  fetchBooks: () => Promise<void>;
+  fetchSubjects: (classId: string) => Promise<void>;
   fetchFinance: () => Promise<void>;
   fetchTransactions: () => Promise<void>;
-  fetchResults: (studentId: string) => Promise<void>;
-  fetchSubjects: (classId: string) => Promise<void>;
+
+  createClass: (name: string) => Promise<any>;
+  deleteClass: (id: string) => Promise<void>;
+  reorderClasses: (orderedIds: string[]) => Promise<void>;
+
+  createSubject: (classId: string, name: string, fullMarks: number) => Promise<any>;
+  updateSubject: (id: string, data: Partial<Subject>) => Promise<void>;
+  deleteSubject: (id: string) => Promise<void>;
+
+  saveStudentResult: (studentId: string, term: string, marks: any, attendance?: any) => Promise<void>;
+  getStudentResults: (studentId: string) => Promise<any[]>;
 }
 
-const API_URL = 'http://localhost:5000/api';
-
 export const useSchoolStore = create<SchoolState>((set, get) => ({
+  classes: [],
   students: [],
   teachers: [],
   staff: [],
   books: [],
-  results: [],
   subjects: [],
   transactions: [],
   balances: { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 },
+
+  fetchClasses: async () => {
+    const res = await api.get('/classes');
+    set({ classes: res.data });
+  },
   fetchStudents: async () => {
-    const token = useAuthStore.getState().token;
-    const res = await axios.get(`${API_URL}/students`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const res = await api.get('/students');
     set({ students: res.data });
   },
   fetchTeachers: async () => {
-    const token = useAuthStore.getState().token;
-    const res = await axios.get(`${API_URL}/teachers`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const res = await api.get('/teachers');
     set({ teachers: res.data });
   },
   fetchStaff: async () => {
-    const token = useAuthStore.getState().token;
-    const res = await axios.get(`${API_URL}/staff`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const res = await api.get('/staff');
     set({ staff: res.data });
   },
   fetchBooks: async () => {
-    const token = useAuthStore.getState().token;
-    const res = await axios.get(`${API_URL}/books`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const res = await api.get('/books');
     set({ books: res.data });
   },
+  fetchSubjects: async (classId: string) => {
+    const res = await api.get(`/classes/${classId}/subjects`);
+    set({ subjects: res.data });
+  },
   fetchFinance: async () => {
-    const token = useAuthStore.getState().token;
-    const res = await axios.get(`${API_URL}/finance/balances`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const res = await api.get('/finance/balances');
     set({ balances: res.data });
   },
   fetchTransactions: async () => {
-    const token = useAuthStore.getState().token;
-    const res = await axios.get(`${API_URL}/finance/transactions`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const res = await api.get('/finance/transactions');
     set({ transactions: res.data });
   },
-  fetchResults: async (studentId: string) => {
-    const token = useAuthStore.getState().token;
-    const res = await axios.get(`${API_URL}/students/${studentId}/results`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    set({ results: res.data });
+
+  createClass: async (name: string) => {
+    const res = await api.post('/classes', { name });
+    await get().fetchClasses();
+    return res.data;
   },
-  fetchSubjects: async (classId: string) => {
-    const token = useAuthStore.getState().token;
-    const res = await axios.get(`${API_URL}/classes/${classId}/subjects`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    set({ subjects: res.data });
-  }
+  deleteClass: async (id: string) => {
+    await api.delete(`/classes/${id}`);
+    await get().fetchClasses();
+  },
+  reorderClasses: async (orderedIds: string[]) => {
+    await api.put('/classes/reorder', { orderedIds });
+    await get().fetchClasses();
+  },
+
+  createSubject: async (classId: string, name: string, fullMarks: number) => {
+    const res = await api.post(`/classes/${classId}/subjects`, { name, fullMarks });
+    await get().fetchSubjects(classId);
+    return res.data;
+  },
+  updateSubject: async (id: string, data: Partial<Subject>) => {
+    await api.put(`/subjects/${id}`, data);
+  },
+  deleteSubject: async (id: string) => {
+    await api.delete(`/subjects/${id}`);
+  },
+
+  saveStudentResult: async (studentId: string, term: string, marks: any, attendance?: any) => {
+    await api.post(`/students/${studentId}/results`, { term, marks, attendance });
+  },
+  getStudentResults: async (studentId: string) => {
+    const res = await api.get(`/students/${studentId}/results`);
+    return res.data;
+  },
 }));
