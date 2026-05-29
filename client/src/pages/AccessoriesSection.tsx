@@ -4,7 +4,7 @@ import { toast } from '../components/Toast';
 import ClassManagerModal from '../components/ClassManagerModal';
 import { Settings, RefreshCw } from 'lucide-react';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = '/api';
 
 const AccessoriesSection: React.FC = () => {
   const { classes, books, fetchClasses, fetchBooks } = useSchoolStore();

@@ -14,7 +14,9 @@ import { authenticate, authorize } from "./middleware/auth.middleware.js";
 
 const app = express();
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,
+}));
 app.use(
   cors({
     origin: ["http://localhost:5173", "http://localhost:3000"],
@@ -24,9 +26,7 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 
 // Better-Auth handler — must come before other routes
-app.all("/api/auth/*", toNodeHandler(auth));
-app.all("/api/auth/sign-in", toNodeHandler(auth));
-app.all("/api/auth/sign-up", toNodeHandler(auth));
+app.use("/api/auth", toNodeHandler(auth));
 
 // Students
 app.get("/api/students", authenticate, students.getAllStudents);

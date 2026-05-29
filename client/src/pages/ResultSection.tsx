@@ -3,7 +3,7 @@ import { useSchoolStore, useAuthStore } from '../store';
 import { toast } from '../components/Toast';
 import { RefreshCw } from 'lucide-react';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = '/api';
 
 const TERM_NAMES: Record<string, string> = { '1': '1st Term', '2': '2nd Term', '3': 'Final Exam' };
 

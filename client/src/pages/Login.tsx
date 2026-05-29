@@ -3,7 +3,7 @@ import { useAuthStore } from '../store';
 import axios from 'axios';
 import { LogIn, ShieldAlert } from 'lucide-react';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = '/api';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');

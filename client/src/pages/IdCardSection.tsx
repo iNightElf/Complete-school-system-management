@@ -6,7 +6,7 @@ import CameraModal from '../components/CameraModal';
 import PhotoUpload from '../components/PhotoUpload';
 import { Settings, FileText, RefreshCw, Phone, Mail, MessageCircle } from 'lucide-react';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = '/api';
 
 function formatBDPhone(raw: string): string {
   if (!raw) return '';

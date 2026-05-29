@@ -9,7 +9,7 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
-  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5000",
+  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5173",
   trustedOrigins: ["http://localhost:5173", "http://localhost:3000"],
   emailAndPassword: {
     enabled: true,
@@ -20,6 +20,7 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: false,
     sendVerificationEmail: async ({ user, url }) => {
+      console.log("[Auth] sendVerificationEmail called for:", user.email, "url:", url);
       await sendVerificationEmail(user.email, url);
     },
   },

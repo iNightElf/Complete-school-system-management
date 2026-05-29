@@ -4,6 +4,7 @@ import { useAuthStore } from './store';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import VerifyEmail from './pages/VerifyEmail';
 
 const App: React.FC = () => {
   const { user, loading, fetchSession } = useAuthStore();
@@ -30,6 +31,10 @@ const App: React.FC = () => {
         <Route
           path="/register"
           element={!user ? <Register /> : <Navigate to="/" />}
+        />
+        <Route
+          path="/verify-email"
+          element={<VerifyEmail />}
         />
         <Route
           path="/"
