@@ -12,6 +12,16 @@ const transporter = nodemailer.createTransport({
 
 const FROM = process.env.EMAIL_FROM || "AL RAWA <noreply@localhost>";
 
+export async function verifySMTP(): Promise<void> {
+  try {
+    await transporter.verify();
+    console.log("[Email] SMTP connection verified successfully");
+  } catch (err) {
+    console.error("[Email] SMTP connection failed:", err);
+    throw err;
+  }
+}
+
 export async function sendVerificationEmail(
   email: string,
   url: string
@@ -33,5 +43,6 @@ export async function sendVerificationEmail(
     console.log(`[Email] Sent to ${email}`);
   } catch (err) {
     console.error("[Email] Failed to send:", err);
+    throw err;
   }
 }

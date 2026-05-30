@@ -103,6 +103,11 @@
             <div class="mode-label">Results</div>
             <div class="mode-desc">Marks &amp; report cards</div>
         </div>
+        <div class="mode-tile" id="tile-fees" onclick="setMode('fees')">
+            <div class="mode-icon">💰</div>
+            <div class="mode-label">Fees</div>
+            <div class="mode-desc">Tracking &amp; Payments</div>
+        </div>
     </div>
 
     <!-- ══ ID CARD SECTION (wrapper) ══ -->
@@ -159,7 +164,7 @@
                                oninput="document.getElementById('fContactHint').textContent = formatBDPhone(this.value.trim())">
                         <small id="fContactHint" style="color:var(--accent2);font-size:.75rem;margin-top:3px;display:block;min-height:1em;"></small>
                     </div>
-                    <div class="form-actions">
+                    <div class="form-actions write-action">
                         <button class="btn btn-primary" id="sAddBtn" onclick="submitStudent()">&#43; Add Student</button>
                         <button class="btn btn-success" id="sUpdateBtn" onclick="submitStudent()" style="display:none;">&#10003; Update</button>
                         <button class="btn btn-outline" id="sCancelBtn" onclick="cancelStudentEdit()" style="display:none;">Cancel</button>
@@ -209,6 +214,13 @@
                             </div>
                         </div>
                     </div>
+                    <div class="field-group" id="tCategoryGroup" style="display:none;">
+                        <label>Category</label>
+                        <select id="tCategory">
+                            <option value="teacher" selected>Teacher</option>
+                            <option value="staff">Staff</option>
+                        </select>
+                    </div>
                     <div class="field-group"><label>Designation</label><input type="text" id="tDesignation" placeholder="e.g. Head Teacher, Assistant Teacher"></div>
                     <div class="field-group"><label>Full Name</label><input type="text" id="tName" placeholder="Teacher's full name"></div>
                     <div class="field-group"><label>Email ID</label><input type="email" id="tEmail" placeholder="teacher@school.com"></div>
@@ -218,7 +230,7 @@
                                oninput="document.getElementById('tContactHint').textContent = formatBDPhone(this.value.trim())">
                         <small id="tContactHint" style="color:var(--accent2);font-size:.75rem;margin-top:3px;display:block;min-height:1em;"></small>
                     </div>
-                    <div class="form-actions">
+                    <div class="form-actions write-action">
                         <button class="btn btn-teacher" id="tAddBtn" onclick="submitTeacher()">&#43; Add Teacher</button>
                         <button class="btn btn-success" id="tUpdateBtn" onclick="submitTeacher()" style="display:none;">&#10003; Update</button>
                         <button class="btn btn-outline" id="tCancelBtn" onclick="cancelTeacherEdit()" style="display:none;">Cancel</button>
@@ -265,6 +277,13 @@
                             </div>
                         </div>
                     </div>
+                    <div class="field-group" id="stCategoryGroup" style="display:none;">
+                        <label>Category</label>
+                        <select id="stCategory">
+                            <option value="staff" selected>Staff</option>
+                            <option value="teacher">Teacher</option>
+                        </select>
+                    </div>
                     <div class="field-group"><label>Role / Designation</label><input type="text" id="stRole" placeholder="e.g. Peon, Guard, Accountant"></div>
                     <div class="field-group"><label>Full Name</label><input type="text" id="stName" placeholder="Staff member's full name"></div>
                     <div class="field-group">
@@ -277,7 +296,7 @@
                                oninput="document.getElementById('stContactHint').textContent = formatBDPhone(this.value.trim())">
                         <small id="stContactHint" style="color:var(--accent2);font-size:.75rem;margin-top:3px;display:block;min-height:1em;"></small>
                     </div>
-                    <div class="form-actions">
+                    <div class="form-actions write-action">
                         <button class="btn btn-success" id="stAddBtn" onclick="submitStaff()">&#43; Add Staff</button>
                         <button class="btn btn-success" id="stUpdateBtn" onclick="submitStaff()" style="display:none;">&#10003; Update</button>
                         <button class="btn btn-outline" id="stCancelBtn" onclick="cancelStaffEdit()" style="display:none;">Cancel</button>
@@ -327,7 +346,7 @@
                     <div class="field-group"><label>MRP (৳)</label><input type="number" id="bMRP" placeholder="0" min="0" step="1"></div>
                     <div class="field-group"><label>Discounted Price (৳)</label><input type="number" id="bDiscounted" placeholder="0" min="0" step="1"></div>
                     <div class="field-group"><label>Sell Price (৳)</label><input type="number" id="bSell" placeholder="0" min="0" step="1"></div>
-                    <div class="form-actions">
+                    <div class="form-actions write-action">
                         <button class="btn btn-primary" id="bAddBtn" onclick="submitBook()" style="background:#b45309;">&#43; Add Book</button>
                         <button class="btn btn-success" id="bUpdateBtn" onclick="submitBook()" style="display:none;">&#10003; Update</button>
                         <button class="btn btn-outline" id="bCancelBtn" onclick="cancelBookEdit()" style="display:none;">Cancel</button>
@@ -385,56 +404,69 @@
         </div>
     </div>
 
-    <!-- ══ RESULT SECTION ══ -->
+    <!-- ══ RESULTS SECTION ══ -->
     <div id="resultSection" style="display:none;"></div>
+
+    <!-- ══ FEES SECTION ══ -->
+    <div id="feesSection" style="display:none;"></div>
+
 
 </div>
 
 <!-- Manage PINs Modal (admin only) -->
 <div id="changePinModal" class="pin-modal">
-    <div class="cm-box" style="max-width:420px;width:100%;">
+    <div class="cm-box" style="max-width:440px;width:100%;">
         <div class="cm-header">
-            <h3>🔑 Manage PINs</h3>
+            <h3>🔑 Manage Access PINs</h3>
             <button class="cm-close" onclick="closeChangePinModal()">✕</button>
         </div>
-        <div class="cm-body">
+        <div class="cm-body" style="max-height:80vh; overflow-y:auto; padding-right:10px;">
 
             <!-- Admin PIN section -->
-            <p style="font-weight:700;font-size:.85rem;margin-bottom:10px;color:var(--ink);">👑 Change Admin PIN</p>
-            <div class="field-group">
-                <label>Current Admin PIN</label>
-                <input type="password" id="cpAdminOld" placeholder="Current PIN" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:.95rem;background:var(--paper);font-family:DM Sans,sans-serif;">
-            </div>
-            <div class="field-group" style="margin-top:10px;">
-                <label>New Admin PIN</label>
-                <input type="password" id="cpAdminNew" placeholder="New PIN (min 4 chars)" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:.95rem;background:var(--paper);font-family:DM Sans,sans-serif;">
-            </div>
-            <div class="field-group" style="margin-top:10px;">
-                <label>Confirm New Admin PIN</label>
-                <input type="password" id="cpAdminConfirm" placeholder="Repeat new PIN" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:.95rem;background:var(--paper);font-family:DM Sans,sans-serif;">
-            </div>
-            <p id="cpAdminError" style="color:#f87171;font-size:.82rem;margin-top:6px;display:none;"></p>
-            <button id="cpAdminSaveBtn" class="btn btn-primary btn-sm" onclick="submitChangeAdminPin()" style="margin-top:12px;">✓ Update Admin PIN</button>
+            <p style="font-weight:700;font-size:.85rem;margin-bottom:10px;color:var(--ink);">👑 Admin <span style="font-weight:400;color:var(--muted);font-size:.75rem;">(Full Access)</span></p>
+            <div class="field-group"><input type="password" id="cpAdminOld" placeholder="Current Admin PIN" class="f-inline-input" style="padding:8px 12px;margin-bottom:6px;"></div>
+            <div class="field-group"><input type="password" id="cpAdminNew" placeholder="New Admin PIN" class="f-inline-input" style="padding:8px 12px;margin-bottom:6px;"></div>
+            <div class="field-group"><input type="password" id="cpAdminConfirm" placeholder="Confirm New Admin PIN" class="f-inline-input" style="padding:8px 12px;"></div>
+            <p id="cpAdminError" class="pin-error-box" style="color:#ef4444;font-size:.75rem;margin-top:4px;display:none;"></p>
+            <button id="cpAdminSaveBtn" class="btn btn-primary btn-sm" onclick="submitChangeAdminPin()" style="margin-top:10px;width:100%;">✓ Update Admin PIN</button>
 
-            <hr style="border:none;border-top:1.5px solid var(--border);margin:20px 0;">
+            <hr style="border:none;border-top:1.5px solid var(--border);margin:16px 0;">
+
+            <!-- Teacher PIN section -->
+            <p style="font-weight:700;font-size:.85rem;margin-bottom:10px;color:var(--ink);">👨‍🏫 Teacher <span style="font-weight:400;color:var(--muted);font-size:.75rem;">(ID, Books, Results)</span></p>
+            <div class="field-group"><input type="password" id="cpTeacherNew" placeholder="New Teacher PIN" class="f-inline-input" style="padding:8px 12px;margin-bottom:6px;"></div>
+            <div class="field-group"><input type="password" id="cpTeacherConfirm" placeholder="Confirm Teacher PIN" class="f-inline-input" style="padding:8px 12px;"></div>
+            <p id="cpTeacherError" class="pin-error-box" style="color:#ef4444;font-size:.75rem;margin-top:4px;display:none;"></p>
+            <div style="display:flex;gap:6px;margin-top:10px;">
+                <button class="btn btn-primary btn-sm" onclick="updateRolePin('teacher')" style="flex:1;">✓ Set PIN</button>
+                <button class="btn btn-outline btn-sm" onclick="removeRolePin('teacher')" style="color:#ef4444;">✕ Remove</button>
+            </div>
+
+            <hr style="border:none;border-top:1.5px solid var(--border);margin:16px 0;">
+
+            <!-- Accountant PIN section -->
+            <p style="font-weight:700;font-size:.85rem;margin-bottom:10px;color:var(--ink);">💰 Accountant <span style="font-weight:400;color:var(--muted);font-size:.75rem;">(ID, Books, Fees)</span></p>
+            <div class="field-group"><input type="password" id="cpAccountantNew" placeholder="New Accountant PIN" class="f-inline-input" style="padding:8px 12px;margin-bottom:6px;"></div>
+            <div class="field-group"><input type="password" id="cpAccountantConfirm" placeholder="Confirm Accountant PIN" class="f-inline-input" style="padding:8px 12px;"></div>
+            <p id="cpAccountantError" class="pin-error-box" style="color:#ef4444;font-size:.75rem;margin-top:4px;display:none;"></p>
+            <div style="display:flex;gap:6px;margin-top:10px;">
+                <button class="btn btn-primary btn-sm" onclick="updateRolePin('accountant')" style="flex:1;">✓ Set PIN</button>
+                <button class="btn btn-outline btn-sm" onclick="removeRolePin('accountant')" style="color:#ef4444;">✕ Remove</button>
+            </div>
+
+            <hr style="border:none;border-top:1.5px solid var(--border);margin:16px 0;">
 
             <!-- Viewer PIN section -->
-            <p style="font-weight:700;font-size:.85rem;margin-bottom:6px;color:var(--ink);">👁️ Set Viewer PIN <span style="font-weight:400;color:var(--muted);font-size:.78rem;">(for staff — add only, no delete/edit)</span></p>
-            <div class="field-group" style="margin-top:10px;">
-                <label>New Viewer PIN</label>
-                <input type="password" id="cpViewerNew" placeholder="Set a PIN for staff" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:.95rem;background:var(--paper);font-family:DM Sans,sans-serif;">
-            </div>
-            <div class="field-group" style="margin-top:10px;">
-                <label>Confirm Viewer PIN</label>
-                <input type="password" id="cpViewerConfirm" placeholder="Repeat viewer PIN" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:.95rem;background:var(--paper);font-family:DM Sans,sans-serif;">
-            </div>
-            <p id="cpViewerError" style="color:#f87171;font-size:.82rem;margin-top:6px;display:none;"></p>
-            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
-                <button id="cpViewerSaveBtn" class="btn btn-primary btn-sm" onclick="submitChangeViewerPin()" style="background:#2d6a4f;">✓ Set Viewer PIN</button>
-                <button class="btn btn-outline btn-sm" onclick="removeViewerPin()" style="color:#ef4444;border-color:#fca5a5;">✕ Remove Viewer Access</button>
+            <p style="font-weight:700;font-size:.85rem;margin-bottom:10px;color:var(--ink);">👁️ Viewer <span style="font-weight:400;color:var(--muted);font-size:.75rem;">(Read-Only Everything)</span></p>
+            <div class="field-group"><input type="password" id="cpViewerNew" placeholder="New Viewer PIN" class="f-inline-input" style="padding:8px 12px;margin-bottom:6px;"></div>
+            <div class="field-group"><input type="password" id="cpViewerConfirm" placeholder="Confirm Viewer PIN" class="f-inline-input" style="padding:8px 12px;"></div>
+            <p id="cpViewerError" class="pin-error-box" style="color:#ef4444;font-size:.75rem;margin-top:4px;display:none;"></p>
+            <div style="display:flex;gap:6px;margin-top:10px;">
+                <button class="btn btn-primary btn-sm" onclick="updateRolePin('viewer')" style="flex:1;">✓ Set PIN</button>
+                <button class="btn btn-outline btn-sm" onclick="removeRolePin('viewer')" style="color:#ef4444;">✕ Remove</button>
             </div>
 
-            <div style="margin-top:16px;text-align:right;">
+            <div style="margin-top:20px; text-align:center;">
                 <button class="btn btn-outline btn-sm" onclick="closeChangePinModal()">Close</button>
             </div>
         </div>
@@ -478,6 +510,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/db.js"></script>
 <script src="js/auth.js"></script>
@@ -486,6 +519,7 @@
 <script src="js/staff.js"></script>
 <script src="js/booklist.js"></script>
 <script src="js/results.js"></script>
+<script src="js/fees.js"></script>
 <script>document.addEventListener('DOMContentLoaded', () => { populateClassDropdowns(); initAuth(); });</script>
 
 </body>

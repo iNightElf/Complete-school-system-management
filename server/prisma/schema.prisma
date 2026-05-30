@@ -104,11 +104,14 @@ model SchoolClass {
 }
 
 model Subject {
-  id          String      @id @default(uuid())
+  id          String      @id @default(cuid())
   name        String
   fullMarks   Int
+  order       Int         @default(0)
   classId     String
   class       SchoolClass @relation(fields: [classId], references: [id])
+
+  @@unique([name, classId])
 }
 
 model Book {
@@ -129,7 +132,10 @@ model Result {
   term        String   // "1" | "2" | "3"
   marks       Json     // Map of subject name to marks
   attendance  Json?    // { days: number, present: number }
+  comment     String?
   createdAt   DateTime @default(now())
+
+  @@unique([studentId, term])
 }
 
 model Transaction {

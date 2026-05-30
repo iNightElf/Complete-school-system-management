@@ -53,6 +53,12 @@ const saveTeachersToDatabase  = ()   => _save('Teachers',() => dbWrite('school/t
 const saveStaffToDatabase     = ()   => _save('Staff',   () => dbWrite('school/staff',    staff.length    ? staff.map(s=>({...s}))    : null));
 const saveBooksToDatabase     = cls  => _save(cls+' books', () => { const list=(books[cls]||[]).map(b=>({...b})); return dbWrite('school/books/'+classToKey(cls), list.length?list:null); });
 
+// ── Fee-related save functions ──
+const saveFeeHeadsToDatabase         = () => _save('Fee Heads', () => dbWrite('school/fees/heads', feeHeads.length ? feeHeads : null));
+const saveClassFeesToDatabase         = () => _save('Class Fees', () => dbWrite('school/fees/classDefaults', classFees));
+const saveStudentOverridesToDatabase = () => _save('Student Overrides', () => dbWrite('school/fees/studentOverrides', studentFees));
+const saveFeePaymentsToDatabase      = sid => _save('Payment', () => dbWrite(`school/fees/payments/${sid}`, feePayments[sid] || null));
+
 // ── Load all data ──
 async function syncFromDatabase() {
     if (!isUnlocked) return;
@@ -60,6 +66,7 @@ async function syncFromDatabase() {
     try {
         const data = await dbRead('school');
         students = []; teachers = []; staff = []; books = {};
+        feeHeads = []; classFees = {}; studentFees = {}; feePayments = {};
 
         if (data) {
             if (data.classList?.length) CLASSES = data.classList;
@@ -68,6 +75,14 @@ async function syncFromDatabase() {
             teachers = toArray(data.teachers);
             staff    = toArray(data.staff);
             if (data.books) CLASSES.forEach(cls => { books[cls] = toArray(data.books[classToKey(cls)]); });
+
+            // Fees data
+            if (data.fees) {
+                feeHeads    = toArray(data.fees.heads);
+                classFees   = data.fees.classDefaults || {};
+                studentFees = data.fees.studentOverrides || {};
+                feePayments = data.fees.payments || {};
+            }
         }
 
         populateClassDropdowns();
@@ -76,6 +91,7 @@ async function syncFromDatabase() {
         if (currentMode==='staff')    renderStaff();
         if (currentMode==='booklist') renderBookPicker();
         if (currentMode==='results')  renderResults();
+        if (currentMode==='fees')     renderFees();
         setStatus('connected', 'Synced ✓');
         toast('Data loaded ✓', 'success');
     } catch(e) {

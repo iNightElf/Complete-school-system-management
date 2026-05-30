@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { auth } from "../lib/auth.js";
+import { Permission, hasPermission } from "../lib/permissions.js";
 
 export interface AuthRequest extends Request {
   session?: {
@@ -8,7 +9,7 @@ export interface AuthRequest extends Request {
       name: string;
       email: string;
       role: string;
-      emailVerified: Date;
+      emailVerified: boolean;
       image: string | null;
       createdAt: Date;
       updatedAt: Date;
@@ -51,6 +52,20 @@ export const authorize = (roles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.session || !roles.includes(req.session.user.role)) {
       return res.status(403).json({ error: "Unauthorized" });
+    }
+    next();
+  };
+};
+
+export const authorizePermission = (...permissions: Permission[]) => {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.session) {
+      return res.status(401).json({ error: "Access denied" });
+    }
+    const role = req.session.user.role;
+    const allowed = permissions.some((p) => hasPermission(role, p));
+    if (!allowed) {
+      return res.status(403).json({ error: "Insufficient permissions" });
     }
     next();
   };

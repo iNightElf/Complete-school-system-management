@@ -6,7 +6,20 @@
 let isUnlocked   = false;
 let currentRole  = null; // 'admin' | 'viewer' — set by auth.js
 
+// ── HTML escape helper ──
+function _h(s) {
+    return String(s ?? '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Student stable key ──
+function studentId(s) {
+    return (s.roll ? 'r'+s.roll : 'n'+s.name.replace(/\s+/g,'_')).toLowerCase();
+}
+
 let students = [], teachers = [], staff = [], books = {};
+let feeHeads = [], classFees = {}, studentFees = {}, feePayments = {};
 let sEditIndex = -1, tEditIndex = -1, stEditIndex = -1, bEditIndex = -1;
 let activeClass = null, activeDesig = null, activeBookClass = null, currentMode = null;
 
@@ -94,8 +107,8 @@ async function afterClassChange() {
 // ── Mode selector ──
 function setMode(mode) {
     currentMode = mode;
-    // Top-level tiles: idcard | booklist | results
-    ['idcard','booklist','results'].forEach(m => {
+    // Top-level tiles: idcard | booklist | results | fees
+    ['idcard','booklist','results','fees'].forEach(m => {
         const t = document.getElementById('tile-'+m);
         if (t) t.className = 'mode-tile' + (['student','teacher','staff'].includes(mode) && m==='idcard' ? ' active-idcard' : mode===m ? ' active-'+m : '');
     });
@@ -109,6 +122,7 @@ function setMode(mode) {
     document.getElementById('idSection').style.display       = isID ? 'block' : 'none';
     document.getElementById('bookSection').style.display     = mode==='booklist' ? 'block' : 'none';
     document.getElementById('resultSection').style.display   = mode==='results'  ? 'block' : 'none';
+    document.getElementById('feesSection').style.display     = mode==='fees'     ? 'block' : 'none';
     // ID sub-sections
     document.getElementById('studentSection').style.display  = mode==='student' ? 'block' : 'none';
     document.getElementById('teacherSection').style.display  = mode==='teacher' ? 'block' : 'none';
@@ -119,6 +133,7 @@ function setMode(mode) {
     if (mode==='staff')    renderStaff();
     if (mode==='booklist') renderBookPicker();
     if (mode==='results')  renderResults();
+    if (mode==='fees')     renderFees();
 }
 
 // ── Collapsible forms ──

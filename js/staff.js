@@ -18,6 +18,8 @@ function submitStaff() {
 }
 
 function finalizeStaff(d) {
+    const category = document.getElementById('stCategory').value;
+
     const s = {
         role:          d.role,
         name:          d.name,
@@ -26,7 +28,22 @@ function finalizeStaff(d) {
         photo:         d.photo
     };
 
-    if (stEditIndex >= 0) {
+    if (stEditIndex >= 0 && category === 'teacher') {
+        // Move from Staff to Teacher
+        staff.splice(stEditIndex, 1);
+        const t = {
+            designation:   s.role,
+            name:          s.name,
+            email:         s.email,
+            contactNumber: s.contactNumber,
+            photo:         s.photo
+        };
+        teachers.push(t);
+        saveStaffToDatabase();
+        saveTeachersToDatabase();
+        toast(`${s.name} moved to Teachers ✓`, 'success');
+        stEditIndex = -1;
+    } else if (stEditIndex >= 0) {
         staff[stEditIndex] = s;
         stEditIndex = -1;
     } else {
@@ -48,6 +65,8 @@ function editStaff(i) {
     const s     = staff[i];
     stEditIndex = i;
 
+    document.getElementById('stCategory').value    = 'staff';
+    document.getElementById('stCategoryGroup').style.display = 'block';
     document.getElementById('stRole').value    = s.role;
     document.getElementById('stName').value    = s.name;
     document.getElementById('stEmail').value   = s.email || '';
@@ -81,6 +100,8 @@ function cancelStaffEdit() {
 }
 
 function resetStaffForm() {
+    document.getElementById('stCategory').value    = 'staff';
+    document.getElementById('stCategoryGroup').style.display = 'none';
     document.getElementById('stRole').value    = '';
     document.getElementById('stName').value    = '';
     document.getElementById('stEmail').value   = '';

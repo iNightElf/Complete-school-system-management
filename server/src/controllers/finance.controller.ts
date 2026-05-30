@@ -16,22 +16,20 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       description,
       referenceId,
       totalIncomeCollected,
-      directExpenseBeforeDeposit
+      directExpenseBeforeDeposit,
     } = req.body;
 
-    // Use the classification engine
-    const { transactionType, affectsIncomeLedger, affectsExpenseLedger } = classifyTransaction(
-      sourceAccount,
-      destinationAccount
-    );
+    const { transactionType, affectsIncomeLedger, affectsExpenseLedger } =
+      classifyTransaction(sourceAccount, destinationAccount);
 
-    // Handle Emergency Expense before deposit if applicable
-    let finalAmount = amount;
-    let note = description;
-    
+    let finalAmount = Number(amount);
+    let note = description || "";
+
     if (totalIncomeCollected && directExpenseBeforeDeposit) {
-      finalAmount = totalIncomeCollected - directExpenseBeforeDeposit;
-      note = `${description || ''} [Emergency Expense: ${directExpenseBeforeDeposit} deducted from ${totalIncomeCollected}]`.trim();
+      const collected = Number(totalIncomeCollected);
+      const emergency = Number(directExpenseBeforeDeposit);
+      finalAmount = collected - emergency;
+      note = `${note ? note + " — " : ""}Income ৳${collected.toLocaleString()}, Emergency expense ৳${emergency.toLocaleString()}, Net deposit ৳${finalAmount.toLocaleString()}`.trim();
     }
 
     const transaction = await prisma.transaction.create({
@@ -39,13 +37,13 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
         transactionDate: new Date(date),
         amount: finalAmount,
         transactionType,
-        sourceAccount,
-        destinationAccount,
-        category,
-        description: note,
+        sourceAccount: sourceAccount || null,
+        destinationAccount: destinationAccount || null,
+        category: category || null,
+        description: note || null,
         affectsIncomeLedger,
         affectsExpenseLedger,
-        referenceId,
+        referenceId: referenceId || null,
         createdBy: req.user?.userId || "system",
       },
     });
@@ -59,35 +57,31 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
 export const getBalances = async (req: Request, res: Response) => {
   try {
     const transactions = await prisma.transaction.findMany();
-    
+
     let alRawaBank = 0;
     let globalForumBank = 0;
     let cashInHand = 0;
 
-    transactions.forEach(t => {
+    transactions.forEach((t) => {
       const amt = Number(t.amount);
-      
-      // Basic accounting logic based on spec
-      if (t.transactionType === "INCOME") {
-        if (t.destinationAccount === "AL_RAWA_BANK") alRawaBank += amt;
-      } else if (t.transactionType === "EXPENSE") {
-        if (t.sourceAccount === "AL_RAWA_BANK") alRawaBank -= amt;
-      } else if (t.transactionType === "INTERNAL_TRANSFER") {
-        if (t.sourceAccount === "AL_RAWA_BANK") alRawaBank -= amt;
-        if (t.destinationAccount === "AL_RAWA_BANK") alRawaBank += amt;
-        
-        if (t.sourceAccount === "GLOBAL_FORUM_BANK") globalForumBank -= amt;
-        if (t.destinationAccount === "GLOBAL_FORUM_BANK") globalForumBank += amt;
-        
-        if (t.sourceAccount === "CASH_IN_HAND") cashInHand -= amt;
-        if (t.destinationAccount === "CASH_IN_HAND") cashInHand += amt;
-      }
+      const src = t.sourceAccount;
+      const dst = t.destinationAccount;
+
+      // Money into account
+      if (dst === "AL_RAWA_BANK") alRawaBank += amt;
+      if (dst === "GLOBAL_FORUM_BANK") globalForumBank += amt;
+      if (dst === "CASH_IN_HAND") cashInHand += amt;
+
+      // Money out of account
+      if (src === "AL_RAWA_BANK") alRawaBank -= amt;
+      if (src === "GLOBAL_FORUM_BANK") globalForumBank -= amt;
+      if (src === "CASH_IN_HAND") cashInHand -= amt;
     });
 
     res.json({
       AL_RAWA_BANK: alRawaBank,
       GLOBAL_FORUM_BANK: globalForumBank,
-      CASH_IN_HAND: cashInHand
+      CASH_IN_HAND: cashInHand,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -97,7 +91,7 @@ export const getBalances = async (req: Request, res: Response) => {
 export const getTransactions = async (req: Request, res: Response) => {
   try {
     const transactions = await prisma.transaction.findMany({
-      orderBy: { transactionDate: 'desc' }
+      orderBy: { transactionDate: "desc" },
     });
     res.json(transactions);
   } catch (error: any) {

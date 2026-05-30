@@ -4,7 +4,8 @@ import { toast } from '../components/Toast';
 import ClassManagerModal from '../components/ClassManagerModal';
 import CameraModal from '../components/CameraModal';
 import PhotoUpload from '../components/PhotoUpload';
-import { Settings, FileText, RefreshCw, Phone, Mail, MessageCircle } from 'lucide-react';
+import { Settings, FileText, RefreshCw, Phone, Mail, MessageCircle, Download } from 'lucide-react';
+import jsPDF from 'jspdf';
 
 const API_URL = '/api';
 
@@ -207,6 +208,51 @@ const StudentSection: React.FC = () => {
           <span className="bg-school-primary text-white text-xs font-bold px-2 py-0.5 rounded-full">{filtered.length}</span>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={() => {
+              const doc = new jsPDF();
+              const title = activeClass ? activeClass + ' — Students' : 'All Students';
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(16);
+              doc.text(title, 105, 14, { align: 'center' });
+              let y = 22;
+              const list = filtered.length > 0 ? filtered : classStudents;
+              list.forEach((s, i) => {
+                if (y > 250) { doc.addPage(); y = 20; }
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.setTextColor(200, 75, 49);
+                doc.text(`${i + 1}. ${s.name}`, 15, y);
+                y += 7;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(0, 0, 0);
+                const lines = [
+                  `Class: ${s.class}${s.roll ? '   Roll No: ' + s.roll : ''}`,
+                  `Father: ${s.fatherName || ''}`,
+                  `Mother: ${s.motherName || ''}`,
+                  `Contact: ${s.contact || ''}`,
+                ];
+                if (s.photo) {
+                  try { doc.addImage(s.photo, 'JPEG', 15, y, 22, 22); } catch (_e) {}
+                  lines.forEach((l, li) => doc.text(l, 42, y + 5 + li * 5));
+                  y += 28;
+                } else {
+                  lines.forEach(l => { doc.text(l, 15, y); y += 5; });
+                }
+                doc.setDrawColor(200);
+                doc.setLineWidth(0.3);
+                doc.setLineDash([4, 4]);
+                doc.line(15, y + 2, 195, y + 2);
+                doc.setLineDash([]);
+                y += 8;
+              });
+              doc.save((activeClass || 'All_Students') + '_List.pdf');
+            }}
+            className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper"
+          >
+            <Download size={12} /> PDF
+          </button>
           <button onClick={() => fetchStudents()} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
             <RefreshCw size={12} /> Refresh
           </button>
@@ -275,7 +321,8 @@ const StudentSection: React.FC = () => {
                   </div>
                   <div className="mt-2 space-y-1">
                     {s.fatherName && <div className="text-xs text-school-muted">Father: {s.fatherName}</div>}
-                    {s.contact && <div className="text-xs">{contactLinks(s.contact)}</div>}
+                    {s.motherName && <div className="text-xs text-school-muted">Mother: {s.motherName}</div>}
+                    {s.contact && <div className="text-xs text-school-muted">Contact: <span className="text-school-primary">{contactLinks(s.contact)}</span></div>}
                   </div>
                   {isAdmin && (
                     <div className="flex gap-2 mt-3 pt-3 border-t border-school-border">
@@ -410,9 +457,53 @@ const TeacherSection: React.FC = () => {
           <h3 className="font-serif text-lg text-school-primary">Teachers</h3>
           <span className="bg-emerald-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{filtered.length}</span>
         </div>
-        <button onClick={() => fetchTeachers()} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
-          <RefreshCw size={12} /> Refresh
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              const doc = new jsPDF();
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(16);
+              doc.text('Teacher List', 105, 14, { align: 'center' });
+              let y = 22;
+              filtered.forEach((t: any, i) => {
+                if (y > 250) { doc.addPage(); y = 20; }
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.setTextColor(107, 63, 160);
+                doc.text(`${i + 1}. ${t.name}`, 15, y);
+                y += 7;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(0, 0, 0);
+                const lines = [
+                  `Designation: ${t.designation}`,
+                  t.email ? `Email: ${t.email}` : null,
+                  `Contact: ${t.contact || ''}`,
+                ].filter(Boolean);
+                if (t.photo) {
+                  try { doc.addImage(t.photo, 'JPEG', 15, y, 22, 22); } catch (_e) {}
+                  lines.forEach((l, li) => doc.text(l!, 42, y + 5 + li * 5));
+                  y += 28;
+                } else {
+                  lines.forEach(l => { doc.text(l!, 15, y); y += 5; });
+                }
+                doc.setDrawColor(200);
+                doc.setLineWidth(0.3);
+                doc.setLineDash([4, 4]);
+                doc.line(15, y + 2, 195, y + 2);
+                doc.setLineDash([]);
+                y += 8;
+              });
+              doc.save('Teacher_List.pdf');
+            }}
+            className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper"
+          >
+            <Download size={12} /> PDF
+          </button>
+          <button onClick={() => fetchTeachers()} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
+            <RefreshCw size={12} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Designation Picker or List */}
@@ -587,9 +678,53 @@ const StaffSection: React.FC = () => {
           <h3 className="font-serif text-lg text-school-primary">Staff</h3>
           <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{filtered.length}</span>
         </div>
-        <button onClick={() => fetchStaff()} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
-          <RefreshCw size={12} /> Refresh
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              const doc = new jsPDF();
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(16);
+              doc.text('Staff List', 105, 14, { align: 'center' });
+              let y = 22;
+              filtered.forEach((s: any, i) => {
+                if (y > 250) { doc.addPage(); y = 20; }
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.setTextColor(45, 106, 79);
+                doc.text(`${i + 1}. ${s.name}`, 15, y);
+                y += 7;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(0, 0, 0);
+                const lines = [
+                  `Role: ${s.role}`,
+                  s.email ? `Email: ${s.email}` : null,
+                  `Contact: ${s.contact || ''}`,
+                ].filter(Boolean);
+                if (s.photo) {
+                  try { doc.addImage(s.photo, 'JPEG', 15, y, 22, 22); } catch (_e) {}
+                  lines.forEach((l, li) => doc.text(l!, 42, y + 5 + li * 5));
+                  y += 28;
+                } else {
+                  lines.forEach(l => { doc.text(l!, 15, y); y += 5; });
+                }
+                doc.setDrawColor(200);
+                doc.setLineWidth(0.3);
+                doc.setLineDash([4, 4]);
+                doc.line(15, y + 2, 195, y + 2);
+                doc.setLineDash([]);
+                y += 8;
+              });
+              doc.save('Staff_List.pdf');
+            }}
+            className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper"
+          >
+            <Download size={12} /> PDF
+          </button>
+          <button onClick={() => fetchStaff()} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
+            <RefreshCw size={12} /> Refresh
+          </button>
+        </div>
       </div>
 
       <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or role..." className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />

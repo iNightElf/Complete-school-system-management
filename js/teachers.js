@@ -19,6 +19,8 @@ function submitTeacher() {
 }
 
 function finalizeTeacher(d) {
+    const category = document.getElementById('tCategory').value;
+
     const t = {
         designation:   d.designation,
         name:          d.name,
@@ -27,7 +29,22 @@ function finalizeTeacher(d) {
         photo:         d.photo
     };
 
-    if (tEditIndex >= 0) {
+    if (tEditIndex >= 0 && category === 'staff') {
+        // Move from Teacher to Staff
+        teachers.splice(tEditIndex, 1);
+        const s = {
+            role:          t.designation,
+            name:          t.name,
+            email:         t.email,
+            contactNumber: t.contactNumber,
+            photo:         t.photo
+        };
+        staff.push(s);
+        saveTeachersToDatabase();
+        saveStaffToDatabase();
+        toast(`${t.name} moved to Staff ✓`, 'success');
+        tEditIndex = -1;
+    } else if (tEditIndex >= 0) {
         teachers[tEditIndex] = t;
         tEditIndex = -1;
     } else {
@@ -50,6 +67,8 @@ function editTeacher(i) {
     const t    = teachers[i];
     tEditIndex = i;
 
+    document.getElementById('tCategory').value    = 'teacher';
+    document.getElementById('tCategoryGroup').style.display = 'block';
     document.getElementById('tDesignation').value = t.designation;
     document.getElementById('tName').value        = t.name;
     document.getElementById('tEmail').value       = t.email;
@@ -86,6 +105,8 @@ function cancelTeacherEdit() {
 
 // ── Reset form ──
 function resetTeacherForm() {
+    document.getElementById('tCategory').value    = 'teacher';
+    document.getElementById('tCategoryGroup').style.display = 'none';
     document.getElementById('tDesignation').value = '';
     document.getElementById('tName').value        = '';
     document.getElementById('tEmail').value       = '';

@@ -2,7 +2,15 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore } from '../store';
-import { ChevronLeft, Lock } from 'lucide-react';
+import { ChevronLeft, Lock, Users } from 'lucide-react';
+import { SCHOOL_LOGO } from '../lib/logo';
+
+const ROLE_DISPLAY: Record<string, string> = {
+  admin: 'Admin',
+  teacher: 'Teacher',
+  accountant: 'Accountant',
+  viewer: 'Viewer',
+};
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -27,16 +35,26 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <ChevronLeft size={24} />
             </button>
           )}
+          <img src={SCHOOL_LOGO} alt="Logo" className="w-9 h-9 rounded-full object-cover" id="school-logo" />
           <div>
             <h1 className="font-serif text-xl leading-tight">AL RAWA</h1>
             <p className="text-[10px] uppercase tracking-widest opacity-70">English School</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {role === 'admin' && (
+            <button
+              onClick={() => navigate('/users')}
+              className="p-2 hover:bg-white/10 rounded-full transition-colors group"
+              title="User Management"
+            >
+              <Users size={20} className="group-hover:scale-110 transition-transform" />
+            </button>
+          )}
           <div className="hidden sm:flex flex-col items-end mr-2">
             <span className="text-[10px] font-bold uppercase tracking-tighter opacity-50">Logged in as</span>
-            <span className="text-xs font-semibold">{role === 'admin' ? '👑 Admin' : '👁️ Viewer'}</span>
+            <span className="text-xs font-semibold">{ROLE_DISPLAY[role || ''] || role}</span>
           </div>
           <button
             onClick={logout}

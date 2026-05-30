@@ -1,18 +1,44 @@
 // ════════════════════════════════════════
-//  results.js — Result Management System
-//  AL RAWA English School
+//  results.js — v2
+//  - Subject-wise bulk mark entry
+//  - Concurrent-safe per-mark Firebase writes
+//  - Tabulation sheet PDF (per-term + combined)
+//  - Bulk report card PDF download
+//  - Average only when Term 3 exists
+//  - Teacher comments + 3 signature lines
+//  - Mother's name in report card
 // ════════════════════════════════════════
 
 // ── State ──
-let rActiveClass    = null; // currently selected class
-let rActiveStudent  = null; // { index, student } currently open
-let rSubjects       = [];   // [ { name, fullMarks } ] for rActiveClass
-let rResults        = {};   // { studentId: { terms:{1:{subj:marks},2:{},3:{}}, attendance:{days,present} } }
-let rActiveTerm     = '1';  // '1' | '2' | '3'
+let rActiveClass   = null;
+let rActiveStudent = null;
+let rSubjects      = [];
+let rResults       = {};
+let rActiveTerm    = '1';
+let rViewMode      = 'picker'; // picker | class | subject | studentlist | student | report
 
 const TERM_NAMES = { '1':'1st Term', '2':'2nd Term', '3':'Final Exam' };
 
-// ── Grading ──
+
+function _getTermAtt(res, term) {
+    const att = res?.attendance;
+    if (!att) return null;
+    // New per-term format
+    if (att[term] && typeof att[term] === 'object' && 'days' in att[term]) return att[term];
+    // Legacy flat format: show for all terms
+    if (typeof att.days === 'number' && !att['1']) return att;
+    return null;
+}
+
+// ── Firebase key sanitiser (no . # $ [ ] / ) ──
+function _fk(name) { return String(name).replace(/[.#$\[\]/]/g,'_'); }
+
+// ── School logo from DOM (avoids re-embedding base64) ──
+function _logo() { return document.querySelector('header img')?.src || ''; }
+
+// ══════════════════════════════════════
+//  GRADING
+// ══════════════════════════════════════
 function getGrade(pct) {
     if (pct >= 80) return { grade:'A+', gpa:5.00 };
     if (pct >= 75) return { grade:'A',  gpa:4.75 };
@@ -25,82 +51,209 @@ function getGrade(pct) {
     if (pct >= 40) return { grade:'D',  gpa:3.00 };
     return { grade:'F', gpa:0.00 };
 }
-function gradeFromMarks(obtained, full) {
-    if (full <= 0) return { grade:'—', gpa:0 };
-    return getGrade((obtained / full) * 100);
+function gradeFromMarks(obt, full) {
+    if (!full || full <= 0) return { grade:'—', gpa:0 };
+    return getGrade((obt / full) * 100);
+}
+function gpaToGrade(gpa) {
+    if (gpa >= 5.00) return 'A+'; if (gpa >= 4.75) return 'A';
+    if (gpa >= 4.50) return 'A-'; if (gpa >= 4.25) return 'B+';
+    if (gpa >= 4.00) return 'B';  if (gpa >= 3.75) return 'B-';
+    if (gpa >= 3.50) return 'C+'; if (gpa >= 3.25) return 'C';
+    if (gpa >= 3.00) return 'D';  return 'F';
+}
+function gradeChip(grade) {
+    const cls = (grade||'—').replace('+','p').replace('-','m').replace('—','x');
+    return `<span class="r-grade-chip r-grade-${cls}">${grade||'—'}</span>`;
 }
 
-// ── Student ID (stable key within class) ──
-function studentId(s) { return (s.roll ? 'r'+s.roll : 'n'+s.name.replace(/\s+/g,'_')).toLowerCase(); }
 
-// ── Entry point ──
+// ══════════════════════════════════════
+//  CONCURRENT-SAFE FIREBASE WRITES
+//  Each teacher writes only their own path → no overwrites
+// ══════════════════════════════════════
+function _rBase() { return 'school/results/'+classToKey(rActiveClass); }
+
+async function saveMarkConcurrent(sid, term, subjName, mark) {
+    if (!isUnlocked || !rActiveClass) return;
+    const path = `${_rBase()}/results/${sid}/terms/${term}/${_fk(subjName)}`;
+    try {
+        if (mark === null || mark === undefined || mark === '') await db.ref(path).remove();
+        else await db.ref(path).set(+mark);
+        // Keep local cache in sync
+        if (!rResults[sid])               rResults[sid] = {};
+        if (!rResults[sid].terms)         rResults[sid].terms = {};
+        if (!rResults[sid].terms[term])   rResults[sid].terms[term] = {};
+        if (mark === null || mark === undefined || mark === '')
+            delete rResults[sid].terms[term][subjName];
+        else
+            rResults[sid].terms[term][subjName] = +mark;
+    } catch(e) { console.error('saveMarkConcurrent', e); }
+}
+
+async function saveAttendanceConcurrent(sid, term, days, present) {
+    if (!isUnlocked || !rActiveClass) return;
+    try {
+        await db.ref(`${_rBase()}/results/${sid}/attendance/${term}`)
+                .set({ days:+days||0, present:+present||0 });
+        if (!rResults[sid]) rResults[sid] = {};
+        // Migrate legacy flat format
+        if (rResults[sid].attendance && typeof rResults[sid].attendance.days === 'number')
+            rResults[sid].attendance = {};
+        if (!rResults[sid].attendance) rResults[sid].attendance = {};
+        rResults[sid].attendance[term] = { days:+days||0, present:+present||0 };
+    } catch(e) { console.error('saveAttendance', e); }
+}
+
+function updStudentAttPct(term) {
+    const d  = +(document.getElementById('att_d_'+term)?.value||0);
+    const p  = +(document.getElementById('att_p_'+term)?.value||0);
+    const el = document.getElementById('att_pct_'+term);
+    if (el) el.textContent = calcAttendPct({ days:d, present:p });
+}
+
+
+async function saveStudentAllAttendance() {
+    const { sid } = rActiveStudent;
+    setStatus('syncing','Saving…');
+    await Promise.all(['1','2','3'].map(t => {
+        const d = +(document.getElementById('att_d_'+t)?.value||0);
+        const p = +(document.getElementById('att_p_'+t)?.value||0);
+        return saveAttendanceConcurrent(sid, t, d, p);
+    }));
+    setStatus('connected','Saved ✓');
+    toast('Attendance saved ✓','success');
+}
+
+async function saveCommentConcurrent(sid, comment) {
+    if (!isUnlocked || !rActiveClass) return;
+    try {
+        await db.ref(`${_rBase()}/results/${sid}/comment`).set(comment || '');
+        if (!rResults[sid]) rResults[sid] = {};
+        rResults[sid].comment = comment || '';
+    } catch(e) { console.error('saveComment', e); }
+}
+
+// ══════════════════════════════════════
+//  1. ENTRY POINT
+// ══════════════════════════════════════
 function renderResults() {
-    rActiveClass = null; rActiveStudent = null;
+    rActiveClass = null; rActiveStudent = null; rViewMode = 'picker';
     renderResultClassPicker();
 }
 
-// ── 1. Class Picker ──
+// ══════════════════════════════════════
+//  2. CLASS PICKER
+// ══════════════════════════════════════
 function renderResultClassPicker() {
+    rViewMode = 'picker';
     const sec = document.getElementById('resultSection');
     sec.innerHTML = `
         <div class="panel-header">
-            <div style="display:flex;align-items:center;gap:10px;">
-                <h3>📊 Results</h3>
-            </div>
+            <h3>📊 Results</h3>
         </div>
-        <p style="font-size:.85rem;color:var(--muted);margin-bottom:14px;">Select a class to manage results:</p>
+        <p style="font-size:.85rem;color:var(--muted);margin-bottom:14px;">Select a class:</p>
         <div class="picker-grid" id="rClassGrid"></div>`;
     const grid = document.getElementById('rClassGrid');
     CLASSES.forEach(cls => {
         const count = students.filter(s => s.class === cls).length;
         const tile  = document.createElement('div');
         tile.className = 'picker-tile';
-        tile.innerHTML = `<div class="tile-icon">${classIcon(cls)}</div>
+        tile.innerHTML = `
+            <div class="tile-icon">${classIcon(cls)}</div>
             <div class="tile-name">${cls}</div>
             <div class="tile-count">${count} student${count!==1?'s':''}</div>
-            ${isAdmin() ? `<button class="r-del-result-btn" onclick="event.stopPropagation();deleteClassResults('${cls}')">🗑 Clear Results</button>` : ''}`;
+            ${isAdmin() ? `<button class="r-del-result-btn" onclick="event.stopPropagation();deleteClassResults('${cls}')">🗑 Clear</button>` : ''}`;
         tile.onclick = () => openResultClass(cls);
         grid.appendChild(tile);
     });
 }
 
-// ── 2. Class view: subject setup + student cards ──
+// ══════════════════════════════════════
+//  3. LOAD CLASS & SHOW CLASS VIEW
+// ══════════════════════════════════════
 async function openResultClass(cls) {
     rActiveClass = cls;
     setStatus('syncing','Loading…');
     try {
         const data = await dbRead('school/results/'+classToKey(cls));
-        rSubjects = (data && data.subjects) ? toArray(data.subjects) : [];
-        rResults  = (data && data.results)  ? data.results  : {};
-        // Normalize: ensure rResults is a plain object
-        if (Array.isArray(rResults)) rResults = {};
+        rSubjects = (data?.subjects) ? toArray(data.subjects) : [];
+        rResults  = (data?.results && !Array.isArray(data.results)) ? data.results : {};
     } catch(e) { rSubjects=[]; rResults={}; }
     setStatus('connected','Ready');
     renderResultClassView();
 }
 
+async function syncClassResults() {
+    if (!rActiveClass) return;
+    setStatus('syncing','Syncing…');
+    try {
+        const data = await dbRead('school/results/'+classToKey(rActiveClass));
+        rSubjects = (data?.subjects) ? toArray(data.subjects) : [];
+        rResults  = (data?.results && !Array.isArray(data.results)) ? data.results : {};
+        setStatus('connected','Synced ✓');
+        toast('Synced from server ✓','success');
+        // Re-render current view
+        if      (rViewMode === 'subject')     showSubjectEntry();
+        else if (rViewMode === 'student')     renderStudentResultPage();
+        else                                  showStudentList();
+    } catch(e) {
+        setStatus('connected','Ready');
+        toast('Sync error: '+e.message,'error');
+    }
+}
+
 function renderResultClassView() {
+    rViewMode = 'class';
     const cls = rActiveClass;
-    const clsStudents = students.filter(s => s.class === cls);
     const sec = document.getElementById('resultSection');
     sec.innerHTML = `
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
-            <button class="back-btn" onclick="renderResultClassPicker()">&#8592; All Classes</button>
-            <h3 style="font-family:'DM Serif Display',serif;font-size:1.15rem;">${cls} — Results</h3>
-            ${isAdmin() ? `<button class="btn btn-danger btn-sm" style="margin-left:auto;" onclick="deleteClassResults('${cls}')">🗑 Delete All Results</button>` : ''}
+        <!-- Top bar -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <button class="back-btn" onclick="renderResultClassPicker()">← All Classes</button>
+            <h3 style="font-family:'DM Serif Display',serif;font-size:1.1rem;">${cls}</h3>
+            <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn btn-outline btn-sm" onclick="syncClassResults()">🔄 Sync</button>
+                ${isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="deleteClassResults('${cls}')">🗑 Delete All</button>` : ''}
+            </div>
         </div>
 
-        <!-- Subject Setup -->
-        <div class="r-card" id="rSubjectSetup">
+        <!-- Action tiles -->
+        <div class="r-action-row">
+            <button class="r-action-btn" onclick="showSubjectEntry()">
+                <span style="font-size:1.4rem;">📝</span>
+                <span>Enter by Subject</span>
+                <small>All students at once</small>
+            </button>
+            <button class="r-action-btn" onclick="showStudentList()">
+                <span style="font-size:1.4rem;">👤</span>
+                <span>Enter by Student</span>
+                <small>Individual entry</small>
+            </button>
+            <button class="r-action-btn" onclick="showTabulationOptions()">
+                <span style="font-size:1.4rem;">📋</span>
+                <span>Tabulation Sheet</span>
+                <small>Download PDF</small>
+            </button>
+            <button class="r-action-btn" onclick="showAllReportCardsOptions()">
+                <span style="font-size:1.4rem;">📑</span>
+                <span>All Report Cards</span>
+                <small>Bulk download</small>
+            </button>
+        </div>
+
+        <!-- Subject Setup (collapsible) -->
+        <div class="r-card" style="margin-bottom:16px;">
             <div class="r-card-header" onclick="toggleRSection('rSubjectBody')">
-                <span>📚 Subject Setup</span><span class="arrow">▼</span>
+                <span>📚 Subject Setup</span>
+                <span class="arrow" style="transform:rotate(-90deg);">▼</span>
             </div>
-            <div id="rSubjectBody" class="r-card-body">
-                <div class="book-table-wrap" style="margin-bottom:0;">
-                <table class="book-table" id="rSubjectTable" style="font-size:.85rem;">
-                    <thead><tr><th>#</th><th>Subject Name</th><th class="num">Full Marks</th>${isAdmin()?'<th style=\"width:40px\"></th>':''}</tr></thead>
-                    <tbody id="rSubjectTbody"></tbody>
-                </table>
+            <div id="rSubjectBody" class="r-card-body" style="display:none;">
+                <div class="book-table-wrap">
+                    <table class="book-table" id="rSubjectTable">
+                        <thead><tr><th>#</th><th>Subject Name</th><th class="num">Full Marks</th>${isAdmin()?'<th></th>':''}</tr></thead>
+                        <tbody id="rSubjectTbody"></tbody>
+                    </table>
                 </div>
                 ${isAdmin() ? `
                 <div class="r-add-row" style="margin-top:12px;">
@@ -111,37 +264,33 @@ function renderResultClassView() {
             </div>
         </div>
 
-        <!-- Student Cards -->
-        <div style="margin-top:20px;">
-            <div class="panel-header">
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <h3 style="font-family:'DM Serif Display',serif;">Students</h3>
-                    <span class="count-badge">${clsStudents.length}</span>
-                </div>
-            </div>
-            ${clsStudents.length === 0
-                ? `<div class="empty-state"><div class="big-icon">🎓</div><p>No students in ${cls} yet.</p></div>`
-                : `<div class="cards-grid" id="rStudentCards"></div>`
-            }
-        </div>`;
+        <!-- Dynamic content area -->
+        <div id="rDynamicArea"></div>`;
 
     renderSubjectTable();
-    if (clsStudents.length > 0) renderResultStudentCards(clsStudents);
+    showStudentList();
 }
 
+// ══════════════════════════════════════
+//  SUBJECT SETUP
+// ══════════════════════════════════════
 function renderSubjectTable() {
     const tbody = document.getElementById('rSubjectTbody');
     if (!tbody) return;
-    tbody.innerHTML = '';
-    if (rSubjects.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--muted);">No subjects yet. Add subjects above.</td></tr>`;
+    if (!rSubjects.length) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--muted);">No subjects yet. Add above.</td></tr>`;
         return;
     }
-    rSubjects.forEach((subj, i) => {
+    tbody.innerHTML = '';
+    rSubjects.forEach((subj,i) => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${i+1}</td>
-            <td><input class="r-inline-input" value="${subj.name}" onchange="updateSubject(${i},'name',this.value)" ${isAdmin()?'':'readonly'}></td>
-            <td class="num"><input class="r-inline-input r-num-input" type="number" value="${subj.fullMarks}" min="1" onchange="updateSubject(${i},'fullMarks',+this.value)" ${isAdmin()?'':'readonly'}></td>
+        tr.innerHTML = `
+            <td>${i+1}</td>
+            <td><input class="r-inline-input" value="${_h(subj.name)}"
+                onchange="updateSubject(${i},'name',this.value)" ${isAdmin()?'':'readonly'}></td>
+            <td class="num"><input class="r-inline-input r-num-input" type="number"
+                value="${subj.fullMarks}" min="1"
+                onchange="updateSubject(${i},'fullMarks',+this.value)" ${isAdmin()?'':'readonly'}></td>
             ${isAdmin() ? `<td><button class="cm-btn cm-del" onclick="deleteSubject(${i})">✕</button></td>` : ''}`;
         tbody.appendChild(tr);
     });
@@ -150,692 +299,1597 @@ function renderSubjectTable() {
 function addSubject() {
     if (!isAdmin()) return;
     const name  = document.getElementById('rNewSubjName').value.trim();
-    const marks = parseInt(document.getElementById('rNewSubjMarks').value) || 0;
+    const marks = parseInt(document.getElementById('rNewSubjMarks').value)||0;
     if (!name)    { toast('Enter subject name.','error'); return; }
-    if (marks < 1){ toast('Enter valid full marks.','error'); return; }
-    rSubjects.push({ name, fullMarks: marks });
+    if (marks<1)  { toast('Enter valid full marks.','error'); return; }
+    if (rSubjects.some(s=>s.name===name)) { toast('Subject already exists.','error'); return; }
+    rSubjects.push({ name, fullMarks:marks });
     document.getElementById('rNewSubjName').value  = '';
     document.getElementById('rNewSubjMarks').value = '';
     renderSubjectTable();
     saveResultConfig();
     toast(`"${name}" added ✓`,'success');
 }
-
 function updateSubject(i, field, val) {
     if (!isAdmin()) return;
-    if (field === 'fullMarks' && val < 1) { toast('Full marks must be ≥ 1','error'); return; }
+    if (field==='fullMarks' && val<1) return;
     rSubjects[i][field] = val;
     saveResultConfig();
 }
-
 function deleteSubject(i) {
     if (!isAdmin()) return;
     if (!confirm(`Delete "${rSubjects[i].name}"? All marks for this subject will be lost.`)) return;
-    rSubjects.splice(i, 1);
+    rSubjects.splice(i,1);
     renderSubjectTable();
     saveResultConfig();
-    toast('Subject removed.');
 }
 
-function renderResultStudentCards(clsStudents) {
-    const grid = document.getElementById('rStudentCards');
-    if (!grid) return;
-    grid.innerHTML = '';
+// ══════════════════════════════════════
+//  4. SUBJECT-WISE BULK ENTRY
+// ══════════════════════════════════════
+function showSubjectEntry() {
+    rViewMode = 'subject';
+    const area = document.getElementById('rDynamicArea');
+    if (!area) return;
 
-    // Pre-calculate ranks for all three terms
-    const ranks = {};
-    ['1','2','3'].forEach(term => {
-        const termRanks = calcTermRanks(clsStudents, term);
-        clsStudents.forEach(s => {
-            const sid = studentId(s);
-            if (!ranks[sid]) ranks[sid] = {};
-            ranks[sid][term] = termRanks[sid] || '—';
-        });
+    if (!rSubjects.length) {
+        area.innerHTML = `<div class="empty-state"><p>Add subjects in Subject Setup first.</p></div>`;
+        return;
+    }
+
+    area.innerHTML = `
+        <div class="r-bulk-controls">
+            <h4 style="font-family:'DM Serif Display',serif;margin-bottom:12px;">📝 Enter Marks by Subject</h4>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+                <div class="field-group" style="margin:0;flex:1;min-width:140px;">
+                    <label>Subject / Section</label>
+                    <select id="rBulkSubject" onchange="renderBulkTable()"
+                        style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--paper);font-family:'DM Sans',sans-serif;font-size:.9rem;">
+                        <option value="">— Select —</option>
+                        ${rSubjects.map(s=>`<option value="${_h(s.name)}">${_h(s.name)} (/${s.fullMarks})</option>`).join('')}
+                        <option value="__attendance__">📅 Attendance</option>
+                        <option value="__comment__">💬 Teacher's Comment</option>
+                    </select>
+                </div>
+
+                <div class="field-group" style="margin:0;flex:1;min-width:120px;" id="rBulkTermWrap">
+                    <label>Term</label>
+                    <select id="rBulkTerm" onchange="renderBulkTable()"
+                        style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--paper);font-family:'DM Sans',sans-serif;font-size:.9rem;">
+                        ${['1','2','3'].map(t=>`<option value="${t}">${TERM_NAMES[t]}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div id="rBulkTableWrap" style="margin-top:14px;">
+            <p style="color:var(--muted);font-size:.85rem;">Select a subject above to begin.</p>
+        </div>`;
+}
+
+function renderBulkTable() {
+    const wrap     = document.getElementById('rBulkTableWrap');
+    const subjName = document.getElementById('rBulkSubject')?.value;
+    const term     = document.getElementById('rBulkTerm')?.value || '1';
+    const termWrap = document.getElementById('rBulkTermWrap');
+    if (!wrap) return;
+
+    if (!subjName) {
+        wrap.innerHTML = `<p style="color:var(--muted);font-size:.85rem;">Select a subject above to begin.</p>`;
+        return;
+    }
+
+    const isAtt = subjName === '__attendance__';
+    const isCmt = subjName === '__comment__';
+
+    // Show term selector for BOTH marks and attendance, hide for comment (global)
+    if (termWrap) termWrap.style.display = isCmt ? 'none' : '';
+
+    const clsStudents = students
+        .filter(s=>s.class===rActiveClass)
+        .sort((a,b)=>(+a.roll||999)-(+b.roll||999)||a.name.localeCompare(b.name));
+    const subj = rSubjects.find(s=>s.name===subjName);
+
+    if (isCmt) {
+        wrap.innerHTML = `
+            <div class="book-table-wrap">
+            <table class="book-table">
+                <thead><tr>
+                    <th>#</th><th>Student</th><th>Roll</th>
+                    <th>Teacher's Comment</th>
+                </tr></thead>
+                <tbody>${clsStudents.map((s,i)=>{
+                    const sid = studentId(s);
+                    const cmt = rResults[sid]?.comment || '';
+                    return `<tr>
+                        <td>${i+1}</td><td>${_h(s.name)}</td><td>${s.roll||'—'}</td>
+                        <td>
+                            <textarea class="r-inline-input" id="bcmt_${sid}" 
+                                style="width:100%; min-height:60px; padding:8px; font-family:inherit; line-height:1.4;"
+                                placeholder="Write about performance and behaviour…">${_h(cmt)}</textarea>
+                        </td>
+                    </tr>`;
+                }).join('')}</tbody>
+            </table>
+            </div>
+            <div style="margin-top:12px;">
+                <button class="btn btn-success write-action" onclick="saveBulkComments()">
+                    💾 Save All Comments
+                </button>
+            </div>`;
+    } else if (isAtt) {
+        wrap.innerHTML = `
+            <div class="book-table-wrap">
+            <table class="book-table">
+                <thead><tr>
+                    <th>#</th><th>Student</th><th>Roll</th>
+                    <th class="num">Total Days</th><th class="num">Present</th><th class="num">%</th>
+                </tr></thead>
+                <tbody>${clsStudents.map((s,i)=>{
+                    const sid = studentId(s);
+                    const att = _getTermAtt(rResults[sid]||{}, term) || {};
+                    return `<tr>
+                        <td>${i+1}</td><td>${_h(s.name)}</td><td>${s.roll||'—'}</td>
+                        <td class="num">
+                            <input class="r-marks-input" type="number" min="0" style="width:70px;"
+                                id="batd_${sid}" value="${att.days||''}" placeholder="—"
+                                oninput="updBulkAttPct('${sid}')">
+                        </td>
+                        <td class="num">
+                            <input class="r-marks-input" type="number" min="0" style="width:70px;"
+                                id="batp_${sid}" value="${att.present||''}" placeholder="—"
+                                oninput="updBulkAttPct('${sid}')">
+                        </td>
+                        <td class="num" id="batpct_${sid}">${calcAttendPct(att)}</td>
+                    </tr>`;
+                }).join('')}</tbody>
+            </table>
+            </div>
+            <div style="margin-top:12px;">
+                <button class="btn btn-success write-action" onclick="saveBulkAttendance()">
+                    💾 Save ${TERM_NAMES[term]} Attendance
+                </button>
+            </div>`;
+    } else {
+        wrap.innerHTML = `
+            <div class="book-table-wrap">
+            <table class="book-table">
+                <thead><tr>
+                    <th>#</th><th>Student</th><th>Roll</th>
+                    <th class="num">Full Marks</th>
+                    <th class="num">Marks (${TERM_NAMES[term]})</th>
+                    <th>Grade</th>
+                </tr></thead>
+                <tbody>${clsStudents.map((s,i)=>{
+                    const sid  = studentId(s);
+                    const mark = rResults[sid]?.terms?.[term]?.[subjName]??'';
+                    const g    = (mark!==''&&mark!==null) ? gradeFromMarks(+mark, subj?.fullMarks||100) : null;
+                    return `<tr id="brow_${sid}">
+                        <td>${i+1}</td><td>${_h(s.name)}</td><td>${s.roll||'—'}</td>
+                        <td class="num">${subj?.fullMarks||'?'}</td>
+                        <td class="num">
+                            <input class="r-marks-input" type="number" min="0"
+                                max="${subj?.fullMarks||9999}" style="width:80px;"
+                                id="bm_${sid}" value="${mark}" placeholder="—"
+                                oninput="updBulkGrade('${sid}',${subj?.fullMarks||100})">
+                        </td>
+                        <td id="bg_${sid}">${g?gradeChip(g.grade):'—'}</td>
+                    </tr>`;
+                }).join('')}</tbody>
+            </table>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-success write-action"
+                    onclick="saveBulkMarks('${subjName.replace(/'/g,"\\'")}','${term}',${subj?.fullMarks||100})">
+                    💾 Save All Marks
+                </button>
+                <button class="btn btn-outline" onclick="clearBulkInputs()">✕ Clear</button>
+            </div>`;
+    }
+    applyRoleUI();
+}
+
+
+
+function updBulkGrade(sid, fullMarks) {
+    const inp = document.getElementById('bm_'+sid);
+    const gel = document.getElementById('bg_'+sid);
+    if (!inp||!gel) return;
+    const v = inp.value.trim();
+    if (v!=='' && !isNaN(+v)) {
+        if (+v > fullMarks) inp.value = fullMarks;
+        const g = gradeFromMarks(Math.min(+v,fullMarks), fullMarks);
+        gel.innerHTML = gradeChip(g.grade);
+    } else { gel.textContent = '—'; }
+}
+
+function updAttPct(sid) {
+    const d = +(document.getElementById('att_d_'+sid)?.value||0);
+    const p = +(document.getElementById('att_p_'+sid)?.value||0);
+    const el = document.getElementById('att_pct_'+sid);
+    if (el) el.textContent = calcAttendPct({days:d,present:p});
+}
+
+async function saveBulkMarks(subjName, term, fullMarks) {
+    const cls = students.filter(s=>s.class===rActiveClass);
+    setStatus('syncing','Saving…');
+    const promises = cls.map(s => {
+        const sid = studentId(s);
+        const inp = document.getElementById('bm_'+sid);
+        if (!inp) return Promise.resolve();
+        const v = inp.value.trim();
+        const mark = (v!==''&&!isNaN(+v)) ? Math.min(+v, fullMarks) : null;
+        return saveMarkConcurrent(sid, term, subjName, mark);
+        
     });
+    await Promise.all(promises);
+    setStatus('connected','Saved ✓');
+    toast(`Marks saved for ${cls.length} students ✓`,'success');
+}
 
+async function saveBulkAttendance() {
+    const term = document.getElementById('rBulkTerm')?.value || '1';
+    const cls  = students.filter(s=>s.class===rActiveClass);
+    setStatus('syncing','Saving…');
+    await Promise.all(cls.map(s => {
+        const sid = studentId(s);
+        const d   = +(document.getElementById('batd_'+sid)?.value||0);
+        const p   = +(document.getElementById('batp_'+sid)?.value||0);
+        return saveAttendanceConcurrent(sid, term, d, p);
+    }));
+    setStatus('connected','Saved ✓');
+    toast(`${TERM_NAMES[term]} attendance saved ✓`,'success');
+}
+
+async function saveBulkComments() {
+    const cls = students.filter(s=>s.class===rActiveClass);
+    setStatus('syncing','Saving…');
+    await Promise.all(cls.map(s => {
+        const sid = studentId(s);
+        const cmt = document.getElementById('bcmt_'+sid)?.value || '';
+        return saveCommentConcurrent(sid, cmt);
+    }));
+    setStatus('connected','Saved ✓');
+    toast(`Comments saved for ${cls.length} students ✓`,'success');
+}
+
+// UPDATED bulk attendance — uses selected term, fixed input IDs
+function updBulkAttPct(sid) {
+    const d  = +(document.getElementById('batd_'+sid)?.value||0);
+    const p  = +(document.getElementById('batp_'+sid)?.value||0);
+    const el = document.getElementById('batpct_'+sid);
+    if (el) el.textContent = calcAttendPct({ days:d, present:p });
+}
+
+function clearBulkInputs() {
+    document.querySelectorAll('[id^="bm_"]').forEach(i=>i.value='');
+    document.querySelectorAll('[id^="bg_"]').forEach(e=>e.textContent='—');
+    document.querySelectorAll('[id^="batd_"]').forEach(i=>i.value='');
+    document.querySelectorAll('[id^="batp_"]').forEach(i=>i.value='');
+    document.querySelectorAll('[id^="bcmt_"]').forEach(t=>t.value='');
+}
+
+// ══════════════════════════════════════
+//  5. STUDENT LIST VIEW
+// ══════════════════════════════════════
+function showStudentList() {
+    rViewMode = 'studentlist';
+    const area = document.getElementById('rDynamicArea');
+    if (!area) return;
+
+    const clsStudents = students
+        .filter(s=>s.class===rActiveClass)
+        .sort((a,b)=>(+a.roll||999)-(+b.roll||999)||a.name.localeCompare(b.name));
+
+    const yearRanks = calcYearRanks(clsStudents);
+
+    area.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+            <h4 style="font-family:'DM Serif Display',serif;">Students</h4>
+            <span class="count-badge">${clsStudents.length}</span>
+        </div>
+        ${clsStudents.length===0
+            ? `<div class="empty-state"><div class="big-icon">🎓</div><p>No students in ${rActiveClass}.</p></div>`
+            : `<div class="cards-grid" id="rStudentCards"></div>`}`;
+
+    if (!clsStudents.length) return;
+    const grid = document.getElementById('rStudentCards');
     clsStudents.forEach(s => {
-        const sid    = studentId(s);
-        const res    = rResults[sid] || {};
-        const avatar = s.photo ? s.photo : '';
+        const sid = studentId(s);
+        const chips = ['1','2','3'].map(t=>{
+            const tc = calcTermSummary(sid,t);
+            return tc ? `<span class="r-term-mini-chip">${gradeChip(tc.grade)}</span>` : '';
+        }).filter(Boolean).join('');
 
-        // Quick summary: show best available term GPA
-        let summaryHTML = '<span style="font-size:.7rem;color:var(--muted);">No marks yet</span>';
-        for (let t = 3; t >= 1; t--) {
-            const tc = calcTermSummary(sid, t);
-            if (tc) { summaryHTML = `<span class="r-grade-chip r-grade-${tc.grade.replace('+','p').replace('-','m')}">${tc.grade}</span><span style="font-size:.7rem;color:var(--muted);"> GPA ${tc.gpa.toFixed(2)}</span>`; break; }
-        }
+        const { finalGPA } = calcYearSummary(sid);
+        const yearRank = finalGPA!==null ? `<div style="font-size:.7rem;color:var(--accent2);font-weight:700;margin-bottom:4px;">Year Rank: ${yearRanks[sid]||'—'}</div>` : '';
 
         const card = document.createElement('div');
         card.className = 'student-card r-student-card';
         card.innerHTML = `
-            ${avatar ? `<img src="${avatar}" alt="${s.name}">` : `<div style="width:64px;height:64px;border-radius:50%;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin:0 auto 8px;border:2px solid var(--border);">👤</div>`}
-            <div class="s-name">${s.name}</div>
-            <div class="s-class">${s.roll ? 'Roll: '+s.roll : rActiveClass}</div>
-            <div style="margin:6px 0;">${summaryHTML}</div>
-            <button class="btn btn-primary btn-sm" style="width:100%;margin-top:4px;" onclick="openStudentResult('${sid}')">📝 Marks &amp; Report</button>`;
+            ${s.photo ? `<img src="${s.photo}" alt="${_h(s.name)}">` : `<div style="width:64px;height:64px;border-radius:50%;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin:0 auto 8px;border:2px solid var(--border);">👤</div>`}
+            <div class="s-name">${_h(s.name)}</div>
+            <div class="s-class">${s.roll?'Roll: '+s.roll:rActiveClass}</div>
+            <div style="margin:6px 0;display:flex;flex-wrap:wrap;gap:3px;justify-content:center;">${chips||'<span style="font-size:.7rem;color:var(--muted);">No marks yet</span>'}</div>
+            ${yearRank}
+            <div style="display:flex;gap:5px;margin-top:6px;">
+                <button class="btn btn-primary btn-sm" style="flex:1;" onclick="openStudentResult('${sid}')">📝 Marks</button>
+                <button class="btn btn-outline btn-sm" style="flex:1;" onclick="openReportCard('${sid}')">📄 Report</button>
+            </div>`;
         grid.appendChild(card);
     });
 }
 
-// ── 3. Student Result Entry ──
+// ══════════════════════════════════════
+//  6. STUDENT RESULT ENTRY (per-student)
+// ══════════════════════════════════════
 function openStudentResult(sid) {
-    const s = students.find(st => studentId(st) === sid && st.class === rActiveClass);
+    const s = students.find(st=>studentId(st)===sid && st.class===rActiveClass);
     if (!s) return;
-    rActiveStudent = { sid, student: s };
-    rActiveTerm    = 1;
+    rActiveStudent = { sid, student:s };
+    rActiveTerm = '1';
+    rViewMode = 'student';
     renderStudentResultPage();
 }
 
 function renderStudentResultPage() {
-    const { sid, student: s } = rActiveStudent;
+    const { sid, student:s } = rActiveStudent;
     const res    = rResults[sid] || {};
     const avatar = s.photo || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 80'%3E%3Crect width='80' height='80' rx='40' fill='%231a1a2e'/%3E%3Ccircle cx='40' cy='30' r='16' fill='%23f5f0e8' opacity='.85'/%3E%3Cellipse cx='40' cy='68' rx='24' ry='16' fill='%23f5f0e8' opacity='.7'/%3E%3C/svg%3E";
-    const sec    = document.getElementById('resultSection');
+    const area   = document.getElementById('rDynamicArea');
 
-    sec.innerHTML = `
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
-            <button class="back-btn" onclick="openResultClass('${rActiveClass}')">&#8592; ${rActiveClass}</button>
-        </div>
-
-        <!-- Student header -->
-        <div class="r-student-header">
-            ${avatar ? `<img src="${avatar}" alt="${s.name}" class="r-student-avatar">` : `<div class="r-student-avatar" style="background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-size:1.6rem;flex-shrink:0;">👤</div>`}
-            <div>
-                <div style="font-family:'DM Serif Display',serif;font-size:1.2rem;">${s.name}</div>
-                <div style="font-size:.78rem;color:var(--muted);">${rActiveClass}${s.roll?' · Roll: '+s.roll:''}</div>
+    // Build per-term attendance inputs
+    const attInputs = ['1','2','3'].map(t => {
+        const att = _getTermAtt(res, t) || {};
+        return `
+        <div style="margin-bottom:12px;">
+            <div style="font-weight:700;font-size:.82rem;color:var(--ink);margin-bottom:8px;
+                        padding-bottom:4px;border-bottom:1px solid var(--border);">
+                ${TERM_NAMES[t]}
             </div>
-            <button class="btn btn-success btn-sm" style="margin-left:auto;" onclick="openReportCard('${sid}')">📄 Report Card</button>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <div class="field-group" style="flex:1;min-width:90px;margin:0;">
+                    <label>Total Days</label>
+                    <input type="number" class="r-attend-input" id="att_d_${t}" min="0"
+                        value="${att.days||''}" placeholder="—"
+                        oninput="updStudentAttPct('${t}')">
+                </div>
+                <div class="field-group" style="flex:1;min-width:90px;margin:0;">
+                    <label>Days Present</label>
+                    <input type="number" class="r-attend-input" id="att_p_${t}" min="0"
+                        value="${att.present||''}" placeholder="—"
+                        oninput="updStudentAttPct('${t}')">
+                </div>
+                <div class="field-group" style="flex:0 0 70px;margin:0;">
+                    <label>%</label>
+                    <div class="r-attend-pct" id="att_pct_${t}">${calcAttendPct(att)}</div>
+                </div>
+            </div>
+        </div>`;
+    }).join('<hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">');
+
+    area.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <button class="back-btn" onclick="showStudentList()">← All Students</button>
+            <button class="btn btn-success btn-sm" style="margin-left:auto;"
+                onclick="openReportCard('${sid}')">📄 Report Card</button>
         </div>
 
-        <!-- Term tabs -->
+        <div class="r-student-header">
+            <img src="${avatar}" alt="${_h(s.name)}" class="r-student-avatar">
+            <div>
+                <div style="font-family:'DM Serif Display',serif;font-size:1.15rem;">${_h(s.name)}</div>
+                <div style="font-size:.78rem;color:var(--muted);">
+                    ${rActiveClass}${s.roll?' · Roll: '+s.roll:''}
+                </div>
+            </div>
+        </div>
+
         <div class="r-term-tabs" id="rTermTabs">
-            ${['1','2','3'].map(t=>`<button class="r-tab${rActiveTerm===t?' active':''}" onclick="switchTerm('${t}')">${TERM_NAMES[t]}</button>`).join('')}
+            ${['1','2','3'].map(t=>
+                `<button class="r-tab${rActiveTerm===t?' active':''}"
+                    onclick="switchTerm('${t}')">${TERM_NAMES[t]}</button>`
+            ).join('')}
         </div>
 
-        <!-- Marks table -->
-        <div class="r-card" style="margin-top:0;border-top-left-radius:0;border-top-right-radius:0;">
+        <div class="r-card" style="margin-top:0;border-radius:0 0 var(--radius) var(--radius);">
             <div class="r-card-body" id="rMarksBody"></div>
         </div>
 
-        <!-- Attendance -->
-        <div class="r-card" style="margin-top:14px;">
-            <div class="r-card-header" onclick="toggleRSection('rAttendBody')">
-                <span>📅 Attendance</span><span class="arrow">▼</span>
+        <!-- Per-term attendance -->
+        <div class="r-card" style="margin-top:12px;">
+            <div class="r-card-header" onclick="toggleRSection('rAttBody')">
+                <span>📅 Attendance (per term)</span><span class="arrow">▼</span>
             </div>
-            <div id="rAttendBody" class="r-card-body">
-                <div style="display:flex;gap:12px;flex-wrap:wrap;">
-                    <div class="field-group" style="flex:1;min-width:120px;margin:0;">
-                        <label>Total School Days</label>
-                        <input type="number" class="r-attend-input" id="rTotalDays" min="0" value="${res.attendance?.days||''}" placeholder="e.g. 200" oninput="saveAttendance()">
-                    </div>
-                    <div class="field-group" style="flex:1;min-width:120px;margin:0;">
-                        <label>Days Present</label>
-                        <input type="number" class="r-attend-input" id="rDaysPresent" min="0" value="${res.attendance?.present||''}" placeholder="e.g. 185" oninput="saveAttendance()">
-                    </div>
-                    <div class="field-group" style="flex:1;min-width:100px;margin:0;">
-                        <label>Attendance %</label>
-                        <div id="rAttendPct" class="r-attend-pct">${calcAttendPct(res.attendance)}</div>
-                    </div>
-                </div>
+            <div id="rAttBody" class="r-card-body">
+                ${attInputs}
+                <button class="btn btn-success btn-sm" style="margin-top:10px;"
+                    onclick="saveStudentAllAttendance()">💾 Save All Attendance</button>
+            </div>
+        </div>
+
+        <!-- Teacher Comment -->
+        <div class="r-card" style="margin-top:12px;">
+            <div class="r-card-header" onclick="toggleRSection('rCmtBody')">
+                <span>💬 Teacher's Comment</span><span class="arrow">▼</span>
+            </div>
+            <div id="rCmtBody" class="r-card-body">
+                <textarea class="r-remarks" id="rTeacherComment" rows="3"
+                    placeholder="Write about the student's performance and behaviour…">${_h(res.comment||'')}</textarea>
+                <button class="btn btn-success btn-sm" style="margin-top:8px;"
+                    onclick="saveStudentComment()">💾 Save Comment</button>
             </div>
         </div>`;
 
     renderMarksTable();
 }
 
+
+
 function switchTerm(t) {
     rActiveTerm = String(t);
-    document.querySelectorAll('.r-tab').forEach((btn,i) => btn.classList.toggle('active', i+1===t));
+    document.querySelectorAll('.r-tab').forEach((btn,i)=>btn.classList.toggle('active',String(i+1)===t));
     renderMarksTable();
 }
 
 function renderMarksTable() {
     const { sid } = rActiveStudent;
-    const res     = rResults[sid] || {};
-    const termKey = rActiveTerm;
-    const termMarks = (res.terms && res.terms[termKey]) ? res.terms[termKey] : {};
-    const body    = document.getElementById('rMarksBody');
+    const res       = rResults[sid] || {};
+    const termMarks = res.terms?.[rActiveTerm] || {};
+    const body      = document.getElementById('rMarksBody');
     if (!body) return;
 
-    if (rSubjects.length === 0) {
-        body.innerHTML = `<div class="empty-state" style="padding:24px;"><p>No subjects set up for ${rActiveClass}.<br>Go back and add subjects first.</p></div>`;
+    if (!rSubjects.length) {
+        body.innerHTML = `<div class="empty-state" style="padding:24px;"><p>No subjects set up yet.</p></div>`;
         return;
     }
 
-    let totalObt = 0, totalFull = 0, gpas = [], hasF = false;
-    rSubjects.forEach(subj => {
-        const obt  = termMarks[subj.name] ?? '';
-        const g    = (obt !== '' && obt !== null) ? gradeFromMarks(+obt, subj.fullMarks) : null;
-        if (g) { gpas.push(g.gpa); if (g.grade==='F') hasF=true; totalObt+=+obt; totalFull+=subj.fullMarks; }
+    let totObt=0, totFull=0, gpas=[], hasF=false;
+    rSubjects.forEach(subj=>{
+        const obt = termMarks[subj.name]??'';
+        if (obt!==''&&obt!==null) {
+            const g = gradeFromMarks(+obt, subj.fullMarks);
+            gpas.push(g.gpa); if(g.grade==='F') hasF=true;
+            totObt+=+obt; totFull+=subj.fullMarks;
+        }
     });
-    const termGPA   = gpas.length ? (gpas.reduce((a,b)=>a+b,0)/gpas.length) : null;
-    const termGradeLabel = hasF ? 'F' : (termGPA !== null ? gpaToGrade(termGPA) : '—');
-    const termGPALabel   = termGPA !== null ? termGPA.toFixed(2) : '—';
+    const tGPA   = gpas.length ? gpas.reduce((a,b)=>a+b,0)/gpas.length : null;
+    const tGrade = hasF ? 'F' : (tGPA!==null ? gpaToGrade(tGPA) : '—');
 
-    // Rank across class
-    const clsStudents = students.filter(s => s.class === rActiveClass);
-    const allRanks    = calcTermRanks(clsStudents, termKey);
-    const myRank      = allRanks[sid] || '—';
+    const clsStudents = students.filter(s=>s.class===rActiveClass);
+    const myRank = calcTermRanks(clsStudents, rActiveTerm)[sid] || '—';
 
     body.innerHTML = `
-        <h4 style="font-family:'DM Serif Display',serif;margin-bottom:12px;">${TERM_NAMES[termKey]}</h4>
-        <div class="book-table-wrap" style="margin-bottom:14px;">
-            <table class="r-marks-table book-table">
-                <thead><tr>
-                    <th>Subject</th>
-                    <th class="num">Full</th>
-                    <th class="num">Obtained</th>
-                    <th>Grade</th>
-                    <th class="num">GPA</th>
-                </tr></thead>
+        <h4 style="font-family:'DM Serif Display',serif;margin-bottom:12px;">${TERM_NAMES[rActiveTerm]}</h4>
+        <div class="book-table-wrap" style="margin-bottom:12px;">
+            <table class="book-table">
+                <thead><tr><th>Subject</th><th class="num">Full</th><th class="num">Marks</th><th>Grade</th><th class="num">GPA</th></tr></thead>
                 <tbody id="rMarksTbody"></tbody>
                 <tfoot><tr>
-                    <td style="font-weight:700;letter-spacing:.04em;text-transform:uppercase;font-size:.72rem;">Total / Summary</td>
-                    <td class="num" style="font-weight:700;">${totalFull||'—'}</td>
-                    <td class="num" style="font-weight:700;">${gpas.length?totalObt:'—'}</td>
-                    <td><span class="r-grade-chip r-grade-${termGradeLabel.replace('+','p').replace('-','m')}">${termGradeLabel}</span></td>
-                    <td class="num" style="font-weight:700;">${termGPALabel}</td>
+                    <td style="font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;">Total</td>
+                    <td class="num" style="font-weight:700;">${totFull||'—'}</td>
+                    <td class="num" style="font-weight:700;">${gpas.length?totObt:'—'}</td>
+                    <td>${gradeChip(tGrade)}</td>
+                    <td class="num" style="font-weight:700;">${tGPA!==null?tGPA.toFixed(2):'—'}</td>
                 </tr></tfoot>
             </table>
         </div>
         <div class="r-term-summary-row">
-            <div class="r-summary-chip"><span>Total Marks</span><strong>${gpas.length?totalObt+'/' +totalFull:'—'}</strong></div>
-            <div class="r-summary-chip"><span>Term GPA</span><strong>${termGPALabel}</strong></div>
-            <div class="r-summary-chip"><span>Grade</span><strong>${termGradeLabel}</strong></div>
-            <div class="r-summary-chip"><span>Class Rank</span><strong>${myRank}</strong></div>
-        </div>`;
+            <div class="r-summary-chip"><span>Total</span><strong>${gpas.length?totObt+'/'+totFull:'—'}</strong></div>
+            <div class="r-summary-chip"><span>GPA</span><strong>${tGPA!==null?tGPA.toFixed(2):'—'}</strong></div>
+            <div class="r-summary-chip"><span>Grade</span><strong>${tGrade}</strong></div>
+            <div class="r-summary-chip"><span>Term Rank</span><strong>${myRank}</strong></div>
+        </div>
+        <button class="btn btn-success btn-sm" style="margin-top:12px;"
+            onclick="saveStudentTermMarks()">💾 Save ${TERM_NAMES[rActiveTerm]} Marks</button>`;
 
     const tbody = document.getElementById('rMarksTbody');
-    rSubjects.forEach(subj => {
-        const obt  = termMarks[subj.name] ?? '';
-        const g    = (obt !== '' && obt !== null) ? gradeFromMarks(+obt, subj.fullMarks) : null;
-        const tr   = document.createElement('tr');
+    rSubjects.forEach(subj=>{
+        const obt = termMarks[subj.name]??'';
+        const g   = (obt!==''&&obt!==null) ? gradeFromMarks(+obt,subj.fullMarks) : null;
+        const tr  = document.createElement('tr');
         tr.innerHTML = `
-            <td>${subj.name}</td>
+            <td>${_h(subj.name)}</td>
             <td class="num">${subj.fullMarks}</td>
-            <td class="num">
-                <input class="r-marks-input" type="number" min="0" max="${subj.fullMarks}"
-                       value="${obt}" placeholder="—"
-                       oninput="onMarksInput(this,'${subj.name}',${subj.fullMarks})">
-            </td>
-            <td>${g ? `<span class="r-grade-chip r-grade-${g.grade.replace('+','p').replace('-','m')}">${g.grade}</span>` : '—'}</td>
-            <td class="num">${g ? g.gpa.toFixed(2) : '—'}</td>`;
+            <td class="num"><input class="r-marks-input" type="number" min="0" max="${subj.fullMarks}"
+                value="${obt}" placeholder="—"
+                oninput="onMarkInput(this,'${_h(subj.name)}',${subj.fullMarks})"></td>
+            <td>${g?gradeChip(g.grade):'—'}</td>
+            <td class="num">${g?g.gpa.toFixed(2):'—'}</td>`;
         tbody.appendChild(tr);
     });
 }
 
-function onMarksInput(input, subjName, fullMarks) {
-    const val = parseFloat(input.value);
-    if (!isNaN(val) && val > fullMarks) {
-        input.style.borderColor = '#ef4444';
-        input.title = `Max is ${fullMarks}`;
-        toast(`Max marks for this subject is ${fullMarks}`,'error');
-    } else {
-        input.style.borderColor = '';
-        input.title = '';
-    }
-    // Live re-render grade/GPA cells without full re-render (done on saveMarks debounced)
-    debouncedSaveMarks();
-}
-
-let _saveMTimer = null;
-function debouncedSaveMarks() {
-    clearTimeout(_saveMTimer);
-    _saveMTimer = setTimeout(() => { collectAndSaveMarks(); renderMarksTable(); }, 400);
-}
-
-function saveMarks() { collectAndSaveMarks(); renderMarksTable(); }
-
-function collectAndSaveMarks() {
+function onMarkInput(input, subjName, fullMarks) {
+    const v = parseFloat(input.value);
+    input.style.borderColor = (!isNaN(v)&&v>fullMarks) ? '#ef4444' : '';
+    // Update local cache immediately
     const { sid } = rActiveStudent;
-    if (!rResults[sid]) rResults[sid] = {};
-    if (!rResults[sid].terms) rResults[sid].terms = {};
-    const termKey = rActiveTerm;
-    const termData = {};
-    // Collect from DOM inputs in subject order
-    const inputs = document.querySelectorAll('.r-marks-input');
-    inputs.forEach((inp, i) => {
-        if (i < rSubjects.length) {
-            const val = inp.value.trim();
-            if (val !== '' && !isNaN(+val)) termData[rSubjects[i].name] = Math.min(+val, rSubjects[i].fullMarks);
+    if (!rResults[sid])               rResults[sid]={};
+    if (!rResults[sid].terms)         rResults[sid].terms={};
+    if (!rResults[sid].terms[rActiveTerm]) rResults[sid].terms[rActiveTerm]={};
+    const val = input.value.trim();
+    if (val===''||isNaN(+val)) delete rResults[sid].terms[rActiveTerm][subjName];
+    else rResults[sid].terms[rActiveTerm][subjName] = Math.min(+val, fullMarks);
+}
+
+async function saveStudentTermMarks() {
+    const { sid } = rActiveStudent;
+    const inputs  = document.querySelectorAll('#rMarksTbody .r-marks-input');
+    setStatus('syncing','Saving…');
+    const promises = [];
+    inputs.forEach((inp,i)=>{
+        if (i<rSubjects.length) {
+            const v    = inp.value.trim();
+            const mark = (v!==''&&!isNaN(+v)) ? Math.min(+v,rSubjects[i].fullMarks) : null;
+            promises.push(saveMarkConcurrent(sid, rActiveTerm, rSubjects[i].name, mark));
         }
     });
-    rResults[sid].terms[termKey] = termData;
-    saveResultData();
+    await Promise.all(promises);
+    setStatus('connected','Saved ✓');
+    toast(`${TERM_NAMES[rActiveTerm]} marks saved ✓`,'success');
+    renderMarksTable();
 }
 
-function saveAttendance() {
+async function saveStudentAttendance() {
     const { sid } = rActiveStudent;
-    const days    = parseInt(document.getElementById('rTotalDays').value)||0;
-    const present = parseInt(document.getElementById('rDaysPresent').value)||0;
-    if (!rResults[sid]) rResults[sid] = {};
-    rResults[sid].attendance = { days, present };
-    document.getElementById('rAttendPct').textContent = calcAttendPct({ days, present });
-    saveResultData();
+    const days    = parseInt(document.getElementById('rTotDays').value)||0;
+    const present = parseInt(document.getElementById('rPresDays').value)||0;
+    await saveAttendanceConcurrent(sid, days, present);
+    toast('Attendance saved ✓','success');
 }
 
-function calcAttendPct(att) {
-    if (!att || !att.days || att.days <= 0) return '—';
-    return ((att.present / att.days)*100).toFixed(1) + '%';
+async function saveStudentComment() {
+    const { sid } = rActiveStudent;
+    const cmt = document.getElementById('rTeacherComment').value.trim();
+    await saveCommentConcurrent(sid, cmt);
+    toast('Comment saved ✓','success');
 }
 
-// ── Ranking ──
-function calcTermRanks(clsStudents, term) {
-    const scores = clsStudents.map(s => {
-        const sid = studentId(s);
-        const tc  = calcTermSummary(sid, term);
-        return { sid, gpa: tc ? tc.gpa : -1, total: tc ? tc.total : -1 };
-    }).filter(x => x.gpa >= 0);
-
-    scores.sort((a,b) => b.gpa - a.gpa || b.total - a.total);
-    const ranks = {};
-    scores.forEach((sc, i) => {
-        if (i > 0 && sc.gpa === scores[i-1].gpa && sc.total === scores[i-1].total) {
-            ranks[sc.sid] = ranks[scores[i-1].sid];
-        } else {
-            ranks[sc.sid] = i + 1;
-        }
-    });
-    return ranks;
+// ══════════════════════════════════════
+//  7. TABULATION OPTIONS
+// ══════════════════════════════════════
+function showTabulationOptions() {
+    const area = document.getElementById('rDynamicArea');
+    area.innerHTML = `
+        <div class="r-card">
+            <div class="r-card-header" style="cursor:default;"><span>📋 Tabulation Sheet</span></div>
+            <div class="r-card-body">
+                <p style="font-size:.85rem;color:var(--muted);margin-bottom:14px;">
+                    Download a marks grid for your records. "Final Combined" only available after Term 3 is entered.
+                </p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    ${['1','2','3'].map(t=>`<button class="btn btn-outline" onclick="downloadTabulationPDF('${t}')">⬇ ${TERM_NAMES[t]}</button>`).join('')}
+                    <button class="btn btn-primary" onclick="downloadTabulationPDF('final')">⬇ Final Combined</button>
+                </div>
+            </div>
+        </div>`;
 }
 
+// ══════════════════════════════════════
+//  RANKING & SUMMARY HELPERS
+// ══════════════════════════════════════
 function calcTermSummary(sid, term) {
-    const res       = rResults[sid];
-    if (!res || !res.terms || !res.terms[term]) return null;
-    const termMarks = res.terms[term];
-    let total = 0, fullTotal = 0, gpas = [], hasF = false, count = 0;
-    rSubjects.forEach(subj => {
-        const obt = termMarks[subj.name];
-        if (obt !== undefined && obt !== null && obt !== '') {
+    const res = rResults[sid];
+    if (!res?.terms?.[term]) return null;
+    const tm = res.terms[term];
+    let total=0, fullTotal=0, gpas=[], hasF=false, count=0;
+    rSubjects.forEach(subj=>{
+        const obt = tm[subj.name];
+        if (obt!==undefined&&obt!==null&&obt!=='') {
             const g = gradeFromMarks(+obt, subj.fullMarks);
-            gpas.push(g.gpa);
-            if (g.grade === 'F') hasF = true;
-            total += +obt; fullTotal += subj.fullMarks; count++;
+            gpas.push(g.gpa); if(g.grade==='F') hasF=true;
+            total+=+obt; fullTotal+=subj.fullMarks; count++;
         }
     });
     if (!count) return null;
-    const gpa    = gpas.reduce((a,b)=>a+b,0) / gpas.length;
-    const grade  = hasF ? 'F' : gpaToGrade(gpa);
-    return { gpa, grade, total, fullTotal };
+    const gpa   = gpas.reduce((a,b)=>a+b,0)/gpas.length;
+    return { gpa, grade: hasF?'F':gpaToGrade(gpa), total, fullTotal };
 }
 
-function gpaToGrade(gpa) {
-    if (gpa >= 5.00) return 'A+';
-    if (gpa >= 4.75) return 'A';
-    if (gpa >= 4.50) return 'A-';
-    if (gpa >= 4.25) return 'B+';
-    if (gpa >= 4.00) return 'B';
-    if (gpa >= 3.75) return 'B-';
-    if (gpa >= 3.50) return 'C+';
-    if (gpa >= 3.25) return 'C';
-    if (gpa >= 3.00) return 'D';
-    return 'F';
-}
-
-
-// ── Yearly ranking: by avg GPA across all terms, tiebreak by avg total marks ──
-function calcYearRanks(clsStudents) {
-    const scores = clsStudents.map(s => {
-        const sid = studentId(s);
-        const { finalGPA, avgTotalMarks } = calcYearSummary(sid);
-        return { sid, finalGPA, avgTotalMarks };
-    }).filter(x => x.finalGPA !== null);
-
-    scores.sort((a, b) => b.finalGPA - a.finalGPA || b.avgTotalMarks - a.avgTotalMarks);
-
+function calcTermRanks(clsStudents, term) {
+    const scores = clsStudents.map(s=>{
+        const tc = calcTermSummary(studentId(s), term);
+        return { sid:studentId(s), gpa:tc?tc.gpa:-1, total:tc?tc.total:-1 };
+    }).filter(x=>x.gpa>=0);
+    scores.sort((a,b)=>b.gpa-a.gpa||b.total-a.total);
     const ranks = {};
-    scores.forEach((sc, i) => {
-        const prev = scores[i - 1];
-        if (i > 0 && sc.finalGPA === prev.finalGPA && sc.avgTotalMarks === prev.avgTotalMarks) {
-            ranks[sc.sid] = ranks[prev.sid];
-        } else {
-            ranks[sc.sid] = i + 1;
-        }
+    scores.forEach((sc,i)=>{
+        const prev = scores[i-1];
+        ranks[sc.sid] = (i>0&&sc.gpa===prev.gpa&&sc.total===prev.total) ? ranks[prev.sid] : i+1;
     });
     return ranks;
 }
 
-// ── Per-student yearly summary: finalGPA + avgTotalMarks ──
+// ── Year summary: ONLY computed when Term 3 has at least one mark ──
 function calcYearSummary(sid) {
-    const res = rResults[sid] || {};
-    // For each subject, average the obtained marks across all 3 terms that have data
-    const subjSums = rSubjects.map(subj => {
-        const termMarks = ['1','2','3'].map(t => {
+    const res = rResults[sid]||{};
+    const t3  = res.terms?.['3'];
+    const hasTerm3 = t3 && rSubjects.some(s => t3[s.name]!==undefined && t3[s.name]!==null && t3[s.name]!=='');
+    if (!hasTerm3) return { finalGPA:null, avgTotalMarks:0 };
+
+    const subjSums = rSubjects.map(subj=>{
+        const vals = ['1','2','3'].map(t=>{
             const m = res.terms?.[t]?.[subj.name];
-            return (m !== undefined && m !== null && m !== '') ? +m : null;
-        }).filter(m => m !== null);
-        const avg = termMarks.length ? termMarks.reduce((a,b)=>a+b,0) / termMarks.length : null;
-        const g   = avg !== null ? gradeFromMarks(avg, subj.fullMarks) : null;
-        return { avg, gpa: g?.gpa ?? null };
-    }).filter(x => x.gpa !== null);
+            return (m!==undefined&&m!==null&&m!=='') ? +m : null;
+        }).filter(m=>m!==null);
+        const avg = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+        const g   = avg!==null ? gradeFromMarks(avg, subj.fullMarks) : null;
+        return { avg, gpa:g?.gpa??null };
+    }).filter(x=>x.gpa!==null);
 
-    if (!subjSums.length) return { finalGPA: null, avgTotalMarks: 0 };
-
-    const finalGPA      = subjSums.reduce((a,x)=>a+x.gpa,0) / subjSums.length;
-    const avgTotalMarks = subjSums.reduce((a,x)=>a+x.avg,0); // sum of per-subject averages
+    if (!subjSums.length) return { finalGPA:null, avgTotalMarks:0 };
+    const finalGPA      = subjSums.reduce((a,x)=>a+x.gpa,0)/subjSums.length;
+    const avgTotalMarks = subjSums.reduce((a,x)=>a+x.avg,0);
     return { finalGPA, avgTotalMarks };
 }
 
-// ── Firebase ──
-async function saveResultConfig() {
-    try { await dbWrite('school/results/'+classToKey(rActiveClass)+'/subjects', rSubjects); }
-    catch(e) { toast('Save error: '+e.message,'error'); }
-}
-let _saveRTimer = null;
-function saveResultData() {
-    clearTimeout(_saveRTimer);
-    _saveRTimer = setTimeout(async () => {
-        try { await dbWrite('school/results/'+classToKey(rActiveClass)+'/results', rResults); }
-        catch(e) { toast('Save error: '+e.message,'error'); }
-    }, 800);
-}
-
-
-// ── Delete all results for a class (admin only) ──
-async function deleteClassResults(cls) {
-    if (!isAdmin()) { toast('Admin access required.', 'error'); return; }
-    if (!confirm(`Delete ALL results for "${cls}"?\n\nThis includes subjects, all marks, and attendance.\nThis cannot be undone.`)) return;
-    try {
-        setStatus('syncing', 'Deleting…');
-        await dbWrite('school/results/'+classToKey(cls), null);
-        setStatus('connected', 'Ready');
-        toast(`All results for "${cls}" deleted.`, 'success');
-        // If currently viewing this class, reset and go back
-        if (rActiveClass === cls) {
-            rSubjects = []; rResults = {};
-            rActiveClass = null; rActiveStudent = null;
-        }
-        renderResultClassPicker();
-    } catch(e) {
-        setStatus('connected', 'Ready');
-        toast('Delete failed: '+e.message, 'error');
-    }
+function calcYearRanks(clsStudents) {
+    const scores = clsStudents.map(s=>{
+        const sid = studentId(s);
+        const { finalGPA, avgTotalMarks } = calcYearSummary(sid);
+        return { sid, finalGPA, avgTotalMarks };
+    }).filter(x=>x.finalGPA!==null);
+    scores.sort((a,b)=>b.finalGPA-a.finalGPA||b.avgTotalMarks-a.avgTotalMarks);
+    const ranks={};
+    scores.forEach((sc,i)=>{
+        const prev=scores[i-1];
+        ranks[sc.sid]=(i>0&&sc.finalGPA===prev.finalGPA&&sc.avgTotalMarks===prev.avgTotalMarks)?ranks[prev.sid]:i+1;
+    });
+    return ranks;
 }
 
-function toggleRSection(id) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const isHidden = el.style.display === 'none';
-    el.style.display = isHidden ? '' : 'none';
-    const arrow = el.previousElementSibling?.querySelector('.arrow');
-    if (arrow) arrow.style.transform = isHidden ? '' : 'rotate(-90deg)';
+function calcAttendPct(att) {
+    if (!att||!att.days||att.days<=0) return '—';
+    return ((att.present/att.days)*100).toFixed(1)+'%';
 }
 
-// ── 4. Report Card ──
-function openReportCard(sid) {
-    const s = students.find(st => studentId(st) === sid && st.class === rActiveClass);
-    if (!s) return;
-    const res = rResults[sid] || {};
-    const clsStudents = students.filter(st => st.class === rActiveClass);
+// ══════════════════════════════════════
+//  8. TABULATION PDF
+// ══════════════════════════════════════
 
-    // Subject averages
-    const subjAvg = rSubjects.map(subj => {
-        const marks = ['1','2','3'].map(t => {
-            const tm = res.terms?.[t]?.[subj.name];
-            return (tm !== undefined && tm !== null && tm !== '') ? +tm : null;
+function _pdfGradeChip(doc, cx, cy, grade) {
+    const map = {
+        'A+':[[209,250,229],[6,95,70]],   'A': [[220,252,231],[22,101,52]],
+        'A-':[[209,250,229],[21,128,61]],  'B+':[[219,234,254],[30,64,175]],
+        'B': [[239,246,255],[29,78,216]],  'B-':[[240,249,255],[3,105,161]],
+        'C+':[[254,249,195],[133,77,14]],  'C': [[254,252,232],[161,98,7]],
+        'D': [[255,237,213],[194,65,12]],  'F': [[254,226,226],[185,28,28]],
+    };
+    const [bg, fg] = map[grade] || [[243,244,246],[107,114,128]];
+    doc.setFillColor(...bg);
+    doc.roundedRect(cx-9, cy-3, 18, 6, 3, 3, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+    doc.setTextColor(...fg);
+    doc.text(grade, cx, cy+0.8, {align:'center'});
+    doc.setTextColor(26,26,46); doc.setFont('helvetica','normal');
+}
+
+async function downloadTabulationPDF(term) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+
+    const W=297, H=210, M=10, CW=277;
+    const clsStudents = students.filter(s => s.class === rActiveClass);
+    if (!clsStudents.length) { toast('No students.','error'); return; }
+
+    const isFinal = term === 'final';
+    const tLabel  = isFinal ? 'Annual Combined' : TERM_NAMES[term];
+
+    const NAVY=[26,26,46], GREEN=[45,106,79], WHITE=[255,255,255], MUTED=[140,134,124];
+    const ROW1=[255,253,247], ROW2=[244,239,230];
+
+    // ── Column widths ──────────────────────────────────────
+    const NAME_W  = 38;
+    const SUM_COLS = [['Total',16],['GPA',14],['Grade',14],['Rank',12]]; // 56mm
+    const SUM_W   = 56;
+    const n       = rSubjects.length;
+    const SW      = Math.max(13, Math.min(26, Math.floor((CW-NAME_W-SUM_W)/n)));
+    const HH = 12; // header height
+    const RH = 14; // data row height
+
+    let y = M;
+
+    function drawHeader() {
+        y = M;
+        // ── Title ──────────────────────────────────────────────
+        doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(...NAVY);
+        doc.text(`${rActiveClass}  —  Tabulation Sheet  (${tLabel})`, W/2, y+6, {align:'center'});
+        y += 13;
+
+        // ── Header row ─────────────────────────────────────────
+        // Name
+        doc.setFillColor(...NAVY); doc.rect(M,y,NAME_W,HH,'F');
+
+        // Subject columns
+        let ax = M+NAME_W;
+        rSubjects.forEach(subj => {
+            doc.setFillColor(...NAVY); doc.rect(ax,y,SW,HH,'F');
+            ax += SW;
         });
-        const valid = marks.filter(m => m !== null);
-        const avg   = valid.length ? valid.reduce((a,b)=>a+b,0)/valid.length : null;
-        const g     = avg !== null ? gradeFromMarks(avg, subj.fullMarks) : null;
-        return { name: subj.name, fullMarks: subj.fullMarks, marks, avg, grade: g?.grade||'—', gpa: g?.gpa??null };
+        // Summary columns
+        SUM_COLS.forEach(([,w]) => {
+            doc.setFillColor(...(isFinal?GREEN:NAVY)); doc.rect(ax,y,w,HH,'F');
+            ax += w;
+        });
+
+        // Header texts (all after rects to avoid overwrite)
+        doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...WHITE);
+        doc.text('Student Name', M+3, y+HH/2+1);
+
+        ax = M+NAME_W;
+        rSubjects.forEach(subj => {
+            doc.setFontSize(6.5);
+            let nm = subj.name;
+            while(doc.getTextWidth(nm) > SW-2 && nm.length > 2) nm = nm.slice(0,-1);
+            doc.text(nm, ax+(SW-doc.getTextWidth(nm))/2, y+4.5);
+            doc.setFontSize(6);
+            const fm = `(${subj.fullMarks})`;
+            doc.text(fm, ax+(SW-doc.getTextWidth(fm))/2, y+9.5);
+            ax += SW;
+        });
+        SUM_COLS.forEach(([h,w]) => {
+            doc.setFontSize(7.5);
+            doc.text(h, ax+(w-doc.getTextWidth(h))/2, y+HH/2+1);
+            ax += w;
+        });
+        y += HH;
+    }
+
+    drawHeader();
+
+    // ── Ranks ──────────────────────────────────────────────
+    const allRanks = isFinal ? calcYearRanks(clsStudents) : calcTermRanks(clsStudents, term);
+
+    // ── Data rows ──────────────────────────────────────────
+    clsStudents.forEach((s, ri) => {
+        // Check for page break (H is 210mm, leave margin at bottom)
+        if (y + RH > H - M) {
+            doc.addPage();
+            drawHeader();
+        }
+
+        const sid = studentId(s);
+        const res = rResults[sid] || {};
+        const bg  = ri%2===0 ? ROW1 : ROW2;
+        let ax = M;
+
+        // Pass 1 — all background rects
+        doc.setFillColor(...bg);
+        doc.rect(ax,y,NAME_W,RH,'F'); ax+=NAME_W;
+        rSubjects.forEach(() => { doc.rect(ax,y,SW,RH,'F'); ax+=SW; });
+        SUM_COLS.forEach(([,w]) => { doc.rect(ax,y,w,RH,'F'); ax+=w; });
+
+        // Pass 2 — all texts
+        doc.setTextColor(...NAVY);
+        doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+        let nm = s.name;
+        while(doc.getTextWidth(nm) > NAME_W-4 && nm.length > 2) nm = nm.slice(0,-1);
+        doc.text(nm, M+3, y+RH/2+0.8);
+
+        // Subject cells
+        ax = M+NAME_W;
+        let totObt=0, gpas=[], hasF=false;
+
+        rSubjects.forEach(subj => {
+            let obt=null, g=null;
+            if (isFinal) {
+                const ms = ['1','2','3'].map(t=>{
+                    const v=res.terms?.[t]?.[subj.name];
+                    return (v!==undefined&&v!==null&&v!=='') ? +v : null;
+                }).filter(v=>v!==null);
+                if (ms.length) {
+                    obt = ms.reduce((a,b)=>a+b,0)/ms.length;
+                    g   = gradeFromMarks(obt, subj.fullMarks);
+                }
+            } else {
+                const v = res.terms?.[term]?.[subj.name];
+                if (v!==undefined&&v!==null&&v!=='') {
+                    obt=+v; g=gradeFromMarks(obt,subj.fullMarks);
+                }
+            }
+
+            if (obt!==null && g) {
+                totObt += obt;
+                gpas.push(g.gpa);
+                if (g.grade==='F') hasF=true;
+                doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...NAVY);
+                const ms = isFinal ? obt.toFixed(1) : String(obt);
+                doc.text(ms, ax+(SW-doc.getTextWidth(ms))/2, y+5.5);
+                doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(70,70,110);
+                const chip = `(${g.grade}, ${g.gpa.toFixed(2)})`;
+                doc.text(chip, ax+(SW-doc.getTextWidth(chip))/2, y+10.5);
+            } else {
+                doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...MUTED);
+                doc.text('—', ax+(SW-doc.getTextWidth('—'))/2, y+RH/2+0.8);
+            }
+            doc.setDrawColor(215,210,200); doc.setLineWidth(0.2);
+            doc.rect(ax,y,SW,RH,'S');
+            ax += SW;
+        });
+
+        // Summary values
+        const tGPA   = gpas.length ? gpas.reduce((a,b)=>a+b,0)/gpas.length : null;
+        const tGrade = tGPA!==null ? (hasF?'F':gpaToGrade(tGPA)) : '—';
+        const tRank  = allRanks[sid] || '—';
+        const sVals  = [
+            gpas.length ? totObt.toFixed(1) : '—',
+            tGPA!==null ? tGPA.toFixed(2)   : '—',
+            tGrade,
+            String(tRank),
+        ];
+        SUM_COLS.forEach(([,w],si) => {
+            doc.setFont('helvetica', si===2?'bold':'normal');
+            doc.setFontSize(8.5); doc.setTextColor(...NAVY);
+            const sv = sVals[si];
+            doc.text(sv, ax+(w-doc.getTextWidth(sv))/2, y+RH/2+0.8);
+            doc.setDrawColor(215,210,200); doc.setLineWidth(0.2);
+            doc.rect(ax,y,w,RH,'S');
+            ax += w;
+        });
+        doc.setDrawColor(215,210,200); doc.setLineWidth(0.2);
+        doc.rect(M,y,NAME_W,RH,'S');
+        y += RH;
     });
 
-    // Final avg GPA + avg total marks (tiebreaker)
-    const { finalGPA, avgTotalMarks } = calcYearSummary(sid);
-    const finalGrade    = finalGPA !== null ? gpaToGrade(finalGPA) : '—';
-    const finalGPAStr   = finalGPA !== null ? finalGPA.toFixed(2) : '—';
-    const avgTotalStr   = avgTotalMarks > 0 ? avgTotalMarks.toFixed(1) : '—';
-
-    // Year rank: by finalGPA then avgTotalMarks tiebreaker
-    const yearRanks  = calcYearRanks(clsStudents);
-    const finalRank  = yearRanks[sid] || '—';
-
-    const avatar = s.photo || null;
-    const att    = res.attendance || {};
-    const pct    = calcAttendPct(att);
-    const sec = document.getElementById('resultSection');
-    sec.innerHTML = `
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
-            <button class="back-btn" onclick="openStudentResult('${sid}')">&#8592; Marks Entry</button>
-            <button class="btn btn-primary btn-sm" onclick="downloadReportCardPDF('${sid}')" style="margin-left:auto;">⬇ Download PDF</button>
-        </div>
-        <div id="reportCardPreview">${buildReportCardHTML(s, res, subjAvg, finalGPA, finalGPAStr, finalGrade, finalRank, avgTotalStr, att, pct, false)}</div>`;
+    doc.save(`${rActiveClass.replace(/\s+/g,'_')}_Tabulation_${tLabel.replace(/\s+/g,'_')}.pdf`);
 }
 
-function buildReportCardHTML(s, res, subjAvg, finalGPA, finalGPAStr, finalGrade, finalRank, avgTotalStr, att, pct, forPDF) {
-    const clsStudents = students.filter(st => st.class === rActiveClass);
+// ══════════════════════════════════════
+//  9. BULK REPORT CARDS DOWNLOAD
+// ══════════════════════════════════════
+async function downloadAllReportCards(term) {
+    const cls = students.filter(s=>s.class===rActiveClass)
+        .sort((a,b)=>(+a.roll||999)-(+b.roll||999)||a.name.localeCompare(b.name));
+    if (!cls.length) { toast('No students.','error'); return; }
+    const label = term==='final' ? 'Annual' : TERM_NAMES[term];
+    toast(`Generating ${cls.length} ${label} report cards…`,'');
+    const { jsPDF } = window.jspdf;
+    const doc   = new jsPDF({ format:'a4', unit:'mm' });
+    const ranks = term==='final'
+        ? calcYearRanks(cls)
+        : calcTermRanks(cls, term);
+    for (let i=0;i<cls.length;i++) {
+        if (i>0) doc.addPage();
+        await _drawReportCard(doc, cls[i], studentId(cls[i]), ranks, term);
+    }
+    const fname = `${rActiveClass.replace(/ /g,'_')}_${label.replace(/ /g,'_')}_Report_Cards.pdf`;
+    doc.save(fname);
+    toast('All report cards downloaded ✓','success');
+}
 
-    const termRows = ['1','2','3'].map(t => {
-        const tc = calcTermSummary(studentId(s), t);
-        const allRanks = calcTermRanks(clsStudents, t);
-        const rank = allRanks[studentId(s)] || '—';
-        return `<tr>
-            <td>${TERM_NAMES[t]}</td>
-            <td class="num">${tc ? tc.total+'/'+tc.fullTotal : '—'}</td>
-            <td class="num">${tc ? tc.gpa.toFixed(2) : '—'}</td>
-            <td><span class="r-grade-chip r-grade-${(tc?.grade||'x').replace('+','p').replace('-','m')}">${tc?.grade||'—'}</span></td>
-            <td class="num">${rank}</td>
-        </tr>`;
-    }).join('');
+// ══════════════════════════════════════
+//  10. REPORT CARD PREVIEW
+// ══════════════════════════════════════
 
-    const subjRows = subjAvg.map(subj => `<tr>
-        <td>${subj.name}</td>
-        <td class="num">${subj.marks[0]??'—'}</td>
-        <td class="num">${subj.marks[1]??'—'}</td>
-        <td class="num">${subj.marks[2]??'—'}</td>
-        <td class="num">${subj.avg !== null ? subj.avg.toFixed(1) : '—'}</td>
-        <td><span class="r-grade-chip r-grade-${subj.grade.replace('+','p').replace('-','m')}">${subj.grade}</span></td>
-    </tr>`).join('');
+function loadReportCard(sid, term) {
+    const s = students.find(st=>studentId(st)===sid&&st.class===rActiveClass);
+    if (!s) return;
+    const res   = rResults[sid] || {};
+    const clsS  = students.filter(st=>st.class===rActiveClass);
+    const ranks = term==='final'
+        ? calcYearRanks(clsS)
+        : calcTermRanks(clsS, term);
+    const rank  = ranks[sid] || '—';
+    const label = term==='final' ? 'Annual Result' : TERM_NAMES[term];
+    const area  = document.getElementById('rDynamicArea');
 
-    const photoHTML = s.photo ? `<img src="${s.photo}" class="rc-student-photo" alt="${s.name}">` : `<div class="rc-student-photo rc-no-photo" style="display:flex;align-items:center;justify-content:center;font-size:2rem;">👤</div>`;
+    area.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <button class="back-btn" onclick="openReportCard('${sid}')">← Change Term</button>
+            <span style="font-family:'DM Serif Display',serif;">${label} Report Card</span>
+            <div style="margin-left:auto;display:flex;gap:8px;">
+                <button class="btn btn-primary btn-sm"
+                    onclick="downloadReportCardPDF('${sid}','${term}')">⬇ Download PDF</button>
+            </div>
+        </div>
+        <div id="rcPreview">${_buildRCHtml(s, res, term, rank)}</div>`;
+}
+
+function showAllReportCardsOptions() {
+    const area = document.getElementById('rDynamicArea');
+    area.innerHTML = `
+        <div class="r-card">
+            <div class="r-card-body" style="padding:20px;">
+                <h4 style="font-family:'DM Serif Display',serif;margin-bottom:8px;">⬇ Download All Report Cards</h4>
+                <p style="color:var(--muted);font-size:.88rem;margin-bottom:16px;">
+                    Select which term to generate for all ${rActiveClass} students:
+                </p>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="btn btn-outline" onclick="downloadAllReportCards('1')">📝 1st Term</button>
+                    <button class="btn btn-outline" onclick="downloadAllReportCards('2')">📝 2nd Term</button>
+                    <button class="btn btn-primary" onclick="downloadAllReportCards('final')">🏆 Annual Result</button>
+                </div>
+            </div>
+        </div>`;
+}
+
+function openReportCard(sid) {
+    const s = students.find(st=>studentId(st)===sid&&st.class===rActiveClass);
+    if (!s) return;
+    rViewMode = 'report';
+    const area = document.getElementById('rDynamicArea');
+    area.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+            <button class="back-btn" onclick="showStudentList()">← All Students</button>
+        </div>
+        <div class="r-card">
+            <div class="r-card-body" style="text-align:center;padding:24px 16px;">
+                <div style="font-size:1.3rem;font-family:'DM Serif Display',serif;margin-bottom:8px;">
+                    ${_h(s.name)}
+                </div>
+                <p style="color:var(--muted);font-size:.88rem;margin-bottom:20px;">
+                    Which term report card do you want to generate?
+                </p>
+                <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+                    <button class="btn btn-outline" style="min-width:120px;flex:1;max-width:160px;"
+                        onclick="loadReportCard('${sid}','1')">
+                        📝 1st Term
+                    </button>
+                    <button class="btn btn-outline" style="min-width:120px;flex:1;max-width:160px;"
+                        onclick="loadReportCard('${sid}','2')">
+                        📝 2nd Term
+                    </button>
+                    <button class="btn btn-primary" style="min-width:120px;flex:1;max-width:160px;"
+                        onclick="loadReportCard('${sid}','final')">
+                        🏆 Annual Result
+                    </button>
+                </div>
+            </div>
+        </div>`;
+}
+
+function _buildRCHtml(s, res, term, yearRank) {
+    const sid     = studentId(s);
+    const isFinal = term === 'final';
+    const label   = isFinal ? 'Annual Result' : TERM_NAMES[term];
+
+    // ── Student info ──
+    const photoHtml = s.photo
+        ? `<img src="${s.photo}" class="rc-student-photo" alt="${_h(s.name)}">`
+        : `<div class="rc-student-photo rc-no-photo" style="display:flex;align-items:center;justify-content:center;font-size:2rem;">👤</div>`;
+
+    // ══ MARKS SECTION ══
+    let marksHtml = '';
+
+    if (!isFinal) {
+        // ── Single term: Subject | Full Marks | Marks | Grade | GPA ──
+        const tm = res.terms?.[term] || {};
+        let totObt=0, totFull=0, gpas=[], hasF=false;
+
+        const rows = rSubjects.map(subj => {
+            const m   = tm[subj.name];
+            const obt = (m!==undefined&&m!==null&&m!=='') ? +m : null;
+            const g   = obt!==null ? gradeFromMarks(obt, subj.fullMarks) : null;
+            if (g) { gpas.push(g.gpa); if(g.grade==='F')hasF=true; totObt+=obt; totFull+=subj.fullMarks; }
+            return `<tr>
+                <td class="rc-subj-td">
+                    <strong>${_h(subj.name)}</strong>
+                    <small style="display:block;color:var(--muted);">(${subj.fullMarks} marks)</small>
+                </td>
+                <td style="text-align:center;">${obt!==null?obt:'—'}</td>
+                <td style="text-align:center;">${g?gradeChip(g.grade):'—'}</td>
+                <td style="text-align:center;">${g?g.gpa.toFixed(2):'—'}</td>
+            </tr>`;
+        }).join('');
+
+        const tGPA   = gpas.length ? gpas.reduce((a,b)=>a+b,0)/gpas.length : null;
+        const tGrade = hasF?'F':(tGPA!==null?gpaToGrade(tGPA):'—');
+
+        marksHtml = `
+        <div class="rc-section-title" style="margin-bottom:8px;">${label} — Academic Result</div>
+        <table class="rc-marks-table">
+            <thead>
+                <tr class="rc-term-th" style="background:var(--ink);color:var(--paper);">
+                    <th class="rc-subj-th" style="text-align:left;">Subject (Full Marks)</th>
+                    <th>Marks Obtained</th>
+                    <th>Grade</th>
+                    <th>GPA</th>
+                </tr>
+            </thead>
+            <tbody>${rows||`<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--muted);">No marks entered yet</td></tr>`}</tbody>
+            ${gpas.length?`
+            <tfoot>
+                <tr style="background:var(--ink);color:var(--paper);">
+                    <td class="rc-subj-td" style="font-weight:700;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;">Total</td>
+                    <td style="text-align:center;font-weight:700;">${totObt} / ${totFull}</td>
+                    <td colspan="2"></td>
+                </tr>
+            </tfoot>`:''}
+        </table>
+        ${gpas.length?`
+        <div class="rc-final-row" style="margin-top:10px;">
+            <div class="rc-final-chip"><span>${label} GPA</span><strong>${tGPA!==null?tGPA.toFixed(2):'—'}</strong></div>
+            <div class="rc-final-chip"><span>Grade</span><strong>${tGrade}</strong></div>
+            <div class="rc-final-chip"><span>Class Rank</span><strong>${yearRank}</strong></div>
+        </div>`:''}`;
+
+    } else {
+        // ── Final/Annual: Subject | Full | T1 | T2 | Final | Average | Grade | GPA ──
+        const { finalGPA } = calcYearSummary(sid);
+        const finalGrade  = finalGPA!==null ? gpaToGrade(finalGPA) : '—';
+        const finalGPAStr = finalGPA!==null ? finalGPA.toFixed(2) : '—';
+
+        const rows = rSubjects.map(subj => {
+            const getM = t => { const m=res.terms?.[t]?.[subj.name]; return(m!==undefined&&m!==null&&m!=='') ? +m : null; };
+            const m1=getM('1'), m2=getM('2'), m3=getM('3');
+            const vals=[m1,m2,m3].filter(m=>m!==null);
+            const avg = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+            const gAvg = avg!==null ? gradeFromMarks(avg, subj.fullMarks) : null;
+            return `<tr>
+                <td class="rc-subj-td">
+                    <strong>${_h(subj.name)}</strong>
+                    <small style="display:block;color:var(--muted);">(${subj.fullMarks})</small>
+                </td>
+                <td style="text-align:center;">${m1!==null?m1:'—'}</td>
+                <td style="text-align:center;">${m2!==null?m2:'—'}</td>
+                <td style="text-align:center;">${m3!==null?m3:'—'}</td>
+                <td style="text-align:center;font-weight:600;">${avg!==null?avg.toFixed(1):'—'}</td>
+                <td style="text-align:center;">${gAvg?gradeChip(gAvg.grade):'—'}</td>
+                <td style="text-align:center;">${gAvg?gAvg.gpa.toFixed(2):'—'}</td>
+            </tr>`;
+        }).join('');
+
+        marksHtml = `
+        <div class="rc-section-title" style="margin-bottom:8px;">Annual Academic Result</div>
+        <div style="overflow-x:auto;">
+        <table class="rc-marks-table">
+            <thead>
+                <tr>
+                    <th class="rc-subj-th" rowspan="2" style="vertical-align:middle;background:var(--ink);color:var(--paper);">
+                        Subject<br><small style="font-weight:400;font-size:.7rem;">(Full Marks)</small>
+                    </th>
+                    <th colspan="3" class="rc-term-th">Term Marks</th>
+                    <th colspan="3" class="rc-avg-th">Annual Result</th>
+                </tr>
+                <tr class="rc-sub-hdr">
+                    <th>1st Term</th><th>2nd Term</th><th>Final Exam</th>
+                    <th>Average</th><th>Grade</th><th>GPA</th>
+                </tr>
+            </thead>
+            <tbody>${rows||`<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--muted);">No marks entered</td></tr>`}</tbody>
+        </table>
+        </div>
+        <div class="rc-final-row" style="margin-top:10px;">
+            <div class="rc-final-chip"><span>Annual GPA</span><strong>${finalGPAStr}</strong></div>
+            <div class="rc-final-chip"><span>Final Grade</span><strong>${finalGrade}</strong></div>
+            <div class="rc-final-chip"><span>Year Rank</span><strong>${yearRank}</strong></div>
+        </div>`;
+    }
+
+    // ══ ATTENDANCE ══
+    let attHtml = '';
+    if (!isFinal) {
+        const att = _getTermAtt(res, term);
+        attHtml = `
+        <div class="rc-section-title" style="margin-bottom:8px;">Attendance — ${label}</div>
+        <table class="rc-info-table" style="width:100%;">
+            <tr><td style="color:var(--muted);">Total School Days</td><td><strong>${att?.days||'—'}</strong></td></tr>
+            <tr><td style="color:var(--muted);">Days Present</td><td><strong>${att?.present||'—'}</strong></td></tr>
+            <tr><td style="color:var(--muted);">Attendance</td><td><strong>${calcAttendPct(att)}</strong></td></tr>
+        </table>`;
+    } else {
+        const attRows = ['1','2','3'].map(t => {
+            const att = _getTermAtt(res, t);
+            return `<tr>
+                <td class="att-term-cell">${TERM_NAMES[t]}</td>
+                <td>${att?.days||'—'}</td>
+                <td>${att?.present||'—'}</td>
+                <td>${calcAttendPct(att)}</td>
+            </tr>`;
+        }).join('');
+        attHtml = `
+        <div class="rc-section-title" style="margin-bottom:8px;">Attendance Summary</div>
+        <table class="rc-att-table">
+            <thead><tr>
+                <th style="text-align:left;">Term</th>
+                <th>Total Days</th><th>Present</th><th>Attendance</th>
+            </tr></thead>
+            <tbody>${attRows}</tbody>
+        </table>`;
+    }
 
     return `
-    <div class="report-card" id="rcContent">
-        <!-- Header -->
+    <div class="report-card">
         <div class="rc-header">
-            <img src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxISEhUSEhIVFRUXFRcYFRcVFRUXGBcVFxcWFxcYFRcYHSggGBolHRUXITEhJSkrLi4uFx8zODMtNygtLisBCgoKDg0OGxAQGy0lICUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLf/AABEIAioCKgMBIgACEQEDEQH/xAAcAAEAAgIDAQAAAAAAAAAAAAAABgcEBQECAwj/xABVEAABAwIDAwcHBwYMBQQCAwEBAAIDBBEFEiEGMVEHEyJBYXGBFDJCcpGhsSNSYoKSwdEzQ6KywtIIFRYkNURTVHOTs+E0Y3SD8Bclo/HD02SU4kX/xAAZAQEAAwEBAAAAAAAAAAAAAAAAAQIDBAX/xAAsEQACAQMDAwMDBQEBAAAAAAAAAQIDERIhMVEEE0EiMmEUQnEjUoGRoTND/9oADAMBAAIRAxEAPwC8UREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEXF1xmQHZFoMY2zw+l0nq4WH5ucOd9ltyofiXLfhzNImTzHi1jWN9ryD7lNmLln3XConEeXiY35ijjbwMsjnHxa0D4rQ1fLRij/ADXU8fqxX/XcVOJF0fSd0zL5afykYzJqKuX6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vtMt7wVdeI7LNduCiGMbBRvvmjB7ba+0ao8XuhYjb9tMIq9KygLHHe9jQbcTmYWv9y4OyuBVP/D1/MuO5rpG7+GWWzr9xWJiHJ0BfIXt7PO+Oqj1XsZUN80tcO27fxCjBfa7EakmqeSKc609VDIPpBzfe3MPgtPV8mGJN/NRyepK39qy0bcNrIT0BI3tjeR+qVmQ7T4pFuqakeuXP/XBVrT5Q0OH7HYnH/VJx/hjN+oSjKDFY90dczuE4+CzYuUrE2aGoDvXiiP7Ky4+VjER1wH/ALX4FP1OERoajn8W+diHtqlw6ixWTeyuf3ioPxW8/wDVvEOEH2HfvLo/lYxHqMA/7d/i5Lz4Q05NK3Y/E5NDSVB9dpH65C2FJyY4k/8AMsj9eRg/VuuJeUzE36Coa31Iogf1VhT7WYnLvqqg+rdv6gCfqfA0JNT8kNTvmqoIx15Q9594aPeskbI4JT38pxASEb2tkYDfhlju5QGSmqptX84/tke4/rFe0Gzcx35W91z9yjGT3kT+ETdm12C0mlJQukcNz3NA19eUuf7lq8W5VK6XSIR07erKM7vBztPcsGl2Qv5xc73Lf4dsjbdHbw19pTGC+RqQeoNXVuzSukkPGRxsO4HQeAWfRbME+eSext/irPw/ZAneFJ8O2RaN4U5W2JsVnhOy3zWW8PiVM8I2Q3XCnlHgjG9S2kVMG7gqkmhw3Z5jOpbyKjaOpZIC5QHnzI4JzQ4L0RAefNjguebC7ogOmQJkC7ogOuQJlXZEBxlXKIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCWREB1LV5PpmnqXuiA1k+Esd1LV1OzbD1KTWSyAgdTsi09S1c+xvYrPLAupiHBAVDPsX9H3LBl2HH9mPsj8FdLqZvBdTRt4JcWKTOw4/sx9kfgg2JH9mPsj8FdXkLeCeQt4KbixTjNjT833LKi2NPAq2hRN4LsKZvBQCsYNjOxbOm2PaOpT8QjguQwICK02y7B1LawYKxvUtvZLIDHjpGjqXuGBdkQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQH//Z" class="rc-logo" alt="School Logo">
+            <img src="${_logo()}" class="rc-logo" alt="Logo">
             <div class="rc-school-info">
                 <div class="rc-school-name">AL RAWA English School</div>
                 <div class="rc-school-sub">ESTD: 2022 &nbsp;·&nbsp; Read in the name of your Lord</div>
-                <div class="rc-report-title">STUDENT REPORT CARD</div>
+                <div class="rc-report-title">${(isFinal?'ANNUAL':'TERM')} REPORT CARD — ${label.toUpperCase()}</div>
             </div>
         </div>
         <div class="rc-divider"></div>
 
-        <!-- Student Info -->
         <div class="rc-student-row">
-            ${photoHTML}
+            ${photoHtml}
             <table class="rc-info-table">
-                <tr><td>Student Name</td><td><strong>${s.name}</strong></td></tr>
-                <tr><td>Class</td><td><strong>${rActiveClass}</strong></td></tr>
-                ${s.roll ? `<tr><td>Roll Number</td><td><strong>${s.roll}</strong></td></tr>` : ''}
-                ${s.fatherName ? `<tr><td>Father's Name</td><td>${s.fatherName}</td></tr>` : ''}
+                <tr><td>Student Name</td><td><strong>${_h(s.name)}</strong></td></tr>
+                <tr><td>Class</td><td><strong>${_h(rActiveClass)}</strong></td></tr>
+                ${s.roll       ? `<tr><td>Roll No.</td><td><strong>${s.roll}</strong></td></tr>` : ''}
+                ${s.fatherName ? `<tr><td>Father's Name</td><td>${_h(s.fatherName)}</td></tr>` : ''}
+                ${s.motherName ? `<tr><td>Mother's Name</td><td>${_h(s.motherName)}</td></tr>` : ''}
             </table>
         </div>
         <div class="rc-divider"></div>
 
-        <!-- Subject Marks -->
-        <div class="rc-section-title">📚 Academic Result</div>
-        <div class="book-table-wrap rc-table-wrap">
-            <table class="book-table">
-                <thead><tr>
-                    <th>Subject</th>
-                    <th class="num">1st Term</th>
-                    <th class="num">2nd Term</th>
-                    <th class="num">Final</th>
-                    <th class="num">Average</th>
-                    <th>Grade</th>
-                </tr></thead>
-                <tbody>${subjRows || '<tr><td colspan="6" style="text-align:center;padding:12px;color:var(--muted);">No marks entered yet</td></tr>'}</tbody>
-            </table>
-        </div>
+        ${marksHtml}
 
-        <!-- Term Summary -->
-        <div class="rc-section-title" style="margin-top:16px;">📋 Term Summary</div>
-        <div class="book-table-wrap rc-table-wrap">
-            <table class="book-table">
-                <thead><tr>
-                    <th>Term</th><th class="num">Total Marks</th>
-                    <th class="num">GPA</th><th>Grade</th><th class="num">Rank</th>
-                </tr></thead>
-                <tbody>${termRows}</tbody>
-            </table>
-        </div>
-
-        <!-- Final Result -->
-        <div class="rc-final-row">
-            <div class="rc-final-chip">
-                <span>Final GPA</span>
-                <strong>${finalGPAStr}</strong>
-            </div>
-            <div class="rc-final-chip">
-                <span>Final Grade</span>
-                <strong class="r-grade-chip r-grade-${finalGrade.replace('+','p').replace('-','m')}">${finalGrade}</strong>
-            </div>
-            <div class="rc-final-chip">
-                <span>Avg Total Marks</span>
-                <strong>${avgTotalStr}</strong>
-            </div>
-            <div class="rc-final-chip">
-                <span>Year Rank</span>
-                <strong>${finalRank}</strong>
-            </div>
-        </div>
-
-        <!-- Attendance -->
         <div class="rc-divider"></div>
-        <div class="rc-section-title">📅 Attendance</div>
-        <table class="rc-info-table">
-            <tr><td>Total School Days</td><td><strong>${att.days||'—'}</strong></td></tr>
-            <tr><td>Days Present</td><td><strong>${att.present||'—'}</strong></td></tr>
-            <tr><td>Attendance</td><td><strong>${pct}</strong></td></tr>
-        </table>
+        <div class="rc-two-col">
+            <div>${attHtml}</div>
+            <div>
+                <div class="rc-section-title" style="margin-bottom:8px;">Teacher's Comment</div>
+                <div class="rc-remarks-box">
+                    ${_h(res.comment||'')||'<em style="color:var(--muted);">No comment added.</em>'}
+                </div>
+            </div>
+        </div>
+
+        <div class="rc-sig-row">
+            <div class="rc-sig"><div class="rc-sig-line"></div><div class="rc-sig-label">Class Teacher</div></div>
+            <div class="rc-sig"><div class="rc-sig-line"></div><div class="rc-sig-label">Co-ordinator</div></div>
+            <div class="rc-sig"><div class="rc-sig-line"></div><div class="rc-sig-label">Principal</div></div>
+        </div>
     </div>`;
 }
 
-// ── PDF Export ──
-async function downloadReportCardPDF(sid) {
-    const s = students.find(st => studentId(st) === sid && st.class === rActiveClass);
+
+// ══════════════════════════════════════
+//  11. REPORT CARD PDF (single + bulk helper)
+// ══════════════════════════════════════
+async function downloadReportCardPDF(sid, term) {
+    const s = students.find(st=>studentId(st)===sid&&st.class===rActiveClass);
     if (!s) return;
-    const res = rResults[sid] || {};
-    const clsStudents = students.filter(st => st.class === rActiveClass);
-    const subjAvg = rSubjects.map(subj => {
-        const marks = ['1','2','3'].map(t => { const m=res.terms?.[t]?.[subj.name]; return (m!==undefined&&m!==null&&m!=='') ? +m : null; });
-        const valid = marks.filter(m=>m!==null);
-        const avg   = valid.length ? valid.reduce((a,b)=>a+b,0)/valid.length : null;
-        const g     = avg!==null ? gradeFromMarks(avg,subj.fullMarks) : null;
-        return { name:subj.name, fullMarks:subj.fullMarks, marks, avg, grade:g?.grade||'—', gpa:g?.gpa??null };
-    });
-    const { finalGPA, avgTotalMarks } = calcYearSummary(sid);
-    const finalGrade  = finalGPA!==null ? gpaToGrade(finalGPA) : '—';
-    const finalGPAStr = finalGPA!==null ? finalGPA.toFixed(2) : '—';
-    const avgTotalStr = avgTotalMarks > 0 ? avgTotalMarks.toFixed(1) : '—';
-    const yearRanks   = calcYearRanks(clsStudents);
-    const finalRank   = yearRanks[sid] || '—';
-    const att    = res.attendance || {};
-    const pct    = calcAttendPct(att);
-
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ format:'a4', unit:'mm' });
-    const W=210, M=14;
+    const doc  = new jsPDF({ format:'a4', unit:'mm' });
+    const clsS = students.filter(st=>st.class===rActiveClass);
+    const ranks = term==='final' ? calcYearRanks(clsS) : calcTermRanks(clsS, term);
+    await _drawReportCard(doc, s, sid, ranks, term);
+    doc.save(`${s.name.replace(/\s+/g,'_')}_${term==='final'?'Annual':TERM_NAMES[term].replace(/ /g,'_')}_Report.pdf`);
+    toast('Report card downloaded ✓','success');
+}
 
-    // ── Header ──
-    try {
-        const logoData = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxISEhUSEhIVFRUXFRcYFRcVFRUXGBcVFxcWFxcYFRcYHSggGBolHRUXITEhJSkrLi4uFx8zODMtNygtLisBCgoKDg0OGxAQGy0lICUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLf/AABEIAioCKgMBIgACEQEDEQH/xAAcAAEAAgIDAQAAAAAAAAAAAAAABgcEBQECAwj/xABVEAABAwIDAwcHBwYMBQQCAwEBAAIDBBEFEiEGMVEHEyJBYXGBFDJCcpGhsSNSYoKSwdEzQ6KywtIIFRYkNURTVHOTs+E0Y3SD8Bclo/HD02SU4kX/xAAZAQEAAwEBAAAAAAAAAAAAAAAAAQIDBAX/xAAsEQACAQMDAwMDBQEBAAAAAAAAAQIDERIhMVEEE0EiMmEUQnEjUoGRoTND/9oADAMBAAIRAxEAPwC8UREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEXF1xmQHZFoMY2zw+l0nq4WH5ucOd9ltyofiXLfhzNImTzHi1jWN9ryD7lNmLln3XConEeXiY35ijjbwMsjnHxa0D4rQ1fLRij/ADXU8fqxX/XcVOJF0fSd0zL5afykYzJqKuX6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vtMt7wVdeI7LNduCiGMbBRvvmjB7ba+0ao8XuhYjb9tMIq9KygLHHe9jQbcTmYWv9y4OyuBVP/D1/MuO5rpG7+GWWzr9xWJiHJ0BfIXt7PO+Oqj1XsZUN80tcO27fxCjBfa7EakmqeSKc609VDIPpBzfe3MPgtPV8mGJN/NRyepK39qy0bcNrIT0BI3tjeR+qVmQ7T4pFuqakeuXP/XBVrT5Q0OH7HYnH/VJx/hjN+oSjKDFY90dczuE4+CzYuUrE2aGoDvXiiP7Ky4+VjER1wH/ALX4FP1OERoajn8W+diHtqlw6ixWTeyuf3ioPxW8/wDVvEOEH2HfvLo/lYxHqMA/7d/i5Lz4Q05NK3Y/E5NDSVB9dpH65C2FJyY4k/8AMsj9eRg/VuuJeUzE36Coa31Iogf1VhT7WYnLvqqg+rdv6gCfqfA0JNT8kNTvmqoIx15Q9594aPeskbI4JT38pxASEb2tkYDfhlju5QGSmqptX84/tke4/rFe0Gzcx35W91z9yjGT3kT+ETdm12C0mlJQukcNz3NA19eUuf7lq8W5VK6XSIR07erKM7vBztPcsGl2Qv5xc73Lf4dsjbdHbw19pTGC+RqQeoNXVuzSukkPGRxsO4HQeAWfRbME+eSext/irPw/ZAneFJ8O2RaN4U5W2JsVnhOy3zWW8PiVM8I2Q3XCnlHgjG9S2kVMG7gqkmhw3Z5jOpbyKjaOpZIC5QHnzI4JzQ4L0RAefNjguebC7ogOmQJkC7ogOuQJlXZEBxlXKIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCIiAIiIAiIgCWREB1LV5PpmnqXuiA1k+Esd1LV1OzbD1KTWSyAgdTsi09S1c+xvYrPLAupiHBAVDPsX9H3LBl2HH9mPsj8FdLqZvBdTRt4JcWKTOw4/sx9kfgg2JH9mPsj8FdXkLeCeQt4KbixTjNjT833LKi2NPAq2hRN4LsKZvBQCsYNjOxbOm2PaOpT8QjguQwICK02y7B1LawYKxvUtvZLIDHjpGjqXuGBdkQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQH//Z';
-        doc.addImage(logoData,'PNG',M,10,20,20);
-    } catch(e) {}
-    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(26,26,46);
-    doc.text('AL RAWA English School',W/2,16,{align:'center'});
-    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(100,100,100);
-    doc.text('ESTD: 2022  ·  Read in the name of your Lord who created',W/2,22,{align:'center'});
-    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(200,75,49);
-    doc.text('STUDENT REPORT CARD',W/2,30,{align:'center'});
-    doc.setDrawColor(200,75,49); doc.setLineWidth(0.6); doc.line(M,33,W-M,33);
+async function _drawReportCard(doc, s, sid, ranks, term) {
+    const res     = rResults[sid] || {};
+    const isFinal = term === 'final';
+    const rank    = ranks[sid] || '—';
+    const label   = isFinal ? 'Annual Result' : TERM_NAMES[term];
+    const W=210, M=12, CW=W-M*2; // 186mm content
 
-    // ── Student photo ──
-    let y = 37;
-    if (s.photo) { try { doc.addImage(s.photo,'JPEG',W-M-22,y,22,22); } catch(e){} }
+    // ── Palette ──
+    const NAVY  = [26,26,46];
+    const GREEN = [45,106,79];
+    const RED   = [200,75,49];
+    const WHITE = [255,255,255];
+    const MUTED = [130,124,114];
+    const ROW1  = [255,253,247];
+    const ROW2  = [244,239,230];
 
-    // ── Student info ──
-    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(0,0,0);
-    const info = [
+    let y = 10;
+
+    // ══════════════════════════════════════
+    //  HEADER
+    // ══════════════════════════════════════
+    try { const lg=_logo(); if(lg) doc.addImage(lg,'JPEG',M,y,22,22); } catch(e){}
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(20);
+    doc.setTextColor(...NAVY);
+    doc.text('AL RAWA English School', M+26, y+10);
+
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
+    doc.text('ESTD: 2022  ·  Read in the name of your Lord', M+26, y+16);
+
+    // Badge pill
+    const badge = isFinal
+        ? 'ANNUAL REPORT CARD — ANNUAL RESULT'
+        : `TERM REPORT CARD — ${label.toUpperCase()}`;
+    const bw = doc.getTextWidth(badge) + 14;
+    doc.setFillColor(...RED);
+    doc.roundedRect(M+26, y+19, bw, 6.5, 3.25, 3.25, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.setTextColor(...WHITE);
+    doc.text(badge, M+26+bw/2, y+23.5, {align:'center'});
+
+    y += 30;
+
+    // ══════════════════════════════════════
+    //  STUDENT INFO
+    // ══════════════════════════════════════
+    if (s.photo) {
+        try { doc.addImage(s.photo,'JPEG',W-M-26,y,26,30,'','FAST'); } catch(e){}
+    }
+
+    const infoRows = [
         ['Student Name', s.name],
-        ['Class', rActiveClass + (s.roll ? '   Roll: '+s.roll : '')],
-        s.fatherName ? ["Father's Name", s.fatherName] : null
+        ['Class',        rActiveClass],
+        s.roll       ? ['Roll No.',      s.roll]       : null,
+        s.fatherName ? ["Father's Name", s.fatherName] : null,
+        s.motherName ? ["Mother's Name", s.motherName] : null,
     ].filter(Boolean);
-    info.forEach(([k,v]) => {
-        doc.setFont('helvetica','normal'); doc.setTextColor(120,120,120); doc.text(k+' :', M, y);
-        doc.setFont('helvetica','bold');   doc.setTextColor(26,26,46);    doc.text(v, M+36, y);
-        y += 6;
-    });
-    y = Math.max(y, 60);
 
-    // ── Academic Result table ──
-    doc.setDrawColor(200); doc.setLineWidth(0.3);
-    doc.setFillColor(26,26,46); doc.setTextColor(245,240,232); doc.setFont('helvetica','bold'); doc.setFontSize(8);
-    doc.rect(M,y,W-M*2,6,'F');
-    doc.text('ACADEMIC RESULT',W/2,y+4.2,{align:'center'}); y+=6;
-
-    // Table header
-    const aCols=[62,22,22,22,22,20]; const aX=M;
-    const aHeaders=['Subject','1st Term','2nd Term','Final Exam','Average','Grade'];
-    doc.setFillColor(240,235,225); doc.setTextColor(26,26,46); doc.rect(aX,y,aCols.reduce((a,b)=>a+b,0),6,'F');
-    let cx=aX;
-    aHeaders.forEach((h,i)=>{
-        if(i>0) doc.text(h,cx+aCols[i]-1,y+4.2,{align:'right'});
-        else doc.text(h,cx+2,y+4.2);
-        cx+=aCols[i];
+    doc.setFontSize(9.5);
+    infoRows.forEach(([k,v])=>{
+        doc.setFont('helvetica','normal'); doc.setTextColor(...MUTED);
+        doc.text(k, M, y+5.5);
+        doc.setFont('helvetica','bold'); doc.setTextColor(...NAVY);
+        doc.text(String(v), M+36, y+5.5);
+        y+=7;
     });
-    y+=6;
-    doc.setFont('helvetica','normal'); doc.setFontSize(8);
-    subjAvg.forEach((subj,ri)=>{
-        if(y>265){doc.addPage();y=14;}
-        const bg = ri%2===0?[255,253,247]:[245,240,232];
-        doc.setFillColor(...bg); doc.setTextColor(26,26,46);
-        doc.rect(aX,y,aCols.reduce((a,b)=>a+b,0),6,'F');
-        cx=aX;
-        const cells=[subj.name, subj.marks[0]??'—', subj.marks[1]??'—', subj.marks[2]??'—',
-                     subj.avg!==null?subj.avg.toFixed(1):'—', subj.grade];
-        cells.forEach((c,i)=>{
-            let txt=String(c);
-            if(i>0) doc.text(txt,cx+aCols[i]-1,y+4.2,{align:'right'});
-            else { while(doc.getTextWidth(txt)>aCols[0]-4&&txt.length>3)txt=txt.slice(0,-1); doc.text(txt,cx+2,y+4.2); }
-            cx+=aCols[i];
+    y = Math.max(y, 72);
+
+    // Divider
+    doc.setDrawColor(215,210,200); doc.setLineWidth(0.3);
+    doc.line(M, y, W-M, y); y+=6;
+
+    // ══════════════════════════════════════
+    //  SECTION TITLE
+    // ══════════════════════════════════════
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...NAVY);
+    doc.text(isFinal?'ANNUAL ACADEMIC RESULT':`${label.toUpperCase()} — ACADEMIC RESULT`, M, y);
+    y+=5;
+
+    // ══════════════════════════════════════
+    //  MARKS TABLE
+    // ══════════════════════════════════════
+
+    if (!isFinal) {
+        // ── Single term: Subject | Marks Obtained | Grade | GPA ──
+        const C = {
+            s : {x:M,     w:78},
+            mo: {x:M+78,  w:52},
+            gr: {x:M+130, w:30},
+            gp: {x:M+160, w:26},
+        };
+        const TW=CW, HH=8, RH=9;
+
+        // Header row
+        doc.setFillColor(...NAVY);
+        doc.rect(M, y, TW, HH, 'F');
+        doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...WHITE);
+        doc.text('Subject (Full Marks)', C.s.x+4, y+HH/2+1);
+        doc.text('Marks Obtained', C.mo.x+C.mo.w/2, y+HH/2+1, {align:'center'});
+        doc.text('Grade', C.gr.x+C.gr.w/2, y+HH/2+1, {align:'center'});
+        doc.text('GPA', C.gp.x+C.gp.w/2, y+HH/2+1, {align:'center'});
+        y+=HH;
+
+        const tm=res.terms?.[term]||{};
+        let totObt=0,totFull=0,gpas=[],hasF=false;
+
+        rSubjects.forEach((subj,ri)=>{
+            if(y>248){doc.addPage();y=14;}
+            const m   = tm[subj.name];
+            const obt = (m!==undefined&&m!==null&&m!=='') ? +m : null;
+            const g   = obt!==null ? gradeFromMarks(obt,subj.fullMarks) : null;
+            if(g){gpas.push(g.gpa);if(g.grade==='F')hasF=true;totObt+=obt;totFull+=subj.fullMarks;}
+
+            doc.setFillColor(...(ri%2===0?ROW1:ROW2));
+            doc.rect(M,y,TW,RH,'F');
+
+            // Subject name
+            doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...NAVY);
+            let nm=subj.name;
+            while(doc.getTextWidth(nm)>C.s.w-6&&nm.length>2) nm=nm.slice(0,-1);
+            doc.text(nm, C.s.x+4, y+4);
+            doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...MUTED);
+            doc.text(`(${subj.fullMarks} marks)`, C.s.x+4, y+7.8);
+
+            // Marks
+            doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...NAVY);
+            if(obt!==null) doc.text(String(obt), C.mo.x+C.mo.w/2, y+6, {align:'center'});
+            else { doc.setTextColor(...MUTED); doc.text('—', C.mo.x+C.mo.w/2, y+6, {align:'center'}); doc.setTextColor(...NAVY); }
+
+            // Grade chip
+            if(g) _pdfGradeChip(doc, C.gr.x+C.gr.w/2, y+RH/2, g.grade);
+
+            // GPA
+            doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...NAVY);
+            if(g) doc.text(g.gpa.toFixed(2), C.gp.x+C.gp.w/2, y+6, {align:'center'});
+
+            doc.setDrawColor(215,210,200); doc.setLineWidth(0.15);
+            doc.line(M,y+RH,M+TW,y+RH); y+=RH;
         });
-        doc.setDrawColor(212,207,196); doc.line(aX,y+6,aX+aCols.reduce((a,b)=>a+b,0),y+6);
+
+        // TOTAL row
+        if(gpas.length){
+            doc.setFillColor(...NAVY);
+            doc.rect(M,y,TW,7,'F');
+            doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...WHITE);
+            doc.text('TOTAL', C.s.x+4, y+4.5);
+            doc.text(`${totObt} / ${totFull}`, C.mo.x+C.mo.w/2, y+4.5, {align:'center'});
+            y+=7;
+        }
         y+=6;
+
+        // Result summary bar
+        if(gpas.length){
+            if(y>248){doc.addPage();y=14;}
+            const tGPA  = gpas.reduce((a,b)=>a+b,0)/gpas.length;
+            const tGr   = hasF?'F':gpaToGrade(tGPA);
+            const BH    = 22;
+            doc.setFillColor(...NAVY);
+            doc.rect(M,y,CW,BH,'F');
+            const sw=CW/3;
+            [[`${label.toUpperCase()} GPA`,tGPA.toFixed(2)],
+             ['GRADE',tGr],
+             ['CLASS RANK',String(rank)]
+            ].forEach(([lbl,val],i)=>{
+                const cx=M+i*sw+sw/2;
+                if(i>0){ doc.setDrawColor(255,255,255); doc.setLineWidth(0.3); doc.line(M+i*sw,y+4,M+i*sw,y+BH-4); }
+                doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(160,155,145);
+                doc.text(lbl, cx, y+7, {align:'center'});
+                doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(...WHITE);
+                doc.text(val, cx, y+18, {align:'center'});
+            });
+            y+=BH+8;
+        }
+
+    } else {
+        // ── Annual: Subject | 1st | 2nd | Final | Average | Grade | GPA ──
+        const C = {
+            s  :{x:M,     w:50},
+            t1 :{x:M+50,  w:22},
+            t2 :{x:M+72,  w:22},
+            t3 :{x:M+94,  w:22},
+            avg:{x:M+116, w:22},
+            gr :{x:M+138, w:26},
+            gp :{x:M+164, w:22},
+        };
+        const TW=CW, H1=8, H2=7, RH=8;
+
+        // ── Header row 1 ──
+        // Subject cell (spans both rows)
+        doc.setFillColor(...NAVY);
+        doc.rect(C.s.x,  y, C.s.w, H1+H2, 'F');
+        // Term Marks spanning T1+T2+T3
+        doc.rect(C.t1.x, y, C.t1.w+C.t2.w+C.t3.w, H1, 'F');
+        // Annual Result spanning Avg+Gr+GPA
+        doc.setFillColor(...GREEN);
+        doc.rect(C.avg.x, y, C.avg.w+C.gr.w+C.gp.w, H1, 'F');
+
+        doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...WHITE);
+        // Subject label centred in full (H1+H2) height
+        doc.text('Subject', C.s.x+C.s.w/2, y+H1/2+0.5, {align:'center'});
+        doc.setFontSize(7); doc.setFont('helvetica','normal');
+        doc.text('(Full Marks)', C.s.x+C.s.w/2, y+H1/2+4, {align:'center'});
+        doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+        doc.text('Term Marks', C.t1.x+(C.t1.w+C.t2.w+C.t3.w)/2, y+H1/2+1, {align:'center'});
+        doc.text('Annual Result', C.avg.x+(C.avg.w+C.gr.w+C.gp.w)/2, y+H1/2+1, {align:'center'});
+        y+=H1;
+
+        // ── Header row 2 ──
+        doc.setFillColor(38,38,60);  // slightly lighter navy
+        [C.t1,C.t2,C.t3,C.avg].forEach(col=>doc.rect(col.x,y,col.w,H2,'F'));
+        doc.setFillColor(36,84,62);  // slightly lighter green
+        [C.gr,C.gp].forEach(col=>doc.rect(col.x,y,col.w,H2,'F'));
+
+        doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...WHITE);
+        [['1st Term',C.t1],['2nd Term',C.t2],['Final Exam',C.t3],
+         ['Average',C.avg],['Grade',C.gr],['GPA',C.gp]].forEach(([lbl,col])=>{
+            doc.text(lbl, col.x+col.w/2, y+H2/2+0.8, {align:'center'});
+        });
+        y+=H2;
+
+        // ── Data rows ──
+        rSubjects.forEach((subj,ri)=>{
+            if(y>248){doc.addPage();y=14;}
+            const getM=t=>{const m=res.terms?.[t]?.[subj.name];return(m!==undefined&&m!==null&&m!=='') ? +m : null;};
+            const m1=getM('1'),m2=getM('2'),m3=getM('3');
+            const vals=[m1,m2,m3].filter(m=>m!==null);
+            const avg=vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
+            const gAvg=avg!==null?gradeFromMarks(avg,subj.fullMarks):null;
+
+            doc.setFillColor(...(ri%2===0?ROW1:ROW2));
+            doc.rect(M,y,TW,RH,'F');
+
+            // Subject
+            doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...NAVY);
+            let nm=subj.name;
+            while(doc.getTextWidth(nm)>C.s.w-5&&nm.length>2) nm=nm.slice(0,-1);
+            doc.text(nm, C.s.x+3, y+3.8);
+            doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...MUTED);
+            doc.text(`(${subj.fullMarks})`, C.s.x+3, y+7.2);
+
+            // Term marks
+            doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...NAVY);
+            [[m1,C.t1],[m2,C.t2],[m3,C.t3]].forEach(([m,col])=>{
+                if(m!==null) doc.text(String(m), col.x+col.w/2, col===C.t1?y+5.5:y+5.5, {align:'center'});
+                else { doc.setTextColor(...MUTED); doc.text('—',col.x+col.w/2,y+5.5,{align:'center'}); doc.setTextColor(...NAVY); }
+            });
+
+            // Average
+            if(avg!==null){
+                doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...NAVY);
+                doc.text(avg.toFixed(1), C.avg.x+C.avg.w/2, y+5.5, {align:'center'});
+            }
+
+            // Grade chip
+            if(gAvg) _pdfGradeChip(doc, C.gr.x+C.gr.w/2, y+RH/2, gAvg.grade);
+
+            // GPA
+            doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...NAVY);
+            if(gAvg) doc.text(gAvg.gpa.toFixed(2), C.gp.x+C.gp.w/2, y+5.5, {align:'center'});
+
+            doc.setDrawColor(215,210,200); doc.setLineWidth(0.15);
+            doc.line(M,y+RH,M+TW,y+RH); y+=RH;
+        });
+        y+=6;
+
+        // Annual result bar
+        const { finalGPA } = calcYearSummary(sid);
+        const finalGrade  = finalGPA!==null ? gpaToGrade(finalGPA) : '—';
+        const finalGPAStr = finalGPA!==null ? finalGPA.toFixed(2) : '—';
+
+        if(y>248){doc.addPage();y=14;}
+        const BH=22;
+        doc.setFillColor(...NAVY);
+        doc.rect(M,y,CW,BH,'F');
+        const sw=CW/3;
+        [['ANNUAL GPA',finalGPAStr],['FINAL GRADE',finalGrade],['YEAR RANK',String(rank)]].forEach(([lbl,val],i)=>{
+            const cx=M+i*sw+sw/2;
+            if(i>0){ doc.setDrawColor(255,255,255); doc.setLineWidth(0.3); doc.line(M+i*sw,y+4,M+i*sw,y+BH-4); }
+            doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(160,155,145);
+            doc.text(lbl, cx, y+7, {align:'center'});
+            doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(...WHITE);
+            doc.text(val, cx, y+18, {align:'center'});
+        });
+        y+=BH+8;
+    }
+
+    // ══════════════════════════════════════
+    //  ATTENDANCE
+    // ══════════════════════════════════════
+    const GAP    = 8;
+    const COLW   = (CW - GAP) / 2;   // ~89mm each
+    const attX   = M;
+    const cmtX   = M + COLW + GAP;
+    const topY   = y;
+
+    // ── Labels (both at same y) ──
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...NAVY);
+    doc.text(isFinal?'ATTENDANCE SUMMARY':`ATTENDANCE — ${label.toUpperCase()}`, attX, y+4.5);
+    doc.text("TEACHER'S COMMENT", cmtX, y+4.5);
+    y += 8;
+
+    // ── Left: Attendance ──
+    const attStartY = y;
+    if (!isFinal) {
+        const att = _getTermAtt(res, term);
+        [['Total School Days', att?.days||'—'],
+         ['Days Present',      att?.present||'—'],
+         ['Attendance',        calcAttendPct(att)]
+        ].forEach(([k,v])=>{
+            doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+            doc.text(k, attX+2, y+4);
+            doc.setFont('helvetica','normal'); doc.setTextColor(...NAVY);
+            doc.text(String(v), attX+COLW-2, y+4, {align:'right'});
+            y+=6.5;
+        });
+    } else {
+        // ── Annual attendance table ──
+    const aC = [31, 22, 18, 18]; // Term | Total Days | Present | Att% → total 89mm = COLW
+    const AH = 6;
+    const hdrs = ['Term', 'Total Days', 'Present', 'Att%'];
+
+    // Pass 1: draw ALL header background rects first
+    let ax = attX;
+    doc.setFillColor(26, 26, 46);
+    aC.forEach(w => { doc.rect(ax, y, w, AH, 'F'); ax += w; });
+
+    // Pass 2: draw ALL header texts on top
+    ax = attX;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    hdrs.forEach((h, i) => {
+        doc.setTextColor(255, 255, 255); // explicit white before every text
+        const tw = doc.getTextWidth(h);
+        const tx = i === 0 ? ax + 2 : ax + (aC[i] - tw) / 2;
+        doc.text(h, tx, y + AH / 2 + 0.8);
+        ax += aC[i];
     });
-    y+=4;
+    y += AH;
 
-    // ── Term Summary ──
-    if(y>240){doc.addPage();y=14;}
-    doc.setFillColor(26,26,46); doc.setTextColor(245,240,232); doc.setFont('helvetica','bold'); doc.setFontSize(8);
-    doc.rect(M,y,W-M*2,6,'F'); doc.text('TERM SUMMARY',W/2,y+4.2,{align:'center'}); y+=6;
-    const tCols=[50,35,25,25,25]; const tHeaders=['Term','Total Marks','GPA','Grade','Rank'];
-    doc.setFillColor(240,235,225); doc.setTextColor(26,26,46); doc.rect(M,y,tCols.reduce((a,b)=>a+b,0),6,'F');
-    cx=M; tHeaders.forEach((h,i)=>{ if(i>0)doc.text(h,cx+tCols[i]-1,y+4.2,{align:'right'}); else doc.text(h,cx+2,y+4.2); cx+=tCols[i]; }); y+=6;
-    doc.setFont('helvetica','normal');
-    ['1','2','3'].forEach((t,ri)=>{
-        const tc=calcTermSummary(sid,t); const ar=calcTermRanks(clsStudents,t); const rk=ar[sid]||'—';
-        const bg=ri%2===0?[255,253,247]:[245,240,232];
-        doc.setFillColor(...bg); doc.setTextColor(26,26,46); doc.rect(M,y,tCols.reduce((a,b)=>a+b,0),6,'F');
-        cx=M;
-        const cells=[TERM_NAMES[t], tc?tc.total+'/'+tc.fullTotal:'—', tc?tc.gpa.toFixed(2):'—', tc?.grade||'—', String(rk)];
-        cells.forEach((c,i)=>{ if(i>0)doc.text(c,cx+tCols[i]-1,y+4.2,{align:'right'}); else doc.text(c,cx+2,y+4.2); cx+=tCols[i]; });
-        doc.setDrawColor(212,207,196); doc.line(M,y+6,M+tCols.reduce((a,b)=>a+b,0),y+6); y+=6;
+    // Data rows
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    ['1', '2', '3'].forEach((t, ri) => {
+        const att = _getTermAtt(res, t);
+        const vals = [TERM_NAMES[t], att?.days||'—', att?.present||'—', calcAttendPct(att)];
+
+        // Pass 1: draw all row background rects
+        ax = attX;
+        doc.setFillColor(...(ri % 2 === 0 ? ROW1 : ROW2));
+        aC.forEach(w => { doc.rect(ax, y, w, AH, 'F'); ax += w; });
+
+        // Pass 2: draw all row texts on top
+        ax = attX;
+        vals.forEach((v, i) => {
+            doc.setTextColor(26, 26, 46); // explicit navy before every text
+            const tw = doc.getTextWidth(String(v));
+            const tx = i === 0 ? ax + 2 : ax + (aC[i] - tw) / 2;
+            doc.text(String(v), tx, y + AH / 2 + 0.8);
+            ax += aC[i];
+        });
+
+        doc.setDrawColor(215, 210, 200);
+        doc.setLineWidth(0.15);
+        doc.line(attX, y + AH, attX + aC.reduce((a, b) => a + b, 0), y + AH);
+        y += AH;
     });
+    }
+    const attEndY = y;
 
-    // ── Final Result ──
-    y+=6;
-    doc.setFillColor(200,75,49); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(9);
-    doc.rect(M,y,W-M*2,8,'F');
-    doc.text(`Final GPA: ${finalGPAStr}   |   Grade: ${finalGrade}   |   Avg Total: ${avgTotalStr}   |   Year Rank: ${finalRank}`,W/2,y+5.4,{align:'center'}); y+=12;
+    // ── Right: Comment box (height matches attendance section) ──
+    const boxH = Math.max(attEndY - attStartY, 20);
+    const comment = res.comment || '';
+    doc.setFillColor(250,248,243); doc.setDrawColor(210,205,195); doc.setLineWidth(0.3);
+    doc.roundedRect(cmtX, attStartY, COLW, boxH, 2, 2, 'FD');
+    const cmtLines = doc.splitTextToSize(comment||'No comment added.', COLW-8);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    doc.setTextColor(!comment?MUTED[0]:NAVY[0], !comment?MUTED[1]:NAVY[1], !comment?MUTED[2]:NAVY[2]);
+    doc.text(cmtLines, cmtX+4, attStartY+5);
 
-    // ── Attendance ──
-    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(26,26,46);
-    doc.text('ATTENDANCE',M,y); y+=5;
-    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(60,60,60);
-    doc.text(`Total Days: ${att.days||'—'}   |   Present: ${att.present||'—'}   |   Attendance: ${pct}`,M,y); y+=8;
+    y = attEndY + 8;
 
-    doc.save(`${s.name.replace(/\s+/g,'_')}_Report_Card.pdf`);
+    // ══════════════════════════════════════
+    //  SIGNATURES — near page bottom
+    // ══════════════════════════════════════
+    const sigY = Math.max(y, 270);
+    const sigW = (CW-20)/3;
+    doc.setDrawColor(100,100,100); doc.setLineWidth(0.5);
+    ['CLASS TEACHER','CO-ORDINATOR','PRINCIPAL'].forEach((lbl,i)=>{
+        const sx = M+i*(sigW+10);
+        doc.line(sx, sigY, sx+sigW, sigY);
+        doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+        doc.setTextColor(...MUTED);
+        doc.text(lbl, sx+sigW/2, sigY+5.5, {align:'center'});
+    });
+}
+
+// ── PDF table header helper ──
+function _pdfTableHeader(doc, x, y, cols, headers, sectionTitle) {
+    const totalW=cols.reduce((a,b)=>a+b,0);
+    doc.setFillColor(26,26,46); doc.setTextColor(245,240,232);
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+    doc.rect(x,y,totalW,5,'F');
+    doc.text(sectionTitle,x+totalW/2,y+3.5,{align:'center'});
+    y+=5;
+    doc.setFillColor(230,225,215); doc.setTextColor(26,26,46);
+    doc.rect(x,y,totalW,5,'F');
+    let cx=x;
+    headers.forEach((h,i)=>{
+        if(i>0) doc.text(h,cx+cols[i]-1,y+3.5,{align:'right'}); else doc.text(h,cx+2,y+3.5);
+        cx+=cols[i];
+    });
+}
+
+// ══════════════════════════════════════
+//  FIREBASE CONFIG SAVE
+// ══════════════════════════════════════
+async function saveResultConfig() {
+    if (!isUnlocked||!rActiveClass) return;
+    try { await dbWrite('school/results/'+classToKey(rActiveClass)+'/subjects', rSubjects); }
+    catch(e) { toast('Save error: '+e.message,'error'); }
+}
+
+async function deleteClassResults(cls) {
+    if (!isAdmin()) { toast('Admin access required.','error'); return; }
+    if (!confirm(`Delete ALL results for "${cls}"? This cannot be undone.`)) return;
+    try {
+        setStatus('syncing','Deleting…');
+        await dbWrite('school/results/'+classToKey(cls), null);
+        setStatus('connected','Ready');
+        toast(`Results for "${cls}" deleted.`,'success');
+        if (rActiveClass===cls) { rSubjects=[]; rResults={}; rActiveClass=null; rActiveStudent=null; }
+        renderResultClassPicker();
+    } catch(e) { setStatus('connected','Ready'); toast('Delete failed: '+e.message,'error'); }
+}
+
+function toggleRSection(id) {
+    const el=document.getElementById(id);
+    if (!el) return;
+    const hidden=el.style.display==='none';
+    el.style.display=hidden?'':'none';
+    const arrow=el.previousElementSibling?.querySelector('.arrow');
+    if (arrow) arrow.style.transform=hidden?'':'rotate(-90deg)';
 }

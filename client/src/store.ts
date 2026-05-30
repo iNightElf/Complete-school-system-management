@@ -186,11 +186,58 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     await api.delete(`/subjects/${id}`);
   },
 
-  saveStudentResult: async (studentId: string, term: string, marks: any, attendance?: any) => {
-    await api.post(`/students/${studentId}/results`, { term, marks, attendance });
+  saveStudentResult: async (studentId: string, term: string, marks: any, attendance?: any, comment?: string) => {
+    await api.post(`/students/${studentId}/results`, { term, marks, attendance, ...(comment !== undefined && { comment }) });
   },
   getStudentResults: async (studentId: string) => {
     const res = await api.get(`/students/${studentId}/results`);
     return res.data;
+  },
+}));
+
+// ── User Management Store (admin) ──
+
+interface ManagedUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  emailVerified: boolean;
+  createdAt: string;
+}
+
+interface RoleOption {
+  value: string;
+  label: string;
+}
+
+interface UserManagementState {
+  users: ManagedUser[];
+  roles: RoleOption[];
+  fetchUsers: () => Promise<void>;
+  fetchRoles: () => Promise<void>;
+  updateRole: (userId: string, role: string) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
+}
+
+export const useUserManagementStore = create<UserManagementState>((set, get) => ({
+  users: [],
+  roles: [],
+
+  fetchUsers: async () => {
+    const res = await api.get('/users');
+    set({ users: res.data });
+  },
+  fetchRoles: async () => {
+    const res = await api.get('/users/roles');
+    set({ roles: res.data });
+  },
+  updateRole: async (userId: string, role: string) => {
+    await api.put(`/users/${userId}/role`, { role });
+    await get().fetchUsers();
+  },
+  deleteUser: async (userId: string) => {
+    await api.delete(`/users/${userId}`);
+    await get().fetchUsers();
   },
 }));

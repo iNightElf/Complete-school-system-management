@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import VerifyEmail from './pages/VerifyEmail';
+import UserManagement from './pages/UserManagement';
 
 const App: React.FC = () => {
   const { user, loading, fetchSession } = useAuthStore();
@@ -35,6 +36,10 @@ const App: React.FC = () => {
         <Route
           path="/verify-email"
           element={<VerifyEmail />}
+        />
+        <Route
+          path="/users"
+          element={user?.role === 'admin' ? <UserManagement /> : <Navigate to="/" />}
         />
         <Route
           path="/"

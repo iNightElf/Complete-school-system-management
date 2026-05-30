@@ -11,6 +11,15 @@ export const auth = betterAuth({
   }),
   baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5173",
   trustedOrigins: ["http://localhost:5173", "http://localhost:3000"],
+  user: {
+    additionalFields: {
+      role: {
+        type: "string",
+        defaultValue: "viewer",
+        required: false,
+      },
+    },
+  },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
@@ -20,8 +29,12 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: false,
     sendVerificationEmail: async ({ user, url }) => {
-      console.log("[Auth] sendVerificationEmail called for:", user.email, "url:", url);
-      await sendVerificationEmail(user.email, url);
+      const urlObj = new URL(url);
+      const token = urlObj.searchParams.get("token");
+      const callbackURL = urlObj.searchParams.get("callbackURL");
+      const frontendUrl = `${process.env.BETTER_AUTH_URL}/verify-email?token=${token}${callbackURL ? `&callbackURL=${callbackURL}` : ""}`;
+      console.log("[Auth] sendVerificationEmail called for:", user.email, "url:", frontendUrl);
+      await sendVerificationEmail(user.email, frontendUrl);
     },
   },
   databaseHooks: {

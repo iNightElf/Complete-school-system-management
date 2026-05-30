@@ -12,7 +12,7 @@ export const getSubjectsByClass = async (req: Request, res: Response) => {
 
     const subjects = await prisma.subject.findMany({
       where: { classId },
-      orderBy: { name: "asc" },
+      orderBy: { order: "asc" },
     });
 
     res.json(subjects);
@@ -32,8 +32,11 @@ export const createSubject = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Name and fullMarks are required" });
     }
 
+    const maxOrder = await prisma.subject.aggregate({ where: { classId }, _max: { order: true } });
+    const nextOrder = (maxOrder._max.order ?? -1) + 1;
+
     const subject = await prisma.subject.create({
-      data: { name: name.trim(), fullMarks: Number(fullMarks), classId },
+      data: { name: name.trim(), fullMarks: Number(fullMarks), classId, order: nextOrder },
     });
 
     res.status(201).json(subject);
@@ -88,7 +91,7 @@ export const getStudentResults = async (req: Request, res: Response) => {
 export const saveStudentResult = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const { term, marks, attendance } = req.body;
+    const { term, marks, attendance, comment } = req.body;
 
     if (!term || marks === undefined) {
       return res.status(400).json({ error: "Term and marks are required" });
@@ -102,7 +105,7 @@ export const saveStudentResult = async (req: Request, res: Response) => {
     if (existing) {
       result = await prisma.result.update({
         where: { id: existing.id },
-        data: { marks, attendance },
+        data: { marks, attendance, ...(comment !== undefined && { comment }) },
       });
     } else {
       result = await prisma.result.create({
@@ -111,6 +114,7 @@ export const saveStudentResult = async (req: Request, res: Response) => {
           term: String(term),
           marks,
           attendance,
+          comment: comment || null,
         },
       });
     }
@@ -127,12 +131,12 @@ export const getClassResults = async (req: Request, res: Response) => {
     const cls = await prisma.schoolClass.findUnique({ where: { id: classId } });
     if (!cls) return res.status(404).json({ error: "Class not found" });
 
-    const students = await prisma.student.findMany({
-      where: { class: cls.name },
-      include: { results: true },
+    const results = await prisma.result.findMany({
+      where: { student: { class: cls.name } },
+      orderBy: [{ studentId: "asc" }, { term: "asc" }],
     });
 
-    res.json(students);
+    res.json(results);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
