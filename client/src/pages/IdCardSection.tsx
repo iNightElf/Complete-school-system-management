@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSchoolStore, useUIStore, useAuthStore } from '../store';
 import { toast } from '../components/Toast';
 import ClassManagerModal from '../components/ClassManagerModal';
 import CameraModal from '../components/CameraModal';
 import PhotoUpload from '../components/PhotoUpload';
-import { Settings, FileText, RefreshCw, Phone, Mail, MessageCircle, Download } from 'lucide-react';
+import { Settings, RefreshCw, Phone, Mail, MessageCircle, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 
 const API_URL = '/api';
@@ -71,7 +71,7 @@ const StudentSection: React.FC = () => {
       motherName: s.motherName || '',
       contact: s.contact || '',
     });
-    setPhoto(s.photo || null);
+    setPhoto(s.hasPhoto ? `${API_URL}/students/${s.id}/photo` : null);
     setEditId(s.id);
     setFormExpanded(true);
   };
@@ -209,14 +209,18 @@ const StudentSection: React.FC = () => {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => {
+            onClick={async () => {
+              const list = filtered.length > 0 ? filtered : classStudents;
+              const photoCache: Record<string, string> = {};
+              await Promise.all(list.filter((s: any) => s.hasPhoto).map(async (s: any) => {
+                try { const r = await fetch(`${API_URL}/students/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+              }));
               const doc = new jsPDF();
               const title = activeClass ? activeClass + ' — Students' : 'All Students';
               doc.setFont('helvetica', 'bold');
               doc.setFontSize(16);
               doc.text(title, 105, 14, { align: 'center' });
               let y = 22;
-              const list = filtered.length > 0 ? filtered : classStudents;
               list.forEach((s, i) => {
                 if (y > 250) { doc.addPage(); y = 20; }
                 doc.setFont('helvetica', 'bold');
@@ -233,8 +237,8 @@ const StudentSection: React.FC = () => {
                   `Mother: ${s.motherName || ''}`,
                   `Contact: ${s.contact || ''}`,
                 ];
-                if (s.photo) {
-                  try { doc.addImage(s.photo, 'JPEG', 15, y, 22, 22); } catch (_e) {}
+                if (photoCache[s.id]) {
+                  try { doc.addImage(photoCache[s.id], 'JPEG', 15, y, 22, 22); } catch (_e) {}
                   lines.forEach((l, li) => doc.text(l, 42, y + 5 + li * 5));
                   y += 28;
                 } else {
@@ -309,8 +313,8 @@ const StudentSection: React.FC = () => {
               {filtered.map((s) => (
                 <div key={s.id} className="bg-white p-4 rounded-2xl border border-school-border hover:shadow-md transition-shadow">
                   <div className="flex items-start gap-3">
-                    {s.photo ? (
-                      <img src={s.photo} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
+                    {s.hasPhoto ? (
+                      <img src={`${API_URL}/students/${s.id}/photo`} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
                     ) : (
                       <div className="w-12 h-12 rounded-full bg-school-primary text-white flex items-center justify-center text-lg flex-shrink-0">👤</div>
                     )}
@@ -374,7 +378,7 @@ const TeacherSection: React.FC = () => {
 
   const handleEdit = (t: any) => {
     setForm({ designation: t.designation, name: t.name, email: t.email || '', contact: t.contact || '' });
-    setPhoto(t.photo || null);
+    setPhoto(t.hasPhoto ? `${API_URL}/teachers/${t.id}/photo` : null);
     setEditId(t.id);
     setFormExpanded(true);
   };
@@ -459,7 +463,11 @@ const TeacherSection: React.FC = () => {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => {
+            onClick={async () => {
+              const photoCache: Record<string, string> = {};
+              await Promise.all(filtered.filter((t: any) => t.hasPhoto).map(async (t: any) => {
+                try { const r = await fetch(`${API_URL}/teachers/${t.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[t.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+              }));
               const doc = new jsPDF();
               doc.setFont('helvetica', 'bold');
               doc.setFontSize(16);
@@ -480,8 +488,8 @@ const TeacherSection: React.FC = () => {
                   t.email ? `Email: ${t.email}` : null,
                   `Contact: ${t.contact || ''}`,
                 ].filter(Boolean);
-                if (t.photo) {
-                  try { doc.addImage(t.photo, 'JPEG', 15, y, 22, 22); } catch (_e) {}
+                if (photoCache[t.id]) {
+                  try { doc.addImage(photoCache[t.id], 'JPEG', 15, y, 22, 22); } catch (_e) {}
                   lines.forEach((l, li) => doc.text(l!, 42, y + 5 + li * 5));
                   y += 28;
                 } else {
@@ -537,8 +545,8 @@ const TeacherSection: React.FC = () => {
           {filtered.map((t: any) => (
             <div key={t.id} className="bg-white p-4 rounded-2xl border border-school-border hover:shadow-md transition-shadow">
               <div className="flex items-start gap-3">
-                {t.photo ? (
-                  <img src={t.photo} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
+                {t.hasPhoto ? (
+                  <img src={`${API_URL}/teachers/${t.id}/photo`} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
                 ) : (
                   <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center text-lg flex-shrink-0">👩‍🏫</div>
                 )}
@@ -595,7 +603,7 @@ const StaffSection: React.FC = () => {
 
   const handleEdit = (s: any) => {
     setForm({ role: s.role, name: s.name, email: s.email || '', contact: s.contact || '' });
-    setPhoto(s.photo || null);
+    setPhoto(s.hasPhoto ? `${API_URL}/staff/${s.id}/photo` : null);
     setEditId(s.id);
     setFormExpanded(true);
   };
@@ -680,7 +688,11 @@ const StaffSection: React.FC = () => {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => {
+            onClick={async () => {
+              const photoCache: Record<string, string> = {};
+              await Promise.all(filtered.filter((s: any) => s.hasPhoto).map(async (s: any) => {
+                try { const r = await fetch(`${API_URL}/staff/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+              }));
               const doc = new jsPDF();
               doc.setFont('helvetica', 'bold');
               doc.setFontSize(16);
@@ -701,8 +713,8 @@ const StaffSection: React.FC = () => {
                   s.email ? `Email: ${s.email}` : null,
                   `Contact: ${s.contact || ''}`,
                 ].filter(Boolean);
-                if (s.photo) {
-                  try { doc.addImage(s.photo, 'JPEG', 15, y, 22, 22); } catch (_e) {}
+                if (photoCache[s.id]) {
+                  try { doc.addImage(photoCache[s.id], 'JPEG', 15, y, 22, 22); } catch (_e) {}
                   lines.forEach((l, li) => doc.text(l!, 42, y + 5 + li * 5));
                   y += 28;
                 } else {
@@ -739,8 +751,8 @@ const StaffSection: React.FC = () => {
           {filtered.map((s: any) => (
             <div key={s.id} className="bg-white p-4 rounded-2xl border border-school-border hover:shadow-md transition-shadow">
               <div className="flex items-start gap-3">
-                {s.photo ? (
-                  <img src={s.photo} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
+                {s.hasPhoto ? (
+                  <img src={`${API_URL}/staff/${s.id}/photo`} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
                 ) : (
                   <div className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center text-lg flex-shrink-0">🏢</div>
                 )}

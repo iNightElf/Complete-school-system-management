@@ -75,13 +75,13 @@ const MONTHS_INPUT = (() => {
 })();
 
 const FinanceReports: React.FC = () => {
-  const { transactions, fetchTransactions } = useSchoolStore();
+  const { transactions, fetchTransactions, students, fetchStudents } = useSchoolStore();
   const [tab, setTab] = useState<ReportTab>('headwise-income');
   const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
   const [dateTo, setDateTo] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
   const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
 
-  useEffect(() => { fetchTransactions(); }, []);
+  useEffect(() => { fetchTransactions(); fetchStudents(); }, []);
 
   const filtered = transactions.filter((t: any) => {
     const d = new Date(t.transactionDate);
@@ -140,7 +140,7 @@ const FinanceReports: React.FC = () => {
 
     doc.setFillColor(26, 26, 46); doc.rect(12, y, 186, 7, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
-    doc.text('Category', 14, y + 4.5); doc.text('Amount (৳)', 120, y + 4.5, { align: 'right' }); doc.text('% Share', 160, y + 4.5, { align: 'right' }); doc.text('Count', 186, y + 4.5, { align: 'right' });
+    doc.text('Category', 14, y + 4.5); doc.text('Amount', 120, y + 4.5, { align: 'right' }); doc.text('% Share', 160, y + 4.5, { align: 'right' }); doc.text('Count', 186, y + 4.5, { align: 'right' });
     y += 7;
 
     hw.forEach(([cat, amt], i) => {
@@ -155,7 +155,7 @@ const FinanceReports: React.FC = () => {
 
     doc.setFillColor(240, 235, 225); doc.rect(12, y, 186, 7, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(26, 26, 46);
-    doc.text(`TOTAL INCOME: ৳${fmt(totalIncome)}`, 14, y + 4.5);
+    doc.text(`TOTAL INCOME: ${fmt(totalIncome)} /-`, 14, y + 4.5);
     doc.text(`${hw.length} categories`, 186, y + 4.5, { align: 'right' });
 
     toPdf(doc, `Headwise_Income_${dateFrom}_to_${dateTo}.pdf`);
@@ -170,7 +170,7 @@ const FinanceReports: React.FC = () => {
 
     doc.setFillColor(26, 26, 46); doc.rect(12, y, 186, 7, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
-    doc.text('Category', 14, y + 4.5); doc.text('Amount (৳)', 120, y + 4.5, { align: 'right' }); doc.text('% Share', 160, y + 4.5, { align: 'right' }); doc.text('Count', 186, y + 4.5, { align: 'right' });
+    doc.text('Category', 14, y + 4.5); doc.text('Amount', 120, y + 4.5, { align: 'right' }); doc.text('% Share', 160, y + 4.5, { align: 'right' }); doc.text('Count', 186, y + 4.5, { align: 'right' });
     y += 7;
 
     hw.forEach(([cat, amt], i) => {
@@ -185,7 +185,7 @@ const FinanceReports: React.FC = () => {
 
     doc.setFillColor(240, 235, 225); doc.rect(12, y, 186, 7, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(26, 26, 46);
-    doc.text(`TOTAL EXPENSE: ৳${fmt(totalExpense)}`, 14, y + 4.5);
+    doc.text(`TOTAL EXPENSE: ${fmt(totalExpense)} /-`, 14, y + 4.5);
     doc.text(`${hw.length} categories`, 186, y + 4.5, { align: 'right' });
 
     toPdf(doc, `Headwise_Expense_${dateFrom}_to_${dateTo}.pdf`);
@@ -194,61 +194,103 @@ const FinanceReports: React.FC = () => {
   // ── PDF: Monthly Income/Expense ──
   function pdfMonthly(type: 'income' | 'expense') {
     const data = type === 'income' ? incomeTx : expenseTx;
-    const doc = new jsPDF({ orientation: 'landscape', format: 'a4', unit: 'mm' });
+    const doc = new jsPDF({ format: 'a4', unit: 'mm' });
     const title = type === 'income' ? 'MONTHLY INCOME REPORT' : 'MONTHLY EXPENSE REPORT';
-    let y = addHeader(doc, title, `${getMonthName(Number(dateFrom.split('-')[1]) - 1)} ${dateFrom.split('-')[0]} — ${getMonthName(Number(dateTo.split('-')[1]) - 1)} ${dateTo.split('-')[0]}`, 10);
+    const subtitle = `${getMonthName(Number(dateFrom.split('-')[1]) - 1)} ${dateFrom.split('-')[0]} — ${getMonthName(Number(dateTo.split('-')[1]) - 1)} ${dateTo.split('-')[0]}`;
+    let y = addHeader(doc, title, subtitle, 10);
 
-    const mb = monthlyBreakdown(data);
-    const cats = Object.keys(mb).sort();
-    if (!cats.length) { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(130, 124, 114); doc.text('No data for this period.', 12, y + 10); toPdf(doc, `${title.replace(/ /g, '_')}_${dateFrom}_to_${dateTo}.pdf`); return; }
+    if (!data.length) {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(130, 124, 114);
+      doc.text('No data for this period.', 12, y + 10);
+      toPdf(doc, `${title.replace(/ /g, '_')}_${dateFrom}_to_${dateTo}.pdf`);
+      return;
+    }
 
-    const CW = 277, M = 10;
-    const catW = 36;
-    const monthW = Math.max(20, Math.floor((CW - catW) / Math.max(monthRange.length, 1)));
-    const totalW = monthW;
+    const M = 12, PW = 186;
+    const dateW = 26, descW = 80, catW = 32, amtW = 24, balW = 24;
+    const headerH = 7, rowH = 5;
+    const amountColor: [number, number, number] = type === 'income' ? [22, 101, 52] : [185, 28, 28];
+    const catX = M + dateW + descW;
+    const amtX = catX + catW;
+    const balX = amtX + amtW;
 
-    // Header row
-    doc.setFillColor(26, 26, 46);
-    doc.rect(M, y, catW + monthW * Math.min(monthRange.length, 10) + totalW, 7, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(255, 255, 255);
-    doc.text('Category', M + 2, y + 4.5);
-    let ax = M + catW;
-    monthRange.slice(0, 10).forEach(m => {
-      const [yr, mn] = m.split('-');
-      doc.text(`${getMonthName(Number(mn) - 1).slice(0, 3)} '${yr.slice(2)}`, ax + 2, y + 4.5);
-      ax += monthW;
-    });
-    doc.text('Total', ax + 2, y + 4.5);
-    y += 7;
+    // Group by category, sorted by category name
+    const grouped: Record<string, any[]> = {};
+    data.forEach(t => { const c = t.category || 'Uncategorized'; if (!grouped[c]) grouped[c] = []; grouped[c].push(t); });
+    const cats = Object.keys(grouped).sort();
 
-    // Data rows
+    // Sort transactions within each category by date
+    cats.forEach(c => grouped[c].sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime()));
+
     let grandTotal = 0;
-    cats.forEach((cat, i) => {
-      if (y > 190) { doc.addPage(); y = 14; }
-      if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(M, y, catW + monthW * Math.min(monthRange.length, 10) + totalW, 6, 'F'); }
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(26, 26, 46);
+
+    function drawTableHeader() {
+      doc.setFillColor(26, 26, 46);
+      doc.rect(M, y, PW, headerH, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(255, 255, 255);
+      doc.text('Date', M + 2, y + 4.5);
+      doc.text('Class / Student', M + dateW + 2, y + 4.5);
+      doc.text('Category', catX + 2, y + 4.5);
+      doc.text('Amount', amtX + amtW - 2, y + 4.5, { align: 'right' });
+      doc.text('Running', balX + balW - 2, y + 4.5, { align: 'right' });
+      y += headerH;
+    }
+
+    drawTableHeader();
+
+    cats.forEach(cat => {
+      // Category header
+      if (y > 260) { doc.addPage(); y = 14; drawTableHeader(); }
+      doc.setFillColor(240, 235, 225);
+      doc.rect(M, y, PW, 6, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(26, 26, 46);
       doc.text(cat, M + 2, y + 4);
-      let rowTotal = 0;
-      ax = M + catW;
-      monthRange.slice(0, 10).forEach(m => {
-        const v = mb[cat]?.[m] || 0;
-        rowTotal += v;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(v > 0 ? (type === 'income' ? [22, 101, 52] : [185, 28, 28]) : [130, 124, 114]);
-        doc.text(v > 0 ? fmt(v) : '—', ax + 2, y + 4);
-        ax += monthW;
-      });
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(26, 26, 46);
-      doc.text(fmt(rowTotal), ax + 2, y + 4);
-      grandTotal += rowTotal;
+      let catTotal = 0;
+      grouped[cat].forEach(t => { catTotal += Number(t.amount); });
+      doc.text(fmt(catTotal) + ' /-', amtX + amtW - 2, y + 4, { align: 'right' });
       y += 6;
+
+      // Transaction rows
+      grouped[cat].forEach((t, i) => {
+        if (y > 270) { doc.addPage(); y = 14; drawTableHeader(); }
+        if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(M, y, PW, rowH, 'F'); }
+
+        const dateStr = new Date(t.transactionDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        const studentName = t.studentId ? (students.find((s: any) => s.id === t.studentId)?.name || '') : '';
+        const classStudent = [t.className || '', studentName].filter(Boolean).join(' / ') || t.description || `${(t.sourceAccount || '').replace(/_/g, ' ')} -> ${(t.destinationAccount || '').replace(/_/g, ' ')}`;
+        grandTotal += Number(t.amount);
+
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+        doc.setTextColor(80, 80, 80);
+        doc.text(dateStr, M + 2, y + 3.5);
+        doc.setTextColor(26, 26, 46);
+        doc.text(classStudent.substring(0, 38), M + dateW + 2, y + 3.5);
+        doc.setTextColor(130, 124, 114);
+        doc.text(cat.substring(0, 18), catX + 2, y + 3.5);
+        doc.setTextColor(...amountColor);
+        doc.text(fmt(Number(t.amount)) + ' /-', amtX + amtW - 2, y + 3.5, { align: 'right' });
+        doc.setTextColor(130, 124, 114);
+        doc.text(fmt(grandTotal) + ' /-', balX + balW - 2, y + 3.5, { align: 'right' });
+        y += rowH;
+      });
+
+      // Category subtotal
+      doc.setFillColor(245, 242, 235);
+      doc.rect(M, y, PW, rowH + 1, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(26, 26, 46);
+      doc.text(`Subtotal: ${cat}`, M + 2, y + 4);
+      doc.setTextColor(...amountColor);
+      doc.text(fmt(catTotal) + ' /-', amtX - 2, y + 4, { align: 'right' });
+      y += rowH + 1 + 3;
     });
 
-    // Grand total row
-    doc.setFillColor(240, 235, 225); doc.rect(M, y, catW + monthW * Math.min(monthRange.length, 10) + totalW, 7, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(26, 26, 46);
-    doc.text('GRAND TOTAL', M + 2, y + 4.5);
-    ax = M + catW + monthW * Math.min(monthRange.length, 10);
-    doc.text(fmt(grandTotal), ax + 2, y + 4.5);
+    // Grand total
+    if (y > 260) { doc.addPage(); y = 14; }
+    doc.setFillColor(26, 26, 46);
+    doc.rect(M, y, PW, 8, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
+    doc.text('GRAND TOTAL', M + 2, y + 5.5);
+    doc.text(fmt(grandTotal) + ' /-', balX + balW - 2, y + 5.5, { align: 'right' });
 
     toPdf(doc, `${title.replace(/ /g, '_')}_${dateFrom}_to_${dateTo}.pdf`);
   }
@@ -267,9 +309,9 @@ const FinanceReports: React.FC = () => {
     doc.text('FINANCIAL SUMMARY', 12, y); y += 7;
 
     const summaryRows: [string, string][] = [
-      ['Total Income', `৳${fmt(totalIncome)}`],
-      ['Total Expense', `৳${fmt(totalExpense)}`],
-      ['Net Surplus / (Deficit)', `৳${fmt(netSurplus)}`],
+      ['Total Income', `${fmt(totalIncome)} /-`],
+      ['Total Expense', `${fmt(totalExpense)} /-`],
+      ['Net Surplus / (Deficit)', `${fmt(netSurplus)} /-`],
     ];
     summaryRows.forEach(([k, v], i) => {
       doc.setFillColor(i % 2 === 0 ? 255 : 244, i % 2 === 0 ? 253 : 239, i % 2 === 0 ? 247 : 230);
@@ -326,7 +368,7 @@ const FinanceReports: React.FC = () => {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(26, 26, 46);
     doc.text('AUDIT CERTIFICATE', 12, y); y += 8;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
-    const certText = `This is to certify that the accounts of AL RAWA English School for the financial year ${yearFilter} have been examined. Total income stood at ৳${fmt(totalIncome)} and total expenditure at ৳${fmt(totalExpense)}, resulting in a net surplus of ৳${fmt(netSurplus)}. All transactions have been verified against supporting documents.`;
+    const certText = `This is to certify that the accounts of AL RAWA English School for the financial year ${yearFilter} have been examined. Total income stood at ${fmt(totalIncome)} /- and total expenditure at ${fmt(totalExpense)} /-, resulting in a net surplus of ${fmt(netSurplus)} /-. All transactions have been verified against supporting documents.`;
     const lines = doc.splitTextToSize(certText, 186);
     doc.text(lines, 12, y); y += lines.length * 5 + 10;
 
@@ -356,9 +398,9 @@ const FinanceReports: React.FC = () => {
     doc.text('1. FINANCIAL OVERVIEW', 12, y); y += 8;
 
     const overviewData: [string, string][] = [
-      ['Total Income', `৳${fmt(totalIncome)}`],
-      ['Total Expense', `৳${fmt(totalExpense)}`],
-      ['Net Surplus / (Deficit)', `৳${fmt(netSurplus)}`],
+      ['Total Income', `${fmt(totalIncome)} /-`],
+      ['Total Expense', `${fmt(totalExpense)} /-`],
+      ['Net Surplus / (Deficit)', `${fmt(netSurplus)} /-`],
       ['Total Transactions', String(yearFiltered.length)],
       ['Income Transactions', String(yearIncome.length)],
       ['Expense Transactions', String(yearExpense.length)],
@@ -378,7 +420,7 @@ const FinanceReports: React.FC = () => {
       if (y > 270) { doc.addPage(); y = 14; }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(26, 26, 46);
       doc.text(`${i + 1}. ${cat}`, 14, y + 4);
-      doc.text(`৳${fmt(amt)}`, 196, y + 4, { align: 'right' });
+      doc.text(`${fmt(amt)} /-`, 196, y + 4, { align: 'right' });
       y += 6;
     });
     y += 6;
@@ -390,7 +432,7 @@ const FinanceReports: React.FC = () => {
       if (y > 270) { doc.addPage(); y = 14; }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(26, 26, 46);
       doc.text(`${i + 1}. ${cat}`, 14, y + 4);
-      doc.text(`৳${fmt(amt)}`, 196, y + 4, { align: 'right' });
+      doc.text(`${fmt(amt)} /-`, 196, y + 4, { align: 'right' });
       y += 6;
     });
     y += 8;
@@ -400,7 +442,7 @@ const FinanceReports: React.FC = () => {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('4. INTERNAL TRANSFERS', 12, y); y += 7;
     const totalTransfers = allTransfers.reduce((s, t) => s + Number(t.amount), 0);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(26, 26, 46);
-    doc.text(`Total Internal Transfers: ৳${fmt(totalTransfers)} (${allTransfers.length} transactions)`, 14, y); y += 6;
+    doc.text(`Total Internal Transfers: ${fmt(totalTransfers)} /- (${allTransfers.length} transactions)`, 14, y); y += 6;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(130, 124, 114);
     doc.text('Note: Internal transfers between AL RAWA Bank and Cash in Hand do not affect the income/expense ledger.', 14, y); y += 10;
 
@@ -410,7 +452,7 @@ const FinanceReports: React.FC = () => {
     doc.text('5. RECOMMENDATIONS', 12, y); y += 8;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
     const recs = [
-      `Net surplus of ৳${fmt(netSurplus)} for the year ${yearFilter}.`,
+      `Net surplus of ${fmt(netSurplus)} /- for the year ${yearFilter}.`,
       totalIncome > 0 ? `Expense-to-income ratio: ${((totalExpense / totalIncome) * 100).toFixed(1)}%.` : 'No income recorded.',
       `${yearFiltered.length} total transactions recorded during the year.`,
       'All financial records are available for detailed audit.',
@@ -502,8 +544,8 @@ const FinanceReports: React.FC = () => {
               <div>
                 <h4 className="font-serif text-sm text-school-primary mb-3">Headwise Income — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
                 <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">%</th><th className="px-3 py-2 text-right">Count</th></tr></thead>
-                  <tbody>{hw.map(([cat, amt]) => <tr key={cat} className="border-t border-school-border/50"><td className="px-3 py-2 font-medium">{cat}</td><td className="px-3 py-2 text-right">৳{fmt(amt)}</td><td className="px-3 py-2 text-right">{total > 0 ? ((amt / total) * 100).toFixed(1) : 0}%</td><td className="px-3 py-2 text-right">{incomeTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length}</td></tr>)}</tbody>
-                  <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2">Total Income</td><td className="px-3 py-2 text-right">৳{fmt(total)}</td><td></td><td className="px-3 py-2 text-right">{incomeTx.length}</td></tr></tfoot>
+                  <tbody>{hw.map(([cat, amt]) => <tr key={cat} className="border-t border-school-border/50"><td className="px-3 py-2 font-medium">{cat}</td><td className="px-3 py-2 text-right">{fmt(amt)} /-</td><td className="px-3 py-2 text-right">{total > 0 ? ((amt / total) * 100).toFixed(1) : 0}%</td><td className="px-3 py-2 text-right">{incomeTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length}</td></tr>)}</tbody>
+                  <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2">Total Income</td><td className="px-3 py-2 text-right">{fmt(total)} /-</td><td></td><td className="px-3 py-2 text-right">{incomeTx.length}</td></tr></tfoot>
                 </table>
               </div>
             ); })()}
@@ -516,8 +558,8 @@ const FinanceReports: React.FC = () => {
             <div>
               <h4 className="font-serif text-sm text-school-primary mb-3">Headwise Expense — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
               <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">%</th><th className="px-3 py-2 text-right">Count</th></tr></thead>
-                <tbody>{hw.map(([cat, amt]) => <tr key={cat} className="border-t border-school-border/50"><td className="px-3 py-2 font-medium">{cat}</td><td className="px-3 py-2 text-right">৳{fmt(amt)}</td><td className="px-3 py-2 text-right">{total > 0 ? ((amt / total) * 100).toFixed(1) : 0}%</td><td className="px-3 py-2 text-right">{expenseTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length}</td></tr>)}</tbody>
-                <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2">Total Expense</td><td className="px-3 py-2 text-right">৳{fmt(total)}</td><td></td><td className="px-3 py-2 text-right">{expenseTx.length}</td></tr></tfoot>
+                <tbody>{hw.map(([cat, amt]) => <tr key={cat} className="border-t border-school-border/50"><td className="px-3 py-2 font-medium">{cat}</td><td className="px-3 py-2 text-right">{fmt(amt)} /-</td><td className="px-3 py-2 text-right">{total > 0 ? ((amt / total) * 100).toFixed(1) : 0}%</td><td className="px-3 py-2 text-right">{expenseTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length}</td></tr>)}</tbody>
+                <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2">Total Expense</td><td className="px-3 py-2 text-right">{fmt(total)} /-</td><td></td><td className="px-3 py-2 text-right">{expenseTx.length}</td></tr></tfoot>
               </table>
             </div>
           ); })()}
@@ -525,22 +567,42 @@ const FinanceReports: React.FC = () => {
       )}
 
       {tab === 'monthly-income' && (
-        <div className="bg-white rounded-2xl border border-school-border p-4 overflow-x-auto" id="print-area">
+        <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
           <h4 className="font-serif text-sm text-school-primary mb-3">Monthly Income — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
-          {(() => { const mb = monthlyBreakdown(incomeTx); const cats = Object.keys(mb).sort(); if (!cats.length) return <p className="text-sm text-school-muted">No income data for this period.</p>; return (
-            <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Category</th>{monthRange.map(m => { const [yr, mn] = m.split('-'); return <th key={m} className="px-2 py-2 text-right">{getMonthName(Number(mn) - 1).slice(0, 3)} '{yr.slice(2)}</th>; })}<th className="px-3 py-2 text-right">Total</th></tr></thead>
-              <tbody>{cats.map((cat, i) => { let rowTotal = 0; return <tr key={cat} className={`border-t border-school-border/50 ${i % 2 ? 'bg-school-paper/30' : ''}`}><td className="px-3 py-2 font-medium">{cat}</td>{monthRange.map(m => { const v = mb[cat]?.[m] || 0; rowTotal += v; return <td key={m} className={`px-2 py-2 text-right ${v > 0 ? 'text-emerald-600 font-medium' : 'text-school-muted'}`}>{v > 0 ? `৳${fmt(v)}` : '—'}</td>; })}<td className="px-3 py-2 text-right font-bold">৳{fmt(rowTotal)}</td></tr>; })}</tbody>
+          {(() => { if (!incomeTx.length) return <p className="text-sm text-school-muted">No income data for this period.</p>;
+            const sorted = [...incomeTx].sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
+            const total = sorted.reduce((s, t) => s + Number(t.amount), 0);
+            return (
+            <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Date</th><th className="px-3 py-2 text-left">Class</th><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th></tr></thead>
+              <tbody>{sorted.map((t, i) => <tr key={t.id} className={`border-t border-school-border/50 ${i % 2 ? 'bg-school-paper/30' : ''}`}>
+                <td className="px-3 py-2 whitespace-nowrap text-xs font-mono">{fmtDate(t.transactionDate)}</td>
+                <td className="px-3 py-2 text-xs">{t.className || '—'}</td>
+                <td className="px-3 py-2 text-xs font-medium">{t.studentId ? (students.find((s: any) => s.id === t.studentId)?.name || 'Unknown') : '—'}</td>
+                <td className="px-3 py-2 font-medium">{t.category || 'Uncategorized'}</td>
+                <td className="px-3 py-2 text-right font-bold text-emerald-600">{fmt(Number(t.amount))} /-</td>
+              </tr>)}</tbody>
+              <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2" colSpan={4}>Total Income ({sorted.length} transactions)</td><td className="px-3 py-2 text-right text-emerald-600">{fmt(total)} /-</td></tr></tfoot>
             </table>
           ); })()}
         </div>
       )}
 
       {tab === 'monthly-expense' && (
-        <div className="bg-white rounded-2xl border border-school-border p-4 overflow-x-auto" id="print-area">
+        <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
           <h4 className="font-serif text-sm text-school-primary mb-3">Monthly Expense — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
-          {(() => { const mb = monthlyBreakdown(expenseTx); const cats = Object.keys(mb).sort(); if (!cats.length) return <p className="text-sm text-school-muted">No expense data for this period.</p>; return (
-            <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Category</th>{monthRange.map(m => { const [yr, mn] = m.split('-'); return <th key={m} className="px-2 py-2 text-right">{getMonthName(Number(mn) - 1).slice(0, 3)} '{yr.slice(2)}</th>; })}<th className="px-3 py-2 text-right">Total</th></tr></thead>
-              <tbody>{cats.map((cat, i) => { let rowTotal = 0; return <tr key={cat} className={`border-t border-school-border/50 ${i % 2 ? 'bg-school-paper/30' : ''}`}><td className="px-3 py-2 font-medium">{cat}</td>{monthRange.map(m => { const v = mb[cat]?.[m] || 0; rowTotal += v; return <td key={m} className={`px-2 py-2 text-right ${v > 0 ? 'text-rose-600 font-medium' : 'text-school-muted'}`}>{v > 0 ? `৳${fmt(v)}` : '—'}</td>; })}<td className="px-3 py-2 text-right font-bold">৳{fmt(rowTotal)}</td></tr>; })}</tbody>
+          {(() => { if (!expenseTx.length) return <p className="text-sm text-school-muted">No expense data for this period.</p>;
+            const sorted = [...expenseTx].sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
+            const total = sorted.reduce((s, t) => s + Number(t.amount), 0);
+            return (
+            <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Date</th><th className="px-3 py-2 text-left">Class</th><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th></tr></thead>
+              <tbody>{sorted.map((t, i) => <tr key={t.id} className={`border-t border-school-border/50 ${i % 2 ? 'bg-school-paper/30' : ''}`}>
+                <td className="px-3 py-2 whitespace-nowrap text-xs font-mono">{fmtDate(t.transactionDate)}</td>
+                <td className="px-3 py-2 text-xs">{t.className || '—'}</td>
+                <td className="px-3 py-2 text-xs font-medium">{t.studentId ? (students.find((s: any) => s.id === t.studentId)?.name || 'Unknown') : '—'}</td>
+                <td className="px-3 py-2 font-medium">{t.category || 'Uncategorized'}</td>
+                <td className="px-3 py-2 text-right font-bold text-rose-600">{fmt(Number(t.amount))} /-</td>
+              </tr>)}</tbody>
+              <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2" colSpan={4}>Total Expense ({sorted.length} transactions)</td><td className="px-3 py-2 text-right text-rose-600">{fmt(total)} /-</td></tr></tfoot>
             </table>
           ); })()}
         </div>
@@ -552,20 +614,20 @@ const FinanceReports: React.FC = () => {
             <div className="space-y-4">
               <h4 className="font-serif text-sm text-school-primary">Audit Report — Financial Year {yearFilter}</h4>
               <div className="grid grid-cols-3 gap-3">
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-emerald-600 font-bold">Total Income</div><div className="font-serif text-lg text-emerald-700">৳{fmt(ti)}</div></div>
-                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-rose-600 font-bold">Total Expense</div><div className="font-serif text-lg text-rose-700">৳{fmt(te)}</div></div>
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-blue-600 font-bold">Net Surplus</div><div className={`font-serif text-lg ${ns >= 0 ? 'text-blue-700' : 'text-red-700'}`}>৳{fmt(ns)}</div></div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-emerald-600 font-bold">Total Income</div><div className="font-serif text-lg text-emerald-700">{fmt(ti)} /-</div></div>
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-rose-600 font-bold">Total Expense</div><div className="font-serif text-lg text-rose-700">{fmt(te)} /-</div></div>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-blue-600 font-bold">Net Surplus</div><div className={`font-serif text-lg ${ns >= 0 ? 'text-blue-700' : 'text-red-700'}`}>{fmt(ns)} /-</div></div>
               </div>
               <div>
                 <h5 className="font-bold text-xs uppercase text-school-muted mb-2">Income Breakdown</h5>
                 <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">%</th></tr></thead>
-                  <tbody>{headwise(yearIncome).map(([cat, amt]) => <tr key={cat} className="border-t border-school-border/50"><td className="px-3 py-2 font-medium">{cat}</td><td className="px-3 py-2 text-right">৳{fmt(amt)}</td><td className="px-3 py-2 text-right">{ti > 0 ? ((amt / ti) * 100).toFixed(1) : 0}%</td></tr>)}</tbody>
+                  <tbody>{headwise(yearIncome).map(([cat, amt]) => <tr key={cat} className="border-t border-school-border/50"><td className="px-3 py-2 font-medium">{cat}</td><td className="px-3 py-2 text-right">{fmt(amt)} /-</td><td className="px-3 py-2 text-right">{ti > 0 ? ((amt / ti) * 100).toFixed(1) : 0}%</td></tr>)}</tbody>
                 </table>
               </div>
               <div>
                 <h5 className="font-bold text-xs uppercase text-school-muted mb-2">Expense Breakdown</h5>
                 <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">%</th></tr></thead>
-                  <tbody>{headwise(yearExpense).map(([cat, amt]) => <tr key={cat} className="border-t border-school-border/50"><td className="px-3 py-2 font-medium">{cat}</td><td className="px-3 py-2 text-right">৳{fmt(amt)}</td><td className="px-3 py-2 text-right">{te > 0 ? ((amt / te) * 100).toFixed(1) : 0}%</td></tr>)}</tbody>
+                  <tbody>{headwise(yearExpense).map(([cat, amt]) => <tr key={cat} className="border-t border-school-border/50"><td className="px-3 py-2 font-medium">{cat}</td><td className="px-3 py-2 text-right">{fmt(amt)} /-</td><td className="px-3 py-2 text-right">{te > 0 ? ((amt / te) * 100).toFixed(1) : 0}%</td></tr>)}</tbody>
                 </table>
               </div>
             </div>
@@ -579,10 +641,10 @@ const FinanceReports: React.FC = () => {
             <div className="space-y-4">
               <h4 className="font-serif text-sm text-school-primary">Annual General Meeting Report — Session {yearFilter}</h4>
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Total Income</div><div className="font-serif text-lg text-emerald-600">৳{fmt(ti)}</div></div>
-                <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Total Expense</div><div className="font-serif text-lg text-rose-600">৳{fmt(te)}</div></div>
+                <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Total Income</div><div className="font-serif text-lg text-emerald-600">{fmt(ti)} /-</div></div>
+                <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Total Expense</div><div className="font-serif text-lg text-rose-600">{fmt(te)} /-</div></div>
               </div>
-              <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Net Surplus / (Deficit)</div><div className={`font-serif text-xl ${ns >= 0 ? 'text-blue-600' : 'text-red-600'}`}>৳{fmt(ns)}</div></div>
+              <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Net Surplus / (Deficit)</div><div className={`font-serif text-xl ${ns >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{fmt(ns)} /-</div></div>
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div><div className="text-[10px] uppercase text-school-muted font-bold">Total Transactions</div><div className="font-bold text-lg">{yearFiltered.length}</div></div>
                 <div><div className="text-[10px] uppercase text-school-muted font-bold">Income Entries</div><div className="font-bold text-lg text-emerald-600">{yearIncome.length}</div></div>
@@ -590,11 +652,11 @@ const FinanceReports: React.FC = () => {
               </div>
               <div>
                 <h5 className="font-bold text-xs uppercase text-school-muted mb-2">Top Income Heads</h5>
-                {headwise(yearIncome).slice(0, 5).map(([cat, amt], i) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{i + 1}. {cat}</span><span className="font-bold text-emerald-600">৳{fmt(amt)}</span></div>)}
+                {headwise(yearIncome).slice(0, 5).map(([cat, amt], i) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{i + 1}. {cat}</span><span className="font-bold text-emerald-600">{fmt(amt)} /-</span></div>)}
               </div>
               <div>
                 <h5 className="font-bold text-xs uppercase text-school-muted mb-2">Top Expense Heads</h5>
-                {headwise(yearExpense).slice(0, 5).map(([cat, amt], i) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{i + 1}. {cat}</span><span className="font-bold text-rose-600">৳{fmt(amt)}</span></div>)}
+                {headwise(yearExpense).slice(0, 5).map(([cat, amt], i) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{i + 1}. {cat}</span><span className="font-bold text-rose-600">{fmt(amt)} /-</span></div>)}
               </div>
             </div>
           ); })()}

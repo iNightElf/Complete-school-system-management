@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import "dotenv/config";
 
 import { auth } from "./lib/auth.js";
@@ -24,7 +25,13 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "2mb" }));
+
+const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 500, standardHeaders: true, legacyHeaders: false });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+
+app.use("/api/", globalLimiter);
+app.use("/api/auth/", authLimiter);
 
 // Better-Auth handler — must come before other routes
 app.use("/api/auth", toNodeHandler(auth));
@@ -40,21 +47,21 @@ app.get("/api/students", authenticate, authorizePermission("students:read"), stu
 app.post("/api/students", authenticate, authorizePermission("students:write"), students.createStudent);
 app.put("/api/students/:id", authenticate, authorizePermission("students:write"), students.updateStudent);
 app.delete("/api/students/:id", authenticate, authorizePermission("students:write"), students.deleteStudent);
-app.get("/api/students/:id/photo", students.getStudentPhoto);
+app.get("/api/students/:id/photo", authenticate, authorizePermission("students:read"), students.getStudentPhoto);
 
 // ── Teachers ──
 app.get("/api/teachers", authenticate, authorizePermission("teachers:read"), ops.getAllTeachers);
 app.post("/api/teachers", authenticate, authorizePermission("teachers:write"), ops.createTeacher);
 app.put("/api/teachers/:id", authenticate, authorizePermission("teachers:write"), ops.updateTeacher);
 app.delete("/api/teachers/:id", authenticate, authorizePermission("teachers:write"), ops.deleteTeacher);
-app.get("/api/teachers/:id/photo", ops.getTeacherPhoto);
+app.get("/api/teachers/:id/photo", authenticate, authorizePermission("teachers:read"), ops.getTeacherPhoto);
 
 // ── Staff ──
 app.get("/api/staff", authenticate, authorizePermission("staff:read"), ops.getAllStaff);
 app.post("/api/staff", authenticate, authorizePermission("staff:write"), ops.createStaff);
 app.put("/api/staff/:id", authenticate, authorizePermission("staff:write"), ops.updateStaff);
 app.delete("/api/staff/:id", authenticate, authorizePermission("staff:write"), ops.deleteStaff);
-app.get("/api/staff/:id/photo", ops.getStaffPhoto);
+app.get("/api/staff/:id/photo", authenticate, authorizePermission("staff:read"), ops.getStaffPhoto);
 
 // ── Books (Accessories) ──
 app.get("/api/books", authenticate, authorizePermission("books:read"), ops.getAllBooks);
@@ -84,6 +91,14 @@ app.delete("/api/classes/:classId/results", authenticate, authorizePermission("r
 app.get("/api/finance/balances", authenticate, authorizePermission("finance:read"), finance.getBalances);
 app.get("/api/finance/transactions", authenticate, authorizePermission("finance:read"), finance.getTransactions);
 app.post("/api/finance/transactions", authenticate, authorizePermission("finance:write"), finance.createTransaction);
+
+// ── Fee Assignments ──
+app.get("/api/finance/fee-assignments", authenticate, authorizePermission("finance:read"), finance.getFeeAssignments);
+app.post("/api/finance/fee-assignments/toggle", authenticate, authorizePermission("finance:write"), finance.toggleFeeAssignment);
+app.put("/api/finance/fee-assignments/:id", authenticate, authorizePermission("finance:write"), finance.updateFeeAssignmentAmount);
+
+// ── Defaulter Report ──
+app.get("/api/finance/defaulter", authenticate, authorizePermission("finance:read"), finance.getDefaulterReport);
 
 // Health Check
 app.get("/health", (_req, res) => res.json({ status: "ok" }));

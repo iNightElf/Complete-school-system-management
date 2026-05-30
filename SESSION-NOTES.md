@@ -1,4 +1,4 @@
-# Development Session Notes — May 30, 2026
+# Development Session Notes
 
 ## What We Built
 
@@ -23,6 +23,9 @@
 - **Deposit Remaining** tracking: shows how much cash needs to be deposited to bank
 - Finance Reports tab with 6 sub-reports (Headwise Income/Expense, Monthly Income/Expense, Audit, Yearly AGM)
 - PDF generation and print support for all reports
+- **Accessories Fee** added as global fee (one entry = default for all students)
+- **Defaulter tab** with month-by-month grid for recurring fees, yearly for one-time fees
+- **Fee Assignment tab** for special fees (Hifz Tuition, Hifz Admission, Transport) with toggle per student
 
 ### 3. User Management
 - Admin panel for managing user roles (admin, teacher, accountant, viewer)
@@ -42,16 +45,61 @@
 
 ---
 
+## Fixes Applied (This Session)
+
+### Finance Reports
+- **Fixed Monthly Income/Expense PDF crash** — `setTextColor` was passing arrays `[22, 101, 52]` instead of individual args `22, 101, 52`. jsPDF threw `Invalid argument passed to f3`
+- **Removed taka sign (৳) from all reports** — replaced with `/-` suffix across all PDFs and HTML tables
+- **Rewrote Monthly PDF** — portrait A4 with individual transaction rows (Date, Class/Student, Category, Amount, Running total) instead of the old month matrix
+- **Monthly live tables** now show Date, Category, Description, Amount per transaction (was category×month matrix)
+- **Defaulter PDF + Print** — landscape PDF with colored fee badges, ✓/✗ boxes for paid/unpaid months, grand totals
+- **Defaulter shows all students** even with no payments (all fees marked as unpaid/due)
+- **Deposit Remaining fix** — Global Forum → AL RAWA transfers no longer inflate deposit remaining (bank-to-bank doesn't count as cash needing deposit)
+- **Added Class + Student fields** to income transaction form — stored in `Transaction.className` and `Transaction.studentId`
+
+### Database Schema
+- Added `studentId` and `className` to `Transaction` model
+- Added `FeeAssignment` model for special fees (hifz_tuition, hifz_admission, transport)
+- **Added 8 indexes on Transaction**: studentId, category, className, transactionDate, transactionType, and composite indexes for common query patterns
+- **Added indexes on**: Student.class, Subject.classId, Book.classId, Result.studentId, FeeAssignment.[active, studentId]
+- **Added FK relations**: Transaction → Student (onDelete: SetNull), FeeAssignment → Student (onDelete: Cascade)
+- **Added cascade rules**: Subject → SchoolClass, Book → SchoolClass, Result → Student (all onDelete: Cascade)
+- Removed redundant manual `deleteMany` calls in deleteClass and deleteStudent (cascade handles it)
+
+### Server Security
+- **Added auth middleware** to 3 photo endpoints (students, teachers, staff) — were publicly accessible
+- **Fixed `req.user?.userId`** → `req.session?.user?.id` in finance controller (audit trail was broken)
+- **Added rate limiting** — 500 req/15min global, 20 req/15min for auth endpoints
+- **Reduced JSON body limit** from 10MB → 2MB
+- **Single shared PrismaClient** — was creating 7 separate instances (wasted DB connections)
+- **Sanitized error messages** — no more Prisma schema leaks to clients (new `lib/errors.ts` helper)
+- **Removed duplicate code block** in defaulter report (one-time fees were processed twice, causing double-counting)
+
+### Client
+- **ErrorBoundary** — wraps entire app, prevents blank screen on runtime crashes
+- **Store error handling** — all 8 `fetch*` functions now have try/catch (no unhandled promise rejections)
+- **Removed unused imports** — `useCallback` and `FileText` from IdCardSection, `useNavigate` from Register
+- **useEffect cleanup** — Toast setTimeout cleared on unmount, DefaulterTab uses AbortController for stale fetches, ResultSection saves timer cleared on unmount
+- **Photos loaded on-demand** — list APIs return `hasPhoto: true/false` instead of base64 (was ~10MB response, now ~50KB). Photos fetched via `/api/:type/:id/photo` endpoint when needed
+- **PDF generation** fetches photos on-demand via photo API before generating
+
+---
+
 ## Known Issues
 
-### ⚠️ Monthly Income/Expense PDF — NOT WORKING
-- **Symptom**: Clicking PDF download on Monthly Income or Monthly Expense tabs does nothing (no file downloads)
-- **Root cause**: The `addLogo` function passes a ~50KB base64 data URI to jsPDF's `doc.addImage()`, which corrupts the PDF stream and prevents `doc.save()` from working
-- **Attempted fix**: Stripped the `data:image/jpeg;base64,` prefix before passing to jsPDF — still not working
-- **Status**: UNRESOLVED — needs further investigation. Other PDFs (headwise, audit, AGM) also use the same `addLogo` and may have the same issue
-- **Temporary workaround**: Headwise Income/Expense PDFs appear to work because they render plain HTML tables. The issue is specifically with `doc.addImage()` + large base64 strings in jsPDF
+### ⚠️ Concurrent Marks Entry — DATA LOSS
+- **Symptom**: When multiple teachers enter marks for the same class simultaneously, one teacher's edits get overwritten
+- **Root cause**: `saveStudentResult` replaces the entire `marks` JSON column. Auto-save sends the full marks object every 500ms. After save, `loadResults()` refetches and a useEffect resets the form, overwriting in-progress typing
+- **Proposed fix** (not yet implemented):
+  1. Client sends only changed subjects, not entire marks object
+  2. Server merges marks: `{ ...existing.marks, ...newMarks }` instead of replacing
+  3. Remove `allResults` from useEffect dependency (preforms form reset during typing)
+  4. Don't refetch after auto-save, only after manual save or student change
 
 ### Other Notes
 - Subject order fix script (`fix-subject-order.ts`) was created, run, then deleted — order should persist in DB
 - The old Firebase app's `js/results.js` and other legacy files are kept for reference only
 - `node_modules/` is not tracked in git
+- **Zod input validation** not yet implemented on server controllers (zod is installed but unused)
+- **ResultSection.tsx** (1066 lines) and **IdCardSection.tsx** (806 lines) should be split into smaller files
+- Photos stored as BYTEA in PostgreSQL — consider object storage (S3/R2) for better performance at scale

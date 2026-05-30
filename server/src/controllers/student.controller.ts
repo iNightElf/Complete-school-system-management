@@ -1,8 +1,6 @@
 import type { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { param } from "../lib/param.js";
-
-const prisma = new PrismaClient();
+import { prisma } from "../lib/prisma.js";
 
 function parsePhoto(body: any): Buffer | null {
   if (!body.photo) return null;
@@ -20,8 +18,16 @@ export const getAllStudents = async (req: Request, res: Response) => {
       orderBy: { createdAt: "desc" },
     });
     const result = students.map((s) => ({
-      ...s,
-      photo: s.photo ? `data:image/jpeg;base64,${Buffer.from(s.photo).toString("base64")}` : null,
+      id: s.id,
+      class: s.class,
+      roll: s.roll,
+      name: s.name,
+      fatherName: s.fatherName,
+      motherName: s.motherName,
+      contact: s.contact,
+      hasPhoto: !!s.photo,
+      createdAt: s.createdAt,
+      results: s.results,
     }));
     res.json(result);
   } catch (error: any) {
@@ -75,7 +81,8 @@ export const updateStudent = async (req: Request, res: Response) => {
 
     res.json({
       ...student,
-      photo: student.photo ? `data:image/jpeg;base64,${Buffer.from(student.photo).toString("base64")}` : null,
+      photo: undefined,
+      hasPhoto: !!student.photo,
     });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
@@ -85,7 +92,6 @@ export const updateStudent = async (req: Request, res: Response) => {
 export const deleteStudent = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    await prisma.result.deleteMany({ where: { studentId: id } });
     await prisma.student.delete({ where: { id } });
     res.status(204).send();
   } catch (error: any) {

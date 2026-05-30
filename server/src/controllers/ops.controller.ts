@@ -1,8 +1,6 @@
 import type { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { param } from "../lib/param.js";
-
-const prisma = new PrismaClient();
+import { prisma } from "../lib/prisma.js";
 
 function parsePhoto(body: any): Buffer | null {
   if (!body.photo) return null;
@@ -19,8 +17,13 @@ export const getAllTeachers = async (req: Request, res: Response) => {
   try {
     const teachers = await prisma.teacher.findMany({ orderBy: { createdAt: "desc" } });
     const result = teachers.map((t) => ({
-      ...t,
-      photo: t.photo ? `data:image/jpeg;base64,${Buffer.from(t.photo).toString("base64")}` : null,
+      id: t.id,
+      designation: t.designation,
+      name: t.name,
+      email: t.email,
+      contact: t.contact,
+      hasPhoto: !!t.photo,
+      createdAt: t.createdAt,
     }));
     res.json(result);
   } catch (error: any) {
@@ -64,7 +67,7 @@ export const updateTeacher = async (req: Request, res: Response) => {
     if (photoBuffer) data.photo = photoBuffer;
 
     const teacher = await prisma.teacher.update({ where: { id }, data });
-    res.json({ ...teacher, photo: teacher.photo ? `data:image/jpeg;base64,${Buffer.from(teacher.photo).toString("base64")}` : null });
+    res.json({ ...teacher, photo: undefined, hasPhoto: !!teacher.photo });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }
@@ -99,8 +102,13 @@ export const getAllStaff = async (req: Request, res: Response) => {
   try {
     const staff = await prisma.staff.findMany({ orderBy: { createdAt: "desc" } });
     const result = staff.map((s) => ({
-      ...s,
-      photo: s.photo ? `data:image/jpeg;base64,${Buffer.from(s.photo).toString("base64")}` : null,
+      id: s.id,
+      role: s.role,
+      name: s.name,
+      email: s.email,
+      contact: s.contact,
+      hasPhoto: !!s.photo,
+      createdAt: s.createdAt,
     }));
     res.json(result);
   } catch (error: any) {
@@ -144,7 +152,7 @@ export const updateStaff = async (req: Request, res: Response) => {
     if (photoBuffer) data.photo = photoBuffer;
 
     const staff = await prisma.staff.update({ where: { id }, data });
-    res.json({ ...staff, photo: staff.photo ? `data:image/jpeg;base64,${Buffer.from(staff.photo).toString("base64")}` : null });
+    res.json({ ...staff, photo: undefined, hasPhoto: !!staff.photo });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }

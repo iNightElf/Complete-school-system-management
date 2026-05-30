@@ -16,11 +16,13 @@ const Toast: React.FC = () => {
   const [state, setState] = useState<ToastState>({ message: '', type: '', visible: false });
 
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
     toastFn = (message, type = '') => {
       setState({ message, type, visible: true });
-      setTimeout(() => setState((s) => ({ ...s, visible: false })), 3000);
+      clearTimeout(timer);
+      timer = setTimeout(() => setState((s) => ({ ...s, visible: false })), 3000);
     };
-    return () => { toastFn = null; };
+    return () => { clearTimeout(timer); toastFn = null; };
   }, []);
 
   if (!state.visible) return null;

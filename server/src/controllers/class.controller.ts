@@ -1,8 +1,6 @@
 import type { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { param } from "../lib/param.js";
-
-const prisma = new PrismaClient();
+import { prisma } from "../lib/prisma.js";
 
 export const getAllClasses = async (req: Request, res: Response) => {
   try {
@@ -65,8 +63,6 @@ export const deleteClass = async (req: Request, res: Response) => {
     const cls = await prisma.schoolClass.findUnique({ where: { id } });
     if (!cls) return res.status(404).json({ error: "Class not found" });
 
-    await prisma.subject.deleteMany({ where: { classId: id } });
-    await prisma.book.deleteMany({ where: { classId: id } });
     await prisma.schoolClass.delete({ where: { id } });
 
     res.json({ message: "Class deleted" });

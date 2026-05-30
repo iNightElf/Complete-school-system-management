@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useSchoolStore, useAuthStore } from '../store';
 import axios from 'axios';
-import { ArrowUpCircle, ArrowDownCircle, ArrowRightLeft, Clock, BarChart3 } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, ArrowRightLeft, Clock, BarChart3, AlertTriangle, Users } from 'lucide-react';
 import { toast } from '../components/Toast';
 import FinanceReports from './FinanceReports';
+import DefaulterTab from './DefaulterTab';
+import FeeAssignmentTab from './FeeAssignmentTab';
 
 const API_URL = '/api';
 
@@ -13,14 +15,14 @@ const ACCOUNTS = [
   { id: 'CASH_IN_HAND', label: 'Cash in Hand', short: 'Cash', color: 'from-emerald-500 to-emerald-600', ring: 'ring-emerald-200' },
 ] as const;
 
-const INCOME_CATEGORIES = ['Tuition Fee', 'Admission Fee', 'Transfer from Global Forum', 'Donation', 'Other Income'];
+const INCOME_CATEGORIES = ['Tuition Fee', 'Admission Fee', 'Hifz Tuition Fee', 'Hifz Admission Fee', 'Books Fee', 'Copy Fee', 'Stationary Fee', 'Accessories Fee', 'Transfer from Global Forum', 'Donation', 'Other Income'];
 const EXPENSE_CATEGORIES = ['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense'];
 
-type MainTab = 'transactions' | 'reports';
+type MainTab = 'transactions' | 'reports' | 'fee-assignment' | 'defaulter';
 type TxTab = 'income' | 'expense' | 'transfer';
 
 const FinanceSection: React.FC = () => {
-  const { balances, transactions, fetchFinance, fetchTransactions } = useSchoolStore();
+  const { balances, transactions, fetchFinance, fetchTransactions, classes, students, fetchClasses, fetchStudents } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
 
@@ -36,12 +38,14 @@ const FinanceSection: React.FC = () => {
   const [desc, setDesc] = useState('');
   const [sourceAccount, setSourceAccount] = useState('AL_RAWA_BANK');
   const [transferTo, setTransferTo] = useState('AL_RAWA_BANK');
+  const [selectedClass, setSelectedClass] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState('');
 
-  useEffect(() => { fetchFinance(); fetchTransactions(); }, []);
+  useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); }, []);
 
   // Compute totals from transactions
   const totalIncome = transactions
-    .filter((t: any) => t.transactionType === 'INCOME')
+    .filter((t: any) => t.transactionType === 'INCOME' && t.destinationAccount === 'CASH_IN_HAND')
     .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
 
   const totalDepositedToBank = transactions
@@ -53,6 +57,7 @@ const FinanceSection: React.FC = () => {
   const resetForm = () => {
     setAmount(''); setCategory(''); setCustomCategory(''); setDesc('');
     setDate(new Date().toISOString().split('T')[0]);
+    setSelectedClass(''); setSelectedStudent('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -81,6 +86,8 @@ const FinanceSection: React.FC = () => {
         destinationAccount: destination,
         category: finalCategory,
         description: desc,
+        studentId: selectedStudent || undefined,
+        className: selectedClass || undefined,
       }, { withCredentials: true });
 
       toast(activeTab === 'income' ? 'Income recorded ✓' : activeTab === 'expense' ? 'Expense recorded ✓' : 'Transfer recorded ✓', 'success');
@@ -146,9 +153,17 @@ const FinanceSection: React.FC = () => {
         <button onClick={() => setMainTab('reports')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'reports' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
           <BarChart3 size={14} /> Reports
         </button>
+        <button onClick={() => setMainTab('defaulter')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'defaulter' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
+          <AlertTriangle size={14} /> Defaulter
+        </button>
+        <button onClick={() => setMainTab('fee-assignment')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'fee-assignment' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
+          <Users size={14} /> Fee Assignment
+        </button>
       </div>
 
       {mainTab === 'reports' ? <FinanceReports /> : null}
+      {mainTab === 'defaulter' ? <DefaulterTab /> : null}
+      {mainTab === 'fee-assignment' ? <FeeAssignmentTab /> : null}
 
       {mainTab === 'transactions' && (<div className="space-y-4">
           {/* Tab Bar */}
@@ -177,13 +192,37 @@ const FinanceSection: React.FC = () => {
             </div>
 
             {activeTab === 'income' && (
-              <div>
-                <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Category</label>
-                <select value={category} onChange={e => setCategory(e.target.value)}
-                  className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
-                  <option value="">Select...</option>
-                  {INCOME_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Category</label>
+                    <select value={category} onChange={e => setCategory(e.target.value)}
+                      className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
+                      <option value="">Select...</option>
+                      {INCOME_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Class (optional)</label>
+                    <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedStudent(''); }}
+                      className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
+                      <option value="">None</option>
+                      {classes.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {selectedClass && (
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Student (optional)</label>
+                    <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
+                      className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
+                      <option value="">Select student...</option>
+                      {students.filter((s: any) => s.class === selectedClass).map((s: any) => (
+                        <option key={s.id} value={s.id}>{s.name}{s.fatherName ? ` (${s.fatherName})` : ''}{s.roll ? ` - Roll ${s.roll}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
 
@@ -245,7 +284,6 @@ const FinanceSection: React.FC = () => {
               {loading ? 'Processing...' : activeTab === 'income' ? '💰 Record Income' : activeTab === 'expense' ? '💸 Record Expense' : '🔄 Record Transfer'}
             </button>
           </form>
-      </div>)}
 
       {/* Transaction History */}
       <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
@@ -273,6 +311,7 @@ const FinanceSection: React.FC = () => {
                       {getTxIcon(tx.transactionType)}
                       <div>
                         <p className="font-bold text-xs">{tx.category || 'Uncategorized'}</p>
+                        {tx.className && <p className="text-[10px] text-school-primary font-semibold">{tx.className}{tx.studentId ? ` — ${students.find((s: any) => s.id === tx.studentId)?.name || 'Unknown Student'}` : ''}</p>}
                         <p className="text-[10px] text-school-muted">
                           {tx.sourceAccount ? tx.sourceAccount.replace(/_/g, ' ') : 'External'} → {tx.destinationAccount ? tx.destinationAccount.replace(/_/g, ' ') : 'External'}
                         </p>
@@ -295,6 +334,8 @@ const FinanceSection: React.FC = () => {
           </table>
         </div>
       </div>
+      </div>)}
+
     </div>
   );
 };

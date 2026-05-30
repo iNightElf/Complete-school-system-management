@@ -1,8 +1,6 @@
 import type { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { param } from "../lib/param.js";
-
-const prisma = new PrismaClient();
+import { prisma } from "../lib/prisma.js";
 
 export const getSubjectsByClass = async (req: Request, res: Response) => {
   try {

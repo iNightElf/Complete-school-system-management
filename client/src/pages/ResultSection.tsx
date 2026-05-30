@@ -262,6 +262,8 @@ function EnterByStudent() {
   const [reportTerm, setReportTerm] = useState<string | null>(null);
   const saveTimer = useRef<any>(null);
 
+  useEffect(() => { return () => { clearTimeout(saveTimer.current); }; }, []);
+
   const loadResults = async (clsId: string) => {
     try { const res = await fetch(`${API_URL}/classes/${clsId}/results`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
   };
@@ -319,7 +321,7 @@ function EnterByStudent() {
               return (
                 <button key={s.id} onClick={() => { setActiveStudent(s); setActiveTerm('1'); }} className="bg-white p-4 rounded-2xl border border-school-border hover:shadow-md transition-shadow text-left">
                   <div className="flex items-center gap-3">
-                    {s.photo ? <img src={s.photo} alt="" className="w-10 h-10 rounded-full object-cover border border-school-border" /> : <div className="w-10 h-10 rounded-full bg-school-primary text-white flex items-center justify-center text-sm">👤</div>}
+                    {s.hasPhoto ? <img src={`${API_URL}/students/${s.id}/photo`} alt="" className="w-10 h-10 rounded-full object-cover border border-school-border" /> : <div className="w-10 h-10 rounded-full bg-school-primary text-white flex items-center justify-center text-sm">👤</div>}
                     <div>
                       <div className="font-bold text-sm text-school-primary">{s.name}</div>
                       <div className="text-[11px] text-school-muted">{s.roll ? `Roll: ${s.roll}` : cls.name}</div>
@@ -336,7 +338,7 @@ function EnterByStudent() {
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <button onClick={() => setActiveStudent(null)} className="text-sm text-school-accent hover:underline">← Students</button>
-            {activeStudent.photo ? <img src={activeStudent.photo} alt="" className="w-10 h-10 rounded-full object-cover border border-school-border" /> : <div className="w-10 h-10 rounded-full bg-school-primary text-white flex items-center justify-center text-sm">👤</div>}
+            {activeStudent.hasPhoto ? <img src={`${API_URL}/students/${activeStudent.id}/photo`} alt="" className="w-10 h-10 rounded-full object-cover border border-school-border" /> : <div className="w-10 h-10 rounded-full bg-school-primary text-white flex items-center justify-center text-sm">👤</div>}
             <div className="flex-1">
               <div className="font-bold text-sm text-school-primary">{activeStudent.name}</div>
               <div className="text-[11px] text-school-muted">{cls.name}{activeStudent.roll ? ` · Roll: ${activeStudent.roll}` : ''}</div>
@@ -471,7 +473,7 @@ function OnlineReportCard({ student, cls, subjects, allResults, term, onBack }: 
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <button onClick={onBack} className="text-sm text-school-accent hover:underline">← Change Term</button>
-        <button onClick={() => downloadReportCardPDF(student, cls.name, subjects, allResults, term)} className="ml-auto flex items-center gap-1 px-4 py-2 bg-school-primary text-white rounded-xl text-xs font-bold hover:opacity-90"><Download size={14} /> Download PDF</button>
+        <button onClick={async () => await downloadReportCardPDF(student, cls.name, subjects, allResults, term)} className="ml-auto flex items-center gap-1 px-4 py-2 bg-school-primary text-white rounded-xl text-xs font-bold hover:opacity-90"><Download size={14} /> Download PDF</button>
       </div>
         <div className="bg-white rounded-2xl border border-school-border max-w-2xl mx-auto space-y-5 p-6">
         <div className="text-center border-b border-school-border pb-4">
@@ -481,7 +483,7 @@ function OnlineReportCard({ student, cls, subjects, allResults, term, onBack }: 
           <p className="text-sm font-bold text-red-600 mt-2">{isFinal ? 'ANNUAL REPORT CARD' : `TERM REPORT CARD — ${label.toUpperCase()}`}</p>
         </div>
         <div className="flex items-center gap-4">
-          {student.photo ? <img src={student.photo} alt="" className="w-16 h-16 rounded-full object-cover border border-school-border" /> : <div className="w-16 h-16 rounded-full bg-school-primary text-white flex items-center justify-center text-2xl">👤</div>}
+          {student.hasPhoto ? <img src={`${API_URL}/students/${student.id}/photo`} alt="" className="w-16 h-16 rounded-full object-cover border border-school-border" /> : <div className="w-16 h-16 rounded-full bg-school-primary text-white flex items-center justify-center text-2xl">👤</div>}
           <div className="space-y-1 text-sm">
             <div><span className="text-school-muted">Student Name:</span> <strong>{student.name}</strong></div>
             <div><span className="text-school-muted">Class:</span> <strong>{cls.name}{student.roll ? ` · Roll: ${student.roll}` : ''}</strong></div>
@@ -710,9 +712,16 @@ function _pdfGradeChip(doc: jsPDF, cx: number, cy: number, grade: string) {
   doc.setTextColor(26, 26, 46); doc.setFont('helvetica', 'normal');
 }
 
-function downloadReportCardPDF(student: any, clsName: string, subjects: any[], allResults: any[], term: string, sharedDoc?: jsPDF) {
+async function downloadReportCardPDF(student: any, clsName: string, subjects: any[], allResults: any[], term: string, sharedDoc?: jsPDF) {
   const doc = sharedDoc || new jsPDF({ format: 'a4', unit: 'mm' });
   if (sharedDoc) doc.addPage();
+
+  // Fetch photo on-demand
+  let photoDataUri: string | null = null;
+  if (student.hasPhoto) {
+    try { const r = await fetch(`${API_URL}/students/${student.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoDataUri = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+  }
+
   const W = 210, M = 12, CW = W - M * 2;
   const NAVY = [26, 26, 46], GREEN = [45, 106, 79], RED = [200, 75, 49], WHITE = [255, 255, 255], MUTED = [130, 124, 114], ROW1 = [255, 253, 247], ROW2 = [244, 239, 230];
   const isFinal = term === 'final';
@@ -741,7 +750,7 @@ function downloadReportCardPDF(student: any, clsName: string, subjects: any[], a
   y += 30;
 
   // STUDENT INFO
-  if (student.photo) { try { doc.addImage(student.photo, 'JPEG', W - M - 26, y, 26, 30, '', 'FAST'); } catch (_e) {} }
+  if (photoDataUri) { try { doc.addImage(photoDataUri, 'JPEG', W - M - 26, y, 26, 30, '', 'FAST'); } catch (_e) {} }
   doc.setFontSize(9.5);
   const infoRows: [string, string][] = [['Student Name', student.name], ['Class', clsName]];
   if (student.roll) infoRows.push(['Roll No.', student.roll]);
@@ -995,11 +1004,11 @@ function AllReportCardsTab() {
   const handleSelectClass = (c: any) => { setCls(c); fetchSubjects(c.id); fetchStudents(); loadResults(c.id); };
   const clsStudents = cls ? students.filter((s: any) => s.class === cls.name).sort((a: any, b: any) => (+a.roll || 999) - (+b.roll || 999) || a.name.localeCompare(b.name)) : [];
 
-  const downloadAll = (term: string) => {
+  const downloadAll = async (term: string) => {
     if (!clsStudents.length) { toast('No students', 'error'); return; }
     toast(`Generating ${clsStudents.length} report cards…`, '');
     const doc = new jsPDF({ format: 'a4', unit: 'mm' });
-    clsStudents.forEach((s, i) => { downloadReportCardPDF(s, cls.name, subjects, allResults, term, doc); });
+    for (const s of clsStudents) { await downloadReportCardPDF(s, cls.name, subjects, allResults, term, doc); }
     const isFinal = term === 'final';
     const label = isFinal ? 'Annual' : TERM_NAMES[term];
     doc.save(`${cls.name.replace(/\s+/g, '_')}_${label}_All_Reports.pdf`);

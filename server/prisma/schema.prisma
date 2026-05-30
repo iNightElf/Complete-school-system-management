@@ -63,16 +63,20 @@ model verification {
 }
 
 model Student {
-  id          String   @id @default(uuid())
+  id          String           @id @default(uuid())
   class       String
   roll        String?
   name        String
   fatherName  String?
   motherName  String?
   contact     String?
-  photo       Bytes?   // Binary storage (BYTEA)
-  createdAt   DateTime @default(now())
+  photo       Bytes?
+  createdAt   DateTime         @default(now())
   results     Result[]
+  transactions Transaction[]
+  feeAssignments FeeAssignment[]
+
+  @@index([class])
 }
 
 model Teacher {
@@ -81,7 +85,7 @@ model Teacher {
   name        String
   email       String?
   contact     String?
-  photo       Bytes?   // Binary storage (BYTEA)
+  photo       Bytes?
   createdAt   DateTime @default(now())
 }
 
@@ -91,7 +95,7 @@ model Staff {
   name        String
   email       String?
   contact     String?
-  photo       Bytes?   // Binary storage (BYTEA)
+  photo       Bytes?
   createdAt   DateTime @default(now())
 }
 
@@ -109,9 +113,10 @@ model Subject {
   fullMarks   Int
   order       Int         @default(0)
   classId     String
-  class       SchoolClass @relation(fields: [classId], references: [id])
+  class       SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
 
   @@unique([name, classId])
+  @@index([classId])
 }
 
 model Book {
@@ -122,37 +127,65 @@ model Book {
   discounted  Decimal     @db.Decimal(12, 2)
   sell        Decimal     @db.Decimal(12, 2)
   classId     String
-  class       SchoolClass @relation(fields: [classId], references: [id])
+  class       SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@index([classId])
 }
 
 model Result {
   id          String   @id @default(uuid())
   studentId   String
-  student     Student  @relation(fields: [studentId], references: [id])
-  term        String   // "1" | "2" | "3"
-  marks       Json     // Map of subject name to marks
-  attendance  Json?    // { days: number, present: number }
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  term        String
+  marks       Json
+  attendance  Json?
   comment     String?
   createdAt   DateTime @default(now())
 
   @@unique([studentId, term])
+  @@index([studentId])
 }
 
 model Transaction {
-  id                    String   @id @default(uuid()) @db.Uuid
-  transactionDate       DateTime @map("transaction_date")
-  transactionType       String   @map("transaction_type") @db.VarChar(50)
-  sourceAccount         String?  @map("source_account") @db.VarChar(100)
-  destinationAccount    String?  @map("destination_account") @db.VarChar(100)
-  amount                Decimal  @db.Decimal(12, 2)
-  category              String?  @db.VarChar(100)
-  description           String?  @db.Text
-  affectsIncomeLedger   Boolean  @default(false) @map("affects_income_ledger")
-  affectsExpenseLedger  Boolean  @default(false) @map("affects_expense_ledger")
-  createdBy             String?  @map("created_by") @db.VarChar(100)
-  approvedBy            String?  @map("approved_by") @db.VarChar(100)
-  referenceId           String?  @map("reference_id") @db.VarChar(255)
-  createdAt             DateTime @default(now()) @map("created_at")
+  id                    String    @id @default(uuid()) @db.Uuid
+  transactionDate       DateTime  @map("transaction_date")
+  transactionType       String    @map("transaction_type") @db.VarChar(50)
+  sourceAccount         String?   @map("source_account") @db.VarChar(100)
+  destinationAccount    String?   @map("destination_account") @db.VarChar(100)
+  amount                Decimal   @db.Decimal(12, 2)
+  category              String?   @db.VarChar(100)
+  description           String?   @db.Text
+  studentId             String?   @map("student_id")
+  student               Student?  @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  className             String?   @map("class_name") @db.VarChar(100)
+  affectsIncomeLedger   Boolean   @default(false) @map("affects_income_ledger")
+  affectsExpenseLedger  Boolean   @default(false) @map("affects_expense_ledger")
+  createdBy             String?   @map("created_by") @db.VarChar(100)
+  approvedBy            String?   @map("approved_by") @db.VarChar(100)
+  referenceId           String?   @map("reference_id") @db.VarChar(255)
+  createdAt             DateTime  @default(now()) @map("created_at")
 
+  @@index([transactionDate])
+  @@index([transactionType])
+  @@index([studentId])
+  @@index([className])
+  @@index([category])
+  @@index([studentId, category])
+  @@index([className, category])
+  @@index([transactionType, affectsIncomeLedger])
   @@map("transactions")
+}
+
+model FeeAssignment {
+  id          String   @id @default(uuid())
+  studentId   String   @map("student_id")
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  feeType     String   @map("fee_type") @db.VarChar(50)
+  amount      Decimal  @db.Decimal(12, 2) @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([studentId, feeType])
+  @@index([active, studentId])
+  @@map("fee_assignments")
 }

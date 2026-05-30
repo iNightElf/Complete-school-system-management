@@ -128,36 +128,28 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   balances: { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 },
 
   fetchClasses: async () => {
-    const res = await api.get('/classes');
-    set({ classes: res.data });
+    try { const res = await api.get('/classes'); set({ classes: res.data }); } catch {}
   },
   fetchStudents: async () => {
-    const res = await api.get('/students');
-    set({ students: res.data });
+    try { const res = await api.get('/students'); set({ students: res.data }); } catch {}
   },
   fetchTeachers: async () => {
-    const res = await api.get('/teachers');
-    set({ teachers: res.data });
+    try { const res = await api.get('/teachers'); set({ teachers: res.data }); } catch {}
   },
   fetchStaff: async () => {
-    const res = await api.get('/staff');
-    set({ staff: res.data });
+    try { const res = await api.get('/staff'); set({ staff: res.data }); } catch {}
   },
   fetchBooks: async () => {
-    const res = await api.get('/books');
-    set({ books: res.data });
+    try { const res = await api.get('/books'); set({ books: res.data }); } catch {}
   },
   fetchSubjects: async (classId: string) => {
-    const res = await api.get(`/classes/${classId}/subjects`);
-    set({ subjects: res.data });
+    try { const res = await api.get(`/classes/${classId}/subjects`); set({ subjects: res.data }); } catch {}
   },
   fetchFinance: async () => {
-    const res = await api.get('/finance/balances');
-    set({ balances: res.data });
+    try { const res = await api.get('/finance/balances'); set({ balances: res.data }); } catch {}
   },
   fetchTransactions: async () => {
-    const res = await api.get('/finance/transactions');
-    set({ transactions: res.data });
+    try { const res = await api.get('/finance/transactions'); set({ transactions: res.data }); } catch {}
   },
 
   createClass: async (name: string) => {
@@ -225,12 +217,10 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
   roles: [],
 
   fetchUsers: async () => {
-    const res = await api.get('/users');
-    set({ users: res.data });
+    try { const res = await api.get('/users'); set({ users: res.data }); } catch {}
   },
   fetchRoles: async () => {
-    const res = await api.get('/users/roles');
-    set({ roles: res.data });
+    try { const res = await api.get('/users/roles'); set({ roles: res.data }); } catch {}
   },
   updateRole: async (userId: string, role: string) => {
     await api.put(`/users/${userId}/role`, { role });
