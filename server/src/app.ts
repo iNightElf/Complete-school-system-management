@@ -128,4 +128,13 @@ app.get("/api/finance/defaulter", authenticate, authorizePermission("finance:rea
 // Health Check
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
+// Global error handler — prevents crashes from becoming 502s
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[ErrorHandler]", err?.message || err);
+  const message = process.env.NODE_ENV === "production"
+    ? "Internal server error"
+    : err?.message || "Internal server error";
+  res.status(err?.status || err?.statusCode || 500).json({ error: message });
+});
+
 export default app;
