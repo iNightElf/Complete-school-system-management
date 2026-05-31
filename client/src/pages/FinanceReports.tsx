@@ -46,13 +46,13 @@ function printDiv(id: string) {
 }
 
 const FinanceReports: React.FC = () => {
-  const { transactions, fetchTransactions, students, fetchStudents } = useSchoolStore();
+  const { transactions, fetchTransactions, students, fetchStudents, balances, fetchFinance } = useSchoolStore();
   const [tab, setTab] = useState<ReportTab>('headwise-income');
   const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
   const [dateTo, setDateTo] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
   const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
 
-  useEffect(() => { fetchTransactions(); fetchStudents(); }, []);
+  useEffect(() => { fetchTransactions(); fetchStudents(); fetchFinance(); }, []);
 
   const filtered = transactions.filter((t: any) => {
     if (t.isCancelled || t.reversalOfId) return false;
@@ -110,7 +110,7 @@ const FinanceReports: React.FC = () => {
       else if (tab === 'monthly-income') pdfMonthly('income', incomeTx, students, dateFrom, dateTo);
       else if (tab === 'monthly-expense') pdfMonthly('expense', expenseTx, students, dateFrom, dateTo);
       else if (tab === 'audit') pdfAudit(yearIncome, yearExpense, yearFilter);
-      else if (tab === 'yearly-agm') pdfYearlyAGM(yearIncome, yearExpense, yearFiltered, allTransfers, yearFilter);
+      else if (tab === 'yearly-agm') pdfYearlyAGM(yearIncome, yearExpense, yearFiltered, allTransfers, yearFilter, balances);
       toast('PDF downloaded ✓', 'success');
     } catch (e) { console.error(e); toast('PDF generation failed', 'error'); }
   };
@@ -270,26 +270,98 @@ const FinanceReports: React.FC = () => {
 
       {tab === 'yearly-agm' && (
         <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
-          {(() => { const ti = yearIncome.reduce((s, t) => s + Number(t.amount), 0); const te = yearExpense.reduce((s, t) => s + Number(t.amount), 0); const ns = ti - te; return (
-            <div className="space-y-4">
-              <h4 className="font-serif text-sm text-school-primary">Annual General Meeting Report — FY {Number(yearFilter)-1}-{yearFilter}</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Total Income</div><div className="font-serif text-lg text-emerald-600">{fmt(ti)} /-</div></div>
-                <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Total Expense</div><div className="font-serif text-lg text-rose-600">{fmt(te)} /-</div></div>
-              </div>
-              <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Net Surplus / (Deficit)</div><div className={`font-serif text-xl ${ns >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{fmt(ns)} /-</div></div>
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div><div className="text-[10px] uppercase text-school-muted font-bold">Total Transactions</div><div className="font-bold text-lg">{yearFiltered.length}</div></div>
-                <div><div className="text-[10px] uppercase text-school-muted font-bold">Income Entries</div><div className="font-bold text-lg text-emerald-600">{yearIncome.length}</div></div>
-                <div><div className="text-[10px] uppercase text-school-muted font-bold">Expense Entries</div><div className="font-bold text-lg text-rose-600">{yearExpense.length}</div></div>
-              </div>
+          {(() => { const ti = yearIncome.reduce((s, t) => s + Number(t.amount), 0); const te = yearExpense.reduce((s, t) => s + Number(t.amount), 0); const ns = ti - te;
+            const totalAssets = (balances.AL_RAWA_BANK || 0) + (balances.GLOBAL_FORUM_BANK || 0) + (balances.CASH_IN_HAND || 0);
+            const fyLabel = `${Number(yearFilter)-1}-${yearFilter}`;
+            const openingAL = (balances.AL_RAWA_BANK || 0) - ti + te;
+            const openingGF = balances.GLOBAL_FORUM_BANK || 0;
+            const openingCash = balances.CASH_IN_HAND || 0;
+            const openTotal = openingAL + openingGF + openingCash;
+            const totalTransfers = allTransfers.reduce((s: number, t: any) => s + Number(t.amount), 0);
+            return (
+            <div className="space-y-6">
+              <h4 className="font-serif text-lg text-school-primary">Annual General Meeting Report — FY {fyLabel}</h4>
+              <p className="text-xs text-school-muted">Financial Year {fyLabel} (Sep {Number(yearFilter)-1} – Aug {yearFilter})</p>
+
+              {/* 1. Income & Expenditure */}
               <div>
-                <h5 className="font-bold text-xs uppercase text-school-muted mb-2">Top Income Heads</h5>
-                {headwise(yearIncome).slice(0, 5).map(([cat, amt], i) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{i + 1}. {cat}</span><span className="font-bold text-emerald-600">{fmt(amt)} /-</span></div>)}
+                <h5 className="font-bold text-sm uppercase text-school-primary mb-3 border-b border-school-border pb-1">1. Income & Expenditure Statement</h5>
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-emerald-700 uppercase mb-1">Income</div>
+                  {headwise(yearIncome).map(([cat, amt]) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{cat}</span><span className="font-bold">{fmt(amt)} /-</span></div>)}
+                  <div className="flex justify-between py-2 border-b-2 border-school-primary font-bold text-sm bg-school-paper rounded px-2"><span>Total Income</span><span className="text-emerald-600">{fmt(ti)} /-</span></div>
+                </div>
+                <div className="space-y-1 mt-3">
+                  <div className="text-xs font-bold text-rose-700 uppercase mb-1">Expenditure</div>
+                  {headwise(yearExpense).map(([cat, amt]) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{cat}</span><span className="font-bold">{fmt(amt)} /-</span></div>)}
+                  <div className="flex justify-between py-2 border-b-2 border-school-primary font-bold text-sm bg-school-paper rounded px-2"><span>Total Expenditure</span><span className="text-rose-600">{fmt(te)} /-</span></div>
+                </div>
+                <div className="flex justify-between py-3 mt-2 bg-school-primary text-white rounded-xl px-4 font-bold"><span>Annual {ns >= 0 ? 'Surplus' : 'Deficit'}</span><span>{fmt(Math.abs(ns))} /-</span></div>
               </div>
+
+              {/* 2. Balance Sheet */}
               <div>
-                <h5 className="font-bold text-xs uppercase text-school-muted mb-2">Top Expense Heads</h5>
-                {headwise(yearExpense).slice(0, 5).map(([cat, amt], i) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{i + 1}. {cat}</span><span className="font-bold text-rose-600">{fmt(amt)} /-</span></div>)}
+                <h5 className="font-bold text-sm uppercase text-school-primary mb-3 border-b border-school-border pb-1">2. Balance Sheet — As at 31 Aug {yearFilter}</h5>
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Account</th><th className="px-3 py-2 text-right">Balance</th></tr></thead>
+                  <tbody>
+                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">AL RAWA Bank</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.AL_RAWA_BANK || 0)} /-</td></tr>
+                    <tr className="border-t border-school-border/50 bg-school-paper/30"><td className="px-3 py-2">Global Forum Bank</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.GLOBAL_FORUM_BANK || 0)} /-</td></tr>
+                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">Cash in Hand</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.CASH_IN_HAND || 0)} /-</td></tr>
+                  </tbody>
+                  <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2">Total Assets</td><td className="px-3 py-2 text-right">{fmt(totalAssets)} /-</td></tr></tfoot>
+                </table>
+                <div className="flex justify-between py-3 mt-2 bg-school-primary text-white rounded-xl px-4 font-bold"><span>Net Assets</span><span>{fmt(totalAssets)} /-</span></div>
+              </div>
+
+              {/* 3. Receipts & Payments */}
+              <div>
+                <h5 className="font-bold text-sm uppercase text-school-primary mb-3 border-b border-school-border pb-1">3. Receipts & Payments Statement</h5>
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Account</th><th className="px-3 py-2 text-right">Opening</th><th className="px-3 py-2 text-right">Closing</th></tr></thead>
+                  <tbody>
+                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">AL RAWA Bank</td><td className="px-3 py-2 text-right">{fmt(openingAL)} /-</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.AL_RAWA_BANK || 0)} /-</td></tr>
+                    <tr className="border-t border-school-border/50 bg-school-paper/30"><td className="px-3 py-2">Global Forum Bank</td><td className="px-3 py-2 text-right">{fmt(openingGF)} /-</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.GLOBAL_FORUM_BANK || 0)} /-</td></tr>
+                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">Cash in Hand</td><td className="px-3 py-2 text-right">{fmt(openingCash)} /-</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.CASH_IN_HAND || 0)} /-</td></tr>
+                  </tbody>
+                  <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2">Total</td><td className="px-3 py-2 text-right">{fmt(openTotal)} /-</td><td className="px-3 py-2 text-right">{fmt(totalAssets)} /-</td></tr></tfoot>
+                </table>
+                <div className="grid grid-cols-3 gap-3 mt-3">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-emerald-600 font-bold">Total Received</div><div className="font-bold text-emerald-700">{fmt(ti)} /-</div></div>
+                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-rose-600 font-bold">Total Paid</div><div className="font-bold text-rose-700">{fmt(te)} /-</div></div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-blue-600 font-bold">Net Movement</div><div className={`font-bold ${ns >= 0 ? 'text-blue-700' : 'text-red-700'}`}>{fmt(ns)} /-</div></div>
+                </div>
+              </div>
+
+              {/* 4. Internal Transfers */}
+              <div>
+                <h5 className="font-bold text-sm uppercase text-school-primary mb-2 border-b border-school-border pb-1">4. Internal Transfers</h5>
+                <p className="text-sm">Total: {fmt(totalTransfers)} /- ({allTransfers.length} transactions)</p>
+                <p className="text-xs text-school-muted mt-1">Internal transfers between bank accounts and Cash in Hand do not affect income/expense.</p>
+              </div>
+
+              {/* 5. Recommendations */}
+              <div>
+                <h5 className="font-bold text-sm uppercase text-school-primary mb-2 border-b border-school-border pb-1">5. Recommendations</h5>
+                <ol className="list-decimal list-inside space-y-1 text-sm text-gray-600">
+                  <li>Net surplus of {fmt(ns)} /- for FY {fyLabel}.</li>
+                  {ti > 0 && <li>Expense-to-income ratio: {((te / ti) * 100).toFixed(1)}%.</li>}
+                  <li>Total assets stand at {fmt(totalAssets)} /- across 3 accounts.</li>
+                  <li>{yearFiltered.length} total transactions recorded during the year.</li>
+                  <li>All financial records are available for detailed audit.</li>
+                </ol>
+              </div>
+
+              {/* Signatures */}
+              <div className="border-t border-school-border pt-4 mt-6">
+                <div className="flex justify-between">
+                  {[['Finance Director', 12], ['Managing Director', 82], ['Chairman', 144]].map(([lbl, ml]) => (
+                    <div key={lbl} className="text-center" style={{ marginLeft: `${ml / 16}rem` }}>
+                      <div className="w-40 border-b border-gray-400 mb-1"></div>
+                      <span className="text-[10px] text-school-muted font-bold uppercase">{lbl}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           ); })()}
