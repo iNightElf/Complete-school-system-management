@@ -161,17 +161,31 @@
 - `formatBDPhone()` — normalizes Bangladeshi phone numbers to +880 format
 - `contactLinks()` — renders clickable phone link + WhatsApp link
 
-### 11. Excel Import for Finance (`client/src/pages/ExcelImportTab.tsx`)
-- Import financial transactions from Excel files
+### 11. Excel Import for Finance (`client/src/pages/ExcelImportTab.tsx`, 417 lines)
+- **Full-featured Excel import** for bulk financial transactions
 - Parses `.xlsx/.xls/.csv` via `xlsx` npm package
-- Supports columns: Token, Date, Category, Income/Expense, Amount, Class, Roll, Fee Month, Description
-- **Student resolution** by class+roll (or roll alone as fallback)
-- Preview table with select/deselect per row
-- Inline editing of any row field
-- Row deletion
-- Validates: date required, amount > 0, category required, roll required for student fees
-- Imports one row at a time via existing `POST /api/finance/transactions`
-- Error display for rows that fail validation
+- **Flexible column parsing** — accepts multiple aliases per field:
+  - Class: `Class`, `class`, `ClassName`
+  - Roll: `Roll`, `roll`, `Roll No`, `rollNo`, `RollNo`, `roll_no`
+  - Category: `Category`, `category`, `Cat`
+  - Token: `Token`, `token`, `Ref`, `ref`
+  - Fee Month: `Fee Month`, `feeMonth`, `fee_month`, `Month`
+- **Excel date parsing** — handles numeric serial dates (e.g. `45678` → `2025-01-15`) and string dates
+- **Type normalization** — accepts `income`, `inc`, `i`, `1` as income; everything else defaults to expense
+- **Smart student resolution** — resolves by class+roll first, falls back to roll alone (roll is globally unique)
+- **Auto re-resolve** — when students store updates, unresolved rows automatically re-attempt resolution
+- **Upload summary toast** — shows row count, resolved student count, and column names detected
+- **Category-aware validation** — student fee categories (Tuition, Admission, Books, etc.) require roll and resolved student
+- **Preview table** with:
+  - Select/deselect all or individual rows
+  - Row count + selected count + valid count in toolbar
+  - Inline editing: date picker, category dropdown (income/expense split), type toggle, amount, class, roll, fee month
+  - Delete individual rows
+  - Color-coded rows: red background for errors, green/red badges for income/expense
+  - Resolved student name shown for student fee rows; "not found" shown for unresolved rolls
+- **Error panel** — lists all rows with validation errors (first 10 + overflow count), skipped during import
+- **Batch import** — imports all valid selected rows sequentially via `POST /api/finance/transactions`
+- **Auto-clear** — clears table on full success; keeps rows if any failures for retry
 
 ### 12. Defaulter Report (Server)
 - Comprehensive per-student fee tracking via `GET /api/finance/defaulter`
