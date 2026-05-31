@@ -46,7 +46,7 @@ export default function EnterBySubject() {
       clsStudents.forEach((s: any) => { const r = allResults.find((x: any) => x.studentId === s.id && x.term === bulkTerm); m[s.id] = r?.marks?.[bulkSubject] !== undefined ? String(r.marks[bulkSubject]) : ''; });
       setBulkMarks(m);
     }
-  }, [bulkSubject, bulkTerm, allResults.length, cls]);
+  }, [bulkSubject, bulkTerm, allResults.length, cls]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveBulkMarks = async () => {
     if (!selectedSubj) return;

@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import * as XLSX from 'xlsx';
 import { toast } from '../components/Toast';
 import { Upload, Trash2, Edit2, Check, X, Download, Loader } from 'lucide-react';
 import { useSchoolStore } from '../store';
@@ -77,7 +76,7 @@ export default function ExcelImportTab() {
   const [importing, setImporting] = useState(false);
 
 
-  useEffect(() => { fetchStudents(); }, []);
+  useEffect(() => { fetchStudents(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rollMapRef = React.useRef<Record<string, any>>({});
 
@@ -119,7 +118,7 @@ export default function ExcelImportTab() {
       updated._errors = validateRow(updated);
       return updated;
     }));
-  }, [students]);
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -144,8 +143,9 @@ export default function ExcelImportTab() {
     };
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        const XLSX = await import('xlsx');
         const wb = XLSX.read(evt.target?.result, { type: 'binary' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws, { defval: '' });
@@ -375,8 +375,8 @@ export default function ExcelImportTab() {
                           <td className="px-2 py-1"><input value={editData.roll || ''} onChange={e => setEditData({ ...editData, roll: e.target.value })} className="w-16 px-2 py-1 border border-school-border rounded text-xs" /></td>
                           <td className="px-2 py-1"><input type="month" value={editData.feeMonth || ''} onChange={e => setEditData({ ...editData, feeMonth: e.target.value })} className="w-full px-2 py-1 border border-school-border rounded text-xs" /></td>
                           <td className="px-2 py-1 text-center">
-                            <button onClick={() => saveEdit(row._id)} className="p-1 text-green-600 hover:bg-green-50 rounded"><Check size={14} /></button>
-                            <button onClick={cancelEdit} className="p-1 text-red-500 hover:bg-red-50 rounded"><X size={14} /></button>
+                            <button onClick={() => saveEdit(row._id)} className="p-1 text-green-600 hover:bg-green-50 rounded" aria-label="Save edit"><Check size={14} /></button>
+                            <button onClick={cancelEdit} className="p-1 text-red-500 hover:bg-red-50 rounded" aria-label="Cancel edit"><X size={14} /></button>
                           </td>
                         </>
                       ) : (
@@ -396,8 +396,8 @@ export default function ExcelImportTab() {
                           <td className="px-3 py-2 text-xs font-medium">{row.type === 'income' ? (row.studentName || (needsStudent && row.roll ? <span className="text-red-500">not found</span> : '—')) : '—'}</td>
                           <td className="px-3 py-2 text-xs text-school-muted">{row.feeMonth || '—'}</td>
                           <td className="px-3 py-2 text-center">
-                            <button onClick={() => startEdit(row)} className="p-1 text-blue-500 hover:bg-blue-50 rounded"><Edit2 size={14} /></button>
-                            <button onClick={() => deleteRow(row._id)} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 size={14} /></button>
+                            <button onClick={() => startEdit(row)} className="p-1 text-blue-500 hover:bg-blue-50 rounded" aria-label="Edit row"><Edit2 size={14} /></button>
+                            <button onClick={() => deleteRow(row._id)} className="p-1 text-red-500 hover:bg-red-50 rounded" aria-label="Delete row"><Trash2 size={14} /></button>
                           </td>
                         </>
                       )}

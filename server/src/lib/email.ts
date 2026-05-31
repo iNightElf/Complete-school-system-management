@@ -15,9 +15,7 @@ const FROM = process.env.EMAIL_FROM || "AL RAWA <noreply@localhost>";
 export async function verifySMTP(): Promise<void> {
   try {
     await transporter.verify();
-    console.log("[Email] SMTP connection verified successfully");
   } catch (err) {
-    console.error("[Email] SMTP connection failed:", err);
     throw err;
   }
 }
@@ -40,9 +38,7 @@ export async function sendVerificationEmail(
         <p style="color:#888;font-size:12px;">AL RAWA English School — Do not share this email.</p>
       `,
     });
-    console.log(`[Email] Sent to ${email}`);
   } catch (err) {
-    console.error("[Email] Failed to send:", err);
     throw err;
   }
 }

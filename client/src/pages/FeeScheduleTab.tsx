@@ -22,6 +22,7 @@ const FeeScheduleTab: React.FC = () => {
     finally { setLoading(false); }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchClasses(); load(); }, []);
 
   const activeYear = '2025-2026';
@@ -125,7 +126,7 @@ const FeeScheduleTab: React.FC = () => {
                   <td className="px-3 py-2 text-[10px] uppercase">{s.frequency}</td>
                   <td className="px-3 py-2 text-xs">{s.academicYear?.name || '-'}</td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => handleDelete(s.id)} className="text-rose-600 hover:text-rose-800 p-1" title="Delete">
+                    <button onClick={() => handleDelete(s.id)} className="text-rose-600 hover:text-rose-800 p-1" title="Delete" aria-label="Delete schedule">
                       <Trash2 size={14} />
                     </button>
                   </td>

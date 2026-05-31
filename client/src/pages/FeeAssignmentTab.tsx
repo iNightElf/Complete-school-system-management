@@ -36,6 +36,7 @@ const FeeAssignmentTab: React.FC = () => {
     } catch { toast('Failed to load assignments', 'error'); }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchClasses(); fetchStudents(); }, []);
   useEffect(() => { fetchAssignments(assignClass); }, [assignClass]);
 
@@ -87,11 +88,11 @@ const FeeAssignmentTab: React.FC = () => {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm mobile-card-table">
           <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
             <tr>
               <th className="px-4 py-3 text-left">Student</th>
-              <th className="px-4 py-3 text-left">Class</th>
+              <th className="px-4 py-3 text-left hidden sm:table-cell">Class</th>
               {SPECIAL_FEES.map(f => (
                 <th key={f.key} className="px-3 py-3 text-center">{f.label}</th>
               ))}
@@ -100,17 +101,17 @@ const FeeAssignmentTab: React.FC = () => {
           <tbody className="divide-y divide-school-border/50">
             {filteredStudents.length > 0 ? filteredStudents.map((s: any) => (
               <tr key={s.id} className="hover:bg-school-paper/30 transition-colors">
-                <td className="px-4 py-2">
+                <td data-label="Student" className="px-4 py-2">
                   <p className="font-bold text-xs">{s.name}</p>
                   {s.fatherName && <p className="text-[10px] text-school-muted">{s.fatherName}</p>}
                 </td>
-                <td className="px-4 py-2 text-xs">{s.class}{s.roll ? ` - ${s.roll}` : ''}</td>
+                <td data-label="Class" className="px-4 py-2 text-xs hidden sm:table-cell">{s.class}{s.roll ? ` - ${s.roll}` : ''}</td>
                 {SPECIAL_FEES.map(f => {
                   const assignment = getAssignment(s.id, f.key);
                   const isActive = !!assignment?.active;
                   const key = `${s.id}_${f.key}`;
                   return (
-                    <td key={f.key} className="px-3 py-2 text-center">
+                    <td key={f.key} data-label={f.label} className="px-3 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <input
                           type="number"
@@ -120,8 +121,9 @@ const FeeAssignmentTab: React.FC = () => {
                           onBlur={() => { if (isActive && editAmount[key]) updateAmount(assignment!.id, Number(editAmount[key])); }}
                           className="w-20 border border-school-border rounded-lg px-2 py-1 text-[11px] text-center focus:outline-none focus:border-school-accent disabled:bg-gray-50"
                           disabled={!isActive}
+                          aria-label={`${f.label} amount`}
                         />
-                        <button onClick={() => toggleAssignment(s.id, f.key)} className="flex-shrink-0">
+                        <button onClick={() => toggleAssignment(s.id, f.key)} className="flex-shrink-0" aria-label={`Toggle ${f.label}`}>
                           {isActive
                             ? <ToggleRight size={22} className="text-emerald-500" />
                             : <ToggleLeft size={22} className="text-gray-300" />}

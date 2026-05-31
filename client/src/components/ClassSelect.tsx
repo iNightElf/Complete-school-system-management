@@ -3,6 +3,7 @@ import { useSchoolStore } from '../store';
 
 export default function ClassSelect({ value, onChange }: { value: string; onChange: (cls: any) => void }) {
   const { classes, fetchClasses } = useSchoolStore();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchClasses(); }, []);
   const sorted = [...classes].sort((a, b) => a.order - b.order);
   return (

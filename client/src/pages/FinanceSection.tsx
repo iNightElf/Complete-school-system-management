@@ -106,16 +106,16 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm mobile-card-table">
           <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
             <tr>
               <th className="px-4 py-3 text-left">Date</th>
               <th className="px-4 py-3 text-left">Category</th>
-              <th className="px-4 py-3 text-left">Class</th>
-              <th className="px-4 py-3 text-left">Student</th>
-              <th className="px-4 py-3 text-left">Accounts</th>
+              <th className="px-4 py-3 text-left hidden sm:table-cell">Class</th>
+              <th className="px-4 py-3 text-left hidden sm:table-cell">Student</th>
+              <th className="px-4 py-3 text-left hidden sm:table-cell">Accounts</th>
               <th className="px-4 py-3 text-right">Amount</th>
-              <th className="px-4 py-3 text-center">Type</th>
+              <th className="px-4 py-3 text-center hidden sm:table-cell">Type</th>
               {canWrite && <th className="px-4 py-3 text-center">Actions</th>}
             </tr>
           </thead>
@@ -125,23 +125,23 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
               const isReversal = !!tx.reversalOfId;
               return (
               <tr key={tx.id} className={`border-t border-school-border/50 transition-colors ${isCancelled ? 'bg-gray-50 line-through opacity-60' : isReversal ? 'bg-violet-50/50 border-l-2 border-l-violet-400' : 'hover:bg-school-paper/30'}`}>
-                <td className="px-4 py-3 whitespace-nowrap text-xs font-mono font-bold">
+                <td data-label="Date" className="px-4 py-3 whitespace-nowrap text-xs font-mono font-bold">
                   {new Date(tx.transactionDate).toLocaleDateString()}
                 </td>
-                <td className="px-4 py-3 font-bold text-xs">
+                <td data-label="Category" className="px-4 py-3 font-bold text-xs">
                   {tx.category || 'Uncategorized'}
                   {isCancelled && <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-red-100 text-red-600 line-through-none">CANCELLED</span>}
                   {isReversal && <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-violet-100 text-violet-700">REVERSAL</span>}
                 </td>
-                <td className="px-4 py-3 text-xs">{tx.student?.class || tx.className || '—'}</td>
-                <td className="px-4 py-3 text-xs">{tx.student?.name || '—'}</td>
-                <td className="px-4 py-3 text-[10px] text-school-muted">
+                <td data-label="Class" className="px-4 py-3 text-xs hidden sm:table-cell">{tx.student?.class || tx.className || '—'}</td>
+                <td data-label="Student" className="px-4 py-3 text-xs hidden sm:table-cell">{tx.student?.name || '—'}</td>
+                <td data-label="Accounts" className="px-4 py-3 text-[10px] text-school-muted hidden sm:table-cell">
                   {tx.sourceAccount ? tx.sourceAccount.replace(/_/g, ' ') : 'External'} → {tx.destinationAccount ? tx.destinationAccount.replace(/_/g, ' ') : 'External'}
                 </td>
-                <td className={`px-4 py-3 text-right font-bold ${isCancelled ? 'text-gray-400' : isReversal ? 'text-violet-600' : tx.transactionType === 'EXPENSE' ? 'text-rose-600' : tx.transactionType === 'INCOME' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                <td data-label="Amount" className={`px-4 py-3 text-right font-bold ${isCancelled ? 'text-gray-400' : isReversal ? 'text-violet-600' : tx.transactionType === 'EXPENSE' ? 'text-rose-600' : tx.transactionType === 'INCOME' ? 'text-emerald-600' : 'text-blue-600'}`}>
                   {tx.transactionType === 'EXPENSE' ? '−' : '+'} ৳{fmt(Number(tx.amount))}
                 </td>
-                <td className="px-4 py-3 text-center">
+                <td data-label="Type" className="px-4 py-3 text-center hidden sm:table-cell">
                   {isReversal ? (
                     <span className="text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded bg-violet-50 text-violet-700">
                       Reversal
@@ -153,7 +153,7 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
                   )}
                 </td>
                 {canWrite && (
-                  <td className="px-4 py-3 text-center">
+                  <td data-label="Actions" className="px-4 py-3 text-center">
                     {isCancelled ? (
                       <span className="text-[9px] text-school-muted" title={`Cancelled by ${userMap[tx.cancelledBy] || tx.cancelledBy} on ${tx.cancelledAt ? new Date(tx.cancelledAt).toLocaleDateString() : ''}: ${tx.cancelReason || 'No reason'}`}>
                         {userMap[tx.cancelledBy] || tx.cancelledBy || 'system'}
@@ -161,7 +161,7 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
                     ) : isReversal ? (
                       <span className="text-[9px] text-violet-500">auto</span>
                     ) : (
-                      <button onClick={() => setCancelId(tx.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1" title="Cancel transaction">
+                      <button onClick={() => setCancelId(tx.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1" title="Cancel transaction" aria-label="Cancel transaction">
                         <Ban size={14} />
                       </button>
                     )}
@@ -185,11 +185,11 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
             Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
           </span>
           <div className="flex items-center gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 rounded-lg border border-school-border hover:bg-school-paper disabled:opacity-30">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 rounded-lg border border-school-border hover:bg-school-paper disabled:opacity-30" aria-label="Previous page">
               <ChevronLeft size={14} />
             </button>
             <span className="text-xs font-bold">{page} / {totalPages}</span>
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1.5 rounded-lg border border-school-border hover:bg-school-paper disabled:opacity-30">
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1.5 rounded-lg border border-school-border hover:bg-school-paper disabled:opacity-30" aria-label="Next page">
               <ChevronRight size={14} />
             </button>
           </div>
@@ -249,6 +249,7 @@ const FinanceSection: React.FC = () => {
   const [selectedStudent, setSelectedStudent] = useState('');
   const [feeMonth, setFeeMonth] = useState('');
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); fetchUsers(); }, []);
   useEffect(() => { useUIStore.getState().registerSwipeBack(() => setMainTab('transactions')); }, []);
 

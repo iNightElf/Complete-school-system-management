@@ -7,6 +7,7 @@ import "dotenv/config";
 
 import { auth } from "./lib/auth.js";
 import { prisma } from "./lib/prisma.js";
+import { requestIdMiddleware, log } from "./lib/logger.js";
 import { toNodeHandler } from "better-auth/node";
 import * as students from "./controllers/student.controller.js";
 import * as finance from "./controllers/finance.controller.js";
@@ -22,6 +23,13 @@ const corsOrigins = process.env.CORS_ORIGINS
   : ["http://localhost:5173", "http://localhost:3000"];
 
 const app = express();
+
+app.use(requestIdMiddleware);
+
+app.use((req, res, next) => {
+  log("info", `${req.method} ${req.path}`, { requestId: res.locals.requestId });
+  next();
+});
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -145,7 +153,10 @@ app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
 // Global error handler — prevents crashes from becoming 502s
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error("[ErrorHandler]", err?.message || err);
+  log("error", err?.message || "Unknown error", {
+    requestId: res.locals.requestId,
+    stack: process.env.NODE_ENV !== "production" ? err?.stack : undefined,
+  });
   const message = process.env.NODE_ENV === "production"
     ? "Internal server error"
     : err?.message || "Internal server error";

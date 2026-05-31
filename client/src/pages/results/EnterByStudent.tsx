@@ -48,7 +48,7 @@ export default function EnterByStudent() {
     if (result?.marks) { const m: Record<string, string> = {}; Object.entries(result.marks).forEach(([k, v]) => { m[k] = String(v); }); setMarks(m); } else { setMarks({}); }
     if (result?.attendance) { setAttendance({ days: String(result.attendance.days || ''), present: String(result.attendance.present || '') }); } else { setAttendance({ days: '', present: '' }); }
     setComment(result?.comment || '');
-  }, [activeStudent, activeTerm, allResults.length]);
+  }, [activeStudent, activeTerm, allResults.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ranks = activeStudent ? calcTermRanks(clsStudents, activeTerm, subjects, allResults) : {};
   const myRank = activeStudent ? (ranks[activeStudent.id] || '—') : '—';

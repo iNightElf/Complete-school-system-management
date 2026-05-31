@@ -56,7 +56,7 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-school-border">
           <h3 className="font-serif text-lg text-school-primary flex items-center gap-1.5"><Settings size={16} /> Manage Classes</h3>
-          <button onClick={onClose} className="p-1 hover:bg-school-paper rounded-full"><X size={20} /></button>
+          <button onClick={onClose} className="p-1 hover:bg-school-paper rounded-full" aria-label="Close"><X size={20} /></button>
         </div>
         <div className="p-4">
           <div className="flex gap-2 mb-4">
@@ -88,6 +88,7 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
                     onClick={() => handleMove(i, -1)}
                     disabled={i === 0}
                     className="p-1 hover:bg-white rounded disabled:opacity-30"
+                    aria-label={`Move ${cls.name} up`}
                   >
                     <ArrowUp size={14} />
                   </button>
@@ -95,12 +96,14 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
                     onClick={() => handleMove(i, 1)}
                     disabled={i === sorted.length - 1}
                     className="p-1 hover:bg-white rounded disabled:opacity-30"
+                    aria-label={`Move ${cls.name} down`}
                   >
                     <ArrowDown size={14} />
                   </button>
                   <button
                     onClick={() => { setDeleteId(cls.id); setDeleteName(cls.name); }}
                     className="p-1 hover:bg-red-100 text-red-500 rounded"
+                    aria-label={`Delete ${cls.name}`}
                   >
                     <Trash2 size={14} />
                   </button>

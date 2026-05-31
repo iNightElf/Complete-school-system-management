@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore, useDarkMode } from '../store';
 import { ChevronLeft, Lock, Users, Sun, Moon } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
+import BottomNav from './BottomNav';
 
 const ROLE_DISPLAY: Record<string, string> = {
   admin: 'Admin',
@@ -60,6 +61,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <button
               onClick={handleBack}
               className="p-1 hover:bg-white/10 rounded-full transition-colors"
+              aria-label="Go back"
             >
               <ChevronLeft size={24} />
             </button>
@@ -77,6 +79,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               onClick={() => navigate('/users')}
               className="p-2 hover:bg-white/10 rounded-full transition-colors group"
               title="User Management"
+              aria-label="User Management"
             >
               <Users size={20} className="group-hover:scale-110 transition-transform" />
             </button>
@@ -89,6 +92,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             onClick={toggleDark}
             className="p-2 hover:bg-white/10 rounded-full transition-colors group"
             title={dark ? 'Light Mode' : 'Dark Mode'}
+            aria-label={dark ? 'Light Mode' : 'Dark Mode'}
           >
             {dark ? <Sun size={20} className="group-hover:scale-110 transition-transform" /> : <Moon size={20} className="group-hover:scale-110 transition-transform" />}
           </button>
@@ -96,6 +100,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             onClick={logout}
             className="p-2 hover:bg-white/10 rounded-full transition-colors group"
             title="Lock App"
+            aria-label="Lock App"
           >
             <Lock size={20} className="group-hover:scale-110 transition-transform" />
           </button>
@@ -122,10 +127,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <footer className="bg-school-secondary text-white/50 text-[10px] py-2 px-4 flex justify-between items-center border-t border-white/5">
         <span>© 2026 AL RAWA English School</span>
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+          <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-spin"></div>
           <span className="uppercase tracking-widest text-[9px]">Connected</span>
         </div>
       </footer>
+
+      {/* Bottom Navigation (mobile only) */}
+      <BottomNav />
     </div>
   );
 };

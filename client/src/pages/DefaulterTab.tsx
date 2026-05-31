@@ -58,12 +58,12 @@ const DefaulterTab: React.FC = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchClasses(); fetchStudents(); }, []);
+  useEffect(() => { fetchClasses(); fetchStudents(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const controller = new AbortController();
     fetchDefaulter(controller.signal);
     return () => controller.abort();
-  }, [filterClass, filterStudent, filterFee, monthFrom, monthTo, yearFilter]);
+  }, [filterClass, filterStudent, filterFee, monthFrom, monthTo, yearFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const displayData = filterFee
     ? defaulterData.filter(r => r.fees.some((f: any) => f.name === filterFee))
@@ -107,7 +107,7 @@ const DefaulterTab: React.FC = () => {
     try {
       defaulterPDF({ displayData, monthRange, classLabel, subtitle, totalDueAll, totalPaidAll, filterClass, monthFrom, monthTo });
       toast('PDF downloaded', 'success');
-    } catch (e) { console.error(e); toast('PDF failed', 'error'); }
+    } catch { toast('PDF failed', 'error'); }
   }
 
   return (

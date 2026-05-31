@@ -18,7 +18,6 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     });
     res.json(users);
   } catch (err) {
-    console.error("[Users] Failed to fetch:", err);
     res.status(500).json({ error: "Failed to fetch users" });
   }
 };
@@ -54,10 +53,8 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    console.log(`[Users] Role changed: ${user.email} → ${role} by ${req.session?.user.email}`);
     res.json(updated);
   } catch (err) {
-    console.error("[Users] Failed to update role:", err);
     res.status(500).json({ error: "Failed to update role" });
   }
 };
@@ -77,10 +74,8 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
 
     await prisma.user.delete({ where: { id } });
 
-    console.log(`[Users] Deleted: ${user.email} by ${req.session?.user.email}`);
     res.json({ success: true });
   } catch (err) {
-    console.error("[Users] Failed to delete:", err);
     res.status(500).json({ error: "Failed to delete user" });
   }
 };

@@ -21,7 +21,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchSession();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return <PageLoader />;

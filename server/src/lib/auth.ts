@@ -8,7 +8,9 @@ export const auth = betterAuth({
     provider: "postgresql",
   }),
   baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5173",
-  trustedOrigins: ["http://localhost:5173", "http://localhost:3000"],
+  trustedOrigins: process.env.TRUSTED_ORIGINS
+    ? process.env.TRUSTED_ORIGINS.split(",").map(s => s.trim())
+    : ["http://localhost:5173", "http://localhost:3000"],
   user: {
     additionalFields: {
       role: {
@@ -31,7 +33,7 @@ export const auth = betterAuth({
       const token = urlObj.searchParams.get("token");
       const callbackURL = urlObj.searchParams.get("callbackURL");
       const frontendUrl = `${process.env.BETTER_AUTH_URL}/verify-email?token=${token}${callbackURL ? `&callbackURL=${callbackURL}` : ""}`;
-      console.log("[Auth] sendVerificationEmail called for:", user.email, "url:", frontendUrl);
+
       await sendVerificationEmail(user.email, frontendUrl);
     },
   },

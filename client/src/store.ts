@@ -35,8 +35,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const res = await api.get('/auth/get-session');
       set({ user: res.data?.user ?? null, loading: false });
-    } catch (e) {
-      console.error('[Auth] fetchSession failed:', e);
+    } catch {
+      console.error('[Auth] fetchSession failed:');
       set({ user: null, loading: false });
     }
   },
@@ -189,45 +189,45 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
 
   fetchClasses: async () => {
     set((s) => ({ loading: { ...s.loading, classes: true } }));
-    try { const res = await api.get('/classes'); set({ classes: res.data }); } catch (e) { console.error('[Store] fetchClasses:', e); }
+    try { const res = await api.get('/classes'); set({ classes: res.data }); } catch { /* silent */ }
     finally { set((s) => ({ loading: { ...s.loading, classes: false } })); }
   },
   fetchStudents: async (params) => {
     set((s) => ({ loading: { ...s.loading, students: true } }));
-    try { const res = await api.get('/students', { params }); set({ students: res.data.data || res.data, studentTotal: res.data.total ?? 0 }); } catch (e) { console.error('[Store] fetchStudents:', e); }
+    try { const res = await api.get('/students', { params }); set({ students: res.data.data || res.data, studentTotal: res.data.total ?? 0 }); } catch { /* silent */ }
     finally { set((s) => ({ loading: { ...s.loading, students: false } })); }
   },
   fetchTeachers: async (params) => {
     set((s) => ({ loading: { ...s.loading, teachers: true } }));
-    try { const res = await api.get('/teachers', { params }); set({ teachers: res.data.data || res.data, teacherTotal: res.data.total ?? 0 }); } catch (e) { console.error('[Store] fetchTeachers:', e); }
+    try { const res = await api.get('/teachers', { params }); set({ teachers: res.data.data || res.data, teacherTotal: res.data.total ?? 0 }); } catch { /* silent */ }
     finally { set((s) => ({ loading: { ...s.loading, teachers: false } })); }
   },
   fetchStaff: async (params) => {
     set((s) => ({ loading: { ...s.loading, staff: true } }));
-    try { const res = await api.get('/staff', { params }); set({ staff: res.data.data || res.data, staffTotal: res.data.total ?? 0 }); } catch (e) { console.error('[Store] fetchStaff:', e); }
+    try { const res = await api.get('/staff', { params }); set({ staff: res.data.data || res.data, staffTotal: res.data.total ?? 0 }); } catch { /* silent */ }
     finally { set((s) => ({ loading: { ...s.loading, staff: false } })); }
   },
   fetchBooks: async (params) => {
     set((s) => ({ loading: { ...s.loading, books: true } }));
-    try { const res = await api.get('/books', { params }); set({ books: res.data.data || res.data, bookTotal: res.data.total ?? 0 }); } catch (e) { console.error('[Store] fetchBooks:', e); }
+    try { const res = await api.get('/books', { params }); set({ books: res.data.data || res.data, bookTotal: res.data.total ?? 0 }); } catch { /* silent */ }
     finally { set((s) => ({ loading: { ...s.loading, books: false } })); }
   },
   fetchSubjects: async (classId: string) => {
-    try { const res = await api.get(`/classes/${classId}/subjects`); set({ subjects: res.data }); } catch (e) { console.error('[Store] fetchSubjects:', e); }
+    try { const res = await api.get(`/classes/${classId}/subjects`); set({ subjects: res.data }); } catch { /* silent */ }
   },
   fetchFinance: async () => {
     set((s) => ({ loading: { ...s.loading, finance: true } }));
-    try { const res = await api.get('/finance/balances'); set({ balances: res.data }); } catch (e) { console.error('[Store] fetchFinance:', e); }
+    try { const res = await api.get('/finance/balances'); set({ balances: res.data }); } catch { /* silent */ }
     finally { set((s) => ({ loading: { ...s.loading, finance: false } })); }
   },
   fetchTransactions: async (params?: Record<string, string>) => {
     set((s) => ({ loading: { ...s.loading, transactions: true } }));
-    try { const res = await api.get('/finance/transactions', { params }); set({ transactions: res.data }); } catch (e) { console.error('[Store] fetchTransactions:', e); }
+    try { const res = await api.get('/finance/transactions', { params }); set({ transactions: res.data }); } catch { /* silent */ }
     finally { set((s) => ({ loading: { ...s.loading, transactions: false } })); }
   },
 
   fetchOpeningBalances: async (year) => {
-    try { const res = await api.get('/finance/opening-balances', { params: { year } }); set({ openingBalances: res.data }); } catch (e) { console.error('[Store] fetchOpeningBalances:', e); }
+    try { const res = await api.get('/finance/opening-balances', { params: { year } }); set({ openingBalances: res.data }); } catch { /* silent */ }
   },
   setOpeningBalances: async (year, balances) => {
     const res = await api.put('/finance/opening-balances', { year, balances });
@@ -235,7 +235,7 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     return res.data;
   },
   fetchOpeningBalanceHistory: async (year) => {
-    try { const res = await api.get('/finance/opening-balances/history', { params: { year } }); set({ openingBalancesHistory: res.data }); } catch (e) { console.error('[Store] fetchOpeningBalanceHistory:', e); }
+    try { const res = await api.get('/finance/opening-balances/history', { params: { year } }); set({ openingBalancesHistory: res.data }); } catch { /* silent */ }
   },
   revertOpeningBalance: async (historyId) => {
     await api.post(`/finance/opening-balances/revert/${historyId}`);
@@ -308,10 +308,10 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
   roles: [],
 
   fetchUsers: async () => {
-    try { const res = await api.get('/users'); set({ users: res.data }); } catch (e) { console.error('[Store] fetchUsers:', e); }
+    try { const res = await api.get('/users'); set({ users: res.data }); } catch { /* silent */ }
   },
   fetchRoles: async () => {
-    try { const res = await api.get('/users/roles'); set({ roles: res.data }); } catch (e) { console.error('[Store] fetchRoles:', e); }
+    try { const res = await api.get('/users/roles'); set({ roles: res.data }); } catch { /* silent */ }
   },
   updateRole: async (userId: string, role: string) => {
     await api.put(`/users/${userId}/role`, { role });

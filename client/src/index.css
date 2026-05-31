@@ -102,6 +102,11 @@ table thead { position: sticky; top: 0; z-index: 1; }
 .dark .bg-violet-50\/50 { background-color: rgba(139, 92, 246, 0.15); }
 .dark .bg-blue-50\/50 { background-color: rgba(59, 130, 246, 0.15); }
 
+/* ── Bottom nav safe area ── */
+@media (max-width: 640px) {
+  main { padding-bottom: 72px; }
+}
+
 /* ── Mobile Card Layout (hide table, show card on small screens) ── */
 @media (max-width: 640px) {
   .mobile-card-table thead { display: none; }
@@ -113,11 +118,12 @@ table thead { position: sticky; top: 0; z-index: 1; }
     margin-bottom: 8px;
     background: white;
   }
+  .dark .mobile-card-table tbody tr { background: #1a1a2e; }
   .mobile-card-table tbody td {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 0;
+    padding: 5px 0;
     border: none;
     text-align: right;
     gap: 8px;
@@ -125,11 +131,13 @@ table thead { position: sticky; top: 0; z-index: 1; }
   .mobile-card-table tbody td::before {
     content: attr(data-label);
     font-weight: 600;
-    font-size: 10px;
+    font-size: 9px;
     text-transform: uppercase;
+    letter-spacing: 0.5px;
     color: var(--color-school-muted);
     text-align: left;
     flex: 1;
+    min-width: 60px;
   }
   .mobile-card-table tfoot { display: none; }
 }

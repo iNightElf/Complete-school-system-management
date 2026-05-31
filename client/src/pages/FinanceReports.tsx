@@ -4,8 +4,6 @@ import { FileText, Download, Printer, Calendar, BarChart3, Scale, Users } from '
 import { toast } from '../components/Toast';
 import { getMonthName, fmt, headwise, pdfHeadwiseIncome, pdfHeadwiseExpense, pdfMonthly, pdfAudit, pdfYearlyAGM } from '../lib/financeReportPdf';
 import { FISCAL_YEAR_START_MONTH, FISCAL_START_LABEL, FISCAL_END_LABEL } from '../lib/config';
-import * as XLSX from 'xlsx';
-
 
 
 type ReportTab = 'headwise-income' | 'headwise-expense' | 'monthly-income' | 'monthly-expense' | 'audit' | 'yearly-agm';
@@ -17,7 +15,8 @@ function downloadCSV(filename: string, headers: string[], rows: any[][]) {
   a.click(); URL.revokeObjectURL(a.href);
 }
 
-function downloadExcel(filename: string, headers: string[], rows: any[][]) {
+async function downloadExcel(filename: string, headers: string[], rows: any[][]) {
+  const XLSX = await import('xlsx');
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Report');
@@ -77,6 +76,7 @@ const FinanceReports: React.FC = () => {
   const [savingOpenBal, setSavingOpenBal] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchTransactions(); fetchStudents(); fetchFinance(); fetchOpeningBalances(); }, []);
 
   const openOpeningBalModal = async () => {
@@ -164,7 +164,7 @@ const FinanceReports: React.FC = () => {
     toast('CSV downloaded ✓', 'success');
   };
 
-  const handleExcel = () => {
+  const handleExcel = async () => {
     if (tab === 'headwise-income') {
       const rows = headwise(incomeTx).map(([cat, amt]: [string, number]) => [cat, Number(amt), incomeTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length]);
       downloadExcel(`Headwise_Income_${dateFrom}_${dateTo}.xlsx`, ['Category', 'Amount', 'Count'], rows);
@@ -196,7 +196,7 @@ const FinanceReports: React.FC = () => {
       else if (tab === 'audit') pdfAudit(yearIncome, yearExpense, yearFilter);
       else if (tab === 'yearly-agm') pdfYearlyAGM(yearIncome, yearExpense, yearFiltered, allTransfers, yearFilter, balances, openingBalances);
       toast('PDF downloaded ✓', 'success');
-    } catch (e) { console.error(e); toast('PDF generation failed', 'error'); }
+    } catch { toast('PDF generation failed', 'error'); }
   };
 
   return (

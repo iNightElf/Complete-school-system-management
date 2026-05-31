@@ -7,7 +7,7 @@ import IdCardSection from './IdCardSection';
 import AccessoriesSection from './AccessoriesSection';
 import ResultSection from './ResultSection';
 import FinanceSection from './FinanceSection';
-import { CreditCard, BookOpen, BarChart3, Wallet, Users, GraduationCap, Building2, PiggyBank, Sparkles, ArrowRight } from 'lucide-react';
+import { CreditCard, BookOpen, BarChart3, Wallet, Users, GraduationCap, Building2, Sparkles, ArrowRight } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
 
 type ModeParam = 'idcard' | 'accessories' | 'result' | 'finance';
@@ -22,7 +22,7 @@ function TodaysGreeting() {
 const Dashboard: React.FC = () => {
   const { activeMode, setMode } = useUIStore();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { students, teachers, staff, balances, studentTotal, fetchClasses, fetchStudents, fetchTeachers, fetchStaff, fetchBooks, fetchFinance } = useSchoolStore();
+  const { students, teachers, staff, studentTotal, fetchClasses, fetchStudents, fetchTeachers, fetchStaff, fetchBooks } = useSchoolStore();
   const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
@@ -31,21 +31,18 @@ const Dashboard: React.FC = () => {
     fetchTeachers();
     fetchStaff();
     fetchBooks();
-    fetchFinance();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const urlMode = searchParams.get('mode') as ModeParam | null;
     if (urlMode && urlMode !== activeMode) setMode(urlMode);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSetMode = (mode: ModeParam | null) => {
     setMode(mode);
     if (mode) setSearchParams({ mode }, { replace: false });
     else setSearchParams({}, { replace: false });
   };
-
-  const totalBalance = (balances.AL_RAWA_BANK || 0) + (balances.GLOBAL_FORUM_BANK || 0) + (balances.CASH_IN_HAND || 0);
 
   const MODULES = [
     { key: 'idcard' as ModeParam, label: 'ID Card', desc: 'Students, Teachers & Staff', color: 'blue', icon: CreditCard },
@@ -83,7 +80,6 @@ const Dashboard: React.FC = () => {
               { icon: GraduationCap, value: studentTotal || students.length, label: 'Students', color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-500/10' },
               { icon: Users, value: teachers.length, label: 'Teachers', color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-500/10' },
               { icon: Building2, value: staff.length, label: 'Staff', color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-500/10' },
-              { icon: PiggyBank, value: `৳${totalBalance.toLocaleString()}`, label: 'Balance', color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-500/10' },
             ].map((s) => (
               <div key={s.label} className="bg-white dark:bg-[#1a1a2e] rounded-xl border border-school-border dark:border-[#2a2a3e] p-4 card-shadow">
                 <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center mb-2`}>

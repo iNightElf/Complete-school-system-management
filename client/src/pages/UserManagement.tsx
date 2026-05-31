@@ -17,7 +17,7 @@ const UserManagement: React.FC = () => {
 
   useEffect(() => {
     Promise.all([fetchUsers(), fetchRoles()]).finally(() => setLoading(false));
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRoleChange = async (userId: string, newRole: string) => {
     try {
@@ -167,6 +167,7 @@ const UserManagement: React.FC = () => {
                           onClick={() => setConfirmDelete(u.id)}
                           className="p-1.5 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
                           title="Delete user"
+                          aria-label="Delete user"
                         >
                           <Trash2 size={14} />
                         </button>

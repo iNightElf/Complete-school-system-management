@@ -31,6 +31,7 @@ const AccessoriesSection: React.FC = () => {
 
   const [form, setForm] = useState({ classId: '', name: '', publication: '', mrp: '', discounted: '', sell: '' });
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchClasses(); fetchBooks(); }, []);
 
   const sorted = [...classes].sort((a, b) => a.order - b.order);

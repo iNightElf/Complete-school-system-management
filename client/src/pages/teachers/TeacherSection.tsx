@@ -24,6 +24,7 @@ export default function TeacherSection() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [form, setForm] = useState({ designation: '', name: '', email: '', contact: '' });
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchTeachers(); }, []);
 
   const designations = [...new Set(teachers.map((t: any) => t.designation))];
@@ -90,7 +91,7 @@ export default function TeacherSection() {
   const renderEditCard = (isNew: boolean) => (
     <div className={`p-4 rounded-2xl border-2 transition-all ${isNew ? 'border-violet-400 bg-violet-50/50' : 'border-blue-400 bg-blue-50/50'}`}>
       <div className="flex justify-center mb-3">
-        <button onClick={() => setShowCamera(true)} className="relative group">
+        <button onClick={() => setShowCamera(true)} className="relative group" aria-label="Take photo">
           {photo ? (
             <img src={photo} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-white shadow-md" />
           ) : (

@@ -112,6 +112,39 @@ See `server/.env.example` for all required variables:
 - `RESEND_API_KEY` — Email verification (Resend)
 - `CORS_ORIGINS` — Comma-separated allowed origins
 
+## Backup & Restore
+
+### Backup (PostgreSQL)
+
+```bash
+# Using pg_dump
+pg_dump -U schoolid -h localhost schoolid > backup_$(date +%Y%m%d_%H%M%S).sql
+
+# With docker-compose
+docker exec schoolid-postgres pg_dump -U schoolid schoolid > backup.sql
+```
+
+### Restore
+
+```bash
+# Drop and recreate the database first
+psql -U schoolid -h localhost -c "DROP DATABASE IF EXISTS schoolid;"
+psql -U schoolid -h localhost -c "CREATE DATABASE schoolid;"
+
+# Restore from dump
+psql -U schoolid -h localhost schoolid < backup.sql
+
+# With docker-compose
+docker exec -i schoolid-postgres psql -U schoolid schoolid < backup.sql
+```
+
+### Schedule (cron example)
+
+```bash
+# Run daily at 3 AM — adjust paths as needed
+0 3 * * * pg_dump -U schoolid -h localhost schoolid > ~/backups/schoolid_$(date +\%Y\%m\%d).sql
+```
+
 ## Project Structure
 
 ```

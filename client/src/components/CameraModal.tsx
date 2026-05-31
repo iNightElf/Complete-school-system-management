@@ -71,11 +71,11 @@ const CameraModal: React.FC<Props> = ({ open, onClose, onCapture }) => {
       <div className="bg-school-primary rounded-2xl overflow-hidden max-w-md w-full">
         <div className="flex items-center justify-between p-3 text-white">
           <h3 className="font-medium text-sm flex items-center gap-1.5"><Camera size={16} /> Take Photo</h3>
-          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full"><X size={20} /></button>
+          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full" aria-label="Close camera"><X size={20} /></button>
         </div>
         <div className="relative">
           <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video object-cover" />
-          <button onClick={flipCamera} className="absolute top-3 right-3 p-2 bg-black/40 rounded-full text-white hover:bg-black/60 transition-colors" title="Flip camera">
+          <button onClick={flipCamera} className="absolute top-3 right-3 p-2 bg-black/40 rounded-full text-white hover:bg-black/60 transition-colors" title="Flip camera" aria-label="Flip camera">
             <RotateCw size={18} />
           </button>
         </div>

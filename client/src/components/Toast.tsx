@@ -44,7 +44,7 @@ const Toast: React.FC = () => {
       }`}
     >
       <span className="flex-1">{state.message}</span>
-      <button onClick={hide} className="p-0.5 rounded-full hover:bg-white/20 transition-colors flex-shrink-0">
+      <button onClick={hide} className="p-0.5 rounded-full hover:bg-white/20 transition-colors flex-shrink-0" aria-label="Dismiss notification">
         <X size={14} />
       </button>
     </div>
