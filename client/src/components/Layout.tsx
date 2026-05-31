@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore } from '../store';
@@ -21,6 +21,22 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { logout, user } = useAuthStore();
   const role = user?.role;
   const { activeMode, setMode } = useUIStore();
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    if (Math.abs(dy) > Math.abs(dx)) return;
+    if (dx > 80 && activeMode) {
+      setMode(null);
+    }
+  }, [activeMode, setMode]);
 
   return (
     <div className="min-h-screen bg-school-paper flex flex-col selection:bg-school-accent selection:text-white">
@@ -67,7 +83,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-x-hidden relative">
+      <main className="flex-1 overflow-x-hidden relative" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
         <AnimatePresence mode="wait">
           <motion.div
             key={activeMode || 'home'}
