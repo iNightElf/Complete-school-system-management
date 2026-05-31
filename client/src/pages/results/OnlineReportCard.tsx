@@ -3,6 +3,7 @@ import { useSchoolStore } from '../../store';
 import { Download } from 'lucide-react';
 import { gradeFromMarks, gradeChip, gpaToGrade, calcTermRanks, calcYearRanks, calcYearSummary, calcAttendPct } from '../../lib/grading';
 import { downloadReportCardPDF } from '../../lib/reportPdf';
+import { SCHOOL_LOGO } from '../../lib/logo';
 
 const API_URL = '/api';
 const TERM_NAMES: Record<string, string> = { '1': '1st Term', '2': '2nd Term', '3': 'Final Exam' };
@@ -62,7 +63,7 @@ export default function OnlineReportCard({ student, cls, subjects, allResults, t
       </div>
         <div className="bg-white rounded-2xl border border-school-border max-w-2xl mx-auto space-y-5 p-6">
         <div className="text-center border-b border-school-border pb-4">
-          <img src="/logo.png" alt="Logo" className="w-16 h-16 rounded-full object-cover mx-auto mb-2" />
+          <img src={SCHOOL_LOGO} alt="Logo" className="w-16 h-16 rounded-full object-cover mx-auto mb-2" />
           <h2 className="font-serif text-xl text-school-primary">AL RAWA English School</h2>
           <p className="text-[10px] text-school-muted mt-1">ESTD: 2022 · Read in the name of your Lord</p>
           <p className="text-sm font-bold text-red-600 mt-2">{isFinal ? 'ANNUAL REPORT CARD' : `TERM REPORT CARD — ${label.toUpperCase()}`}</p>
