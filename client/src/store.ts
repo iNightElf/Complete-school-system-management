@@ -113,6 +113,7 @@ interface SchoolState {
   subjects: Subject[];
   transactions: any[];
   balances: any;
+  loading: { classes: boolean; students: boolean; teachers: boolean; staff: boolean; books: boolean; finance: boolean; transactions: boolean };
 
   fetchClasses: () => Promise<void>;
   fetchStudents: () => Promise<void>;
@@ -121,7 +122,7 @@ interface SchoolState {
   fetchBooks: () => Promise<void>;
   fetchSubjects: (classId: string) => Promise<void>;
   fetchFinance: () => Promise<void>;
-  fetchTransactions: () => Promise<void>;
+  fetchTransactions: (params?: Record<string, string>) => Promise<void>;
 
   createClass: (name: string) => Promise<any>;
   deleteClass: (id: string) => Promise<void>;
@@ -144,30 +145,45 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   subjects: [],
   transactions: [],
   balances: { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 },
+  loading: { classes: false, students: false, teachers: false, staff: false, books: false, finance: false, transactions: false },
 
   fetchClasses: async () => {
+    set((s) => ({ loading: { ...s.loading, classes: true } }));
     try { const res = await api.get('/classes'); set({ classes: res.data }); } catch {}
+    finally { set((s) => ({ loading: { ...s.loading, classes: false } })); }
   },
   fetchStudents: async () => {
+    set((s) => ({ loading: { ...s.loading, students: true } }));
     try { const res = await api.get('/students'); set({ students: res.data }); } catch {}
+    finally { set((s) => ({ loading: { ...s.loading, students: false } })); }
   },
   fetchTeachers: async () => {
+    set((s) => ({ loading: { ...s.loading, teachers: true } }));
     try { const res = await api.get('/teachers'); set({ teachers: res.data }); } catch {}
+    finally { set((s) => ({ loading: { ...s.loading, teachers: false } })); }
   },
   fetchStaff: async () => {
+    set((s) => ({ loading: { ...s.loading, staff: true } }));
     try { const res = await api.get('/staff'); set({ staff: res.data }); } catch {}
+    finally { set((s) => ({ loading: { ...s.loading, staff: false } })); }
   },
   fetchBooks: async () => {
+    set((s) => ({ loading: { ...s.loading, books: true } }));
     try { const res = await api.get('/books'); set({ books: res.data }); } catch {}
+    finally { set((s) => ({ loading: { ...s.loading, books: false } })); }
   },
   fetchSubjects: async (classId: string) => {
     try { const res = await api.get(`/classes/${classId}/subjects`); set({ subjects: res.data }); } catch {}
   },
   fetchFinance: async () => {
+    set((s) => ({ loading: { ...s.loading, finance: true } }));
     try { const res = await api.get('/finance/balances'); set({ balances: res.data }); } catch {}
+    finally { set((s) => ({ loading: { ...s.loading, finance: false } })); }
   },
-  fetchTransactions: async () => {
-    try { const res = await api.get('/finance/transactions'); set({ transactions: res.data }); } catch {}
+  fetchTransactions: async (params?: Record<string, string>) => {
+    set((s) => ({ loading: { ...s.loading, transactions: true } }));
+    try { const res = await api.get('/finance/transactions', { params }); set({ transactions: res.data }); } catch {}
+    finally { set((s) => ({ loading: { ...s.loading, transactions: false } })); }
   },
 
   createClass: async (name: string) => {

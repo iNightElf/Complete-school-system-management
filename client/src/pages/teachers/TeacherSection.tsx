@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import CameraModal from '../../components/CameraModal';
+import { CardSkeleton } from '../../components/Skeleton';
 import { RefreshCw, Mail, Download, Camera } from 'lucide-react';
 import { contactLinks } from '../../lib/contacts';
 import DeleteConfirmModal from '../../components/DeleteConfirmModal';
@@ -10,7 +11,7 @@ import jsPDF from 'jspdf';
 const API_URL = '/api';
 
 export default function TeacherSection() {
-  const { teachers, fetchTeachers } = useSchoolStore();
+  const { teachers, fetchTeachers, loading } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'admin';
 
@@ -220,7 +221,8 @@ export default function TeacherSection() {
             <div className="text-sm font-bold text-violet-600">Add New Teacher</div>
           </button>
         ))}
-        {filtered.map((t: any) => editingId === t.id ? <div key={t.id}>{renderEditCard(false)}</div> : <div key={t.id}>{renderViewCard(t)}</div>)}
+        {loading.teachers && filtered.length === 0 && Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
+        {!loading.teachers && filtered.map((t: any) => editingId === t.id ? <div key={t.id}>{renderEditCard(false)}</div> : <div key={t.id}>{renderViewCard(t)}</div>)}
       </div>
 
       {filtered.length === 0 && !showAddNew && (

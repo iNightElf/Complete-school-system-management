@@ -3,6 +3,7 @@ import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import ClassManagerModal from '../../components/ClassManagerModal';
 import CameraModal from '../../components/CameraModal';
+import { CardSkeleton } from '../../components/Skeleton';
 import { Settings, RefreshCw, Download, Camera } from 'lucide-react';
 import { contactLinks } from '../../lib/contacts';
 import DeleteConfirmModal from '../../components/DeleteConfirmModal';
@@ -11,7 +12,7 @@ import jsPDF from 'jspdf';
 const API_URL = '/api';
 
 export default function StudentSection() {
-  const { classes, students, fetchClasses, fetchStudents } = useSchoolStore();
+  const { classes, students, fetchClasses, fetchStudents, loading } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'admin';
 
@@ -278,8 +279,11 @@ export default function StudentSection() {
               </button>
             ))}
 
+            {/* Loading Skeleton */}
+            {loading.students && filtered.length === 0 && Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
+
             {/* Student Cards */}
-            {filtered.map((s) => (
+            {!loading.students && filtered.map((s) => (
               editingId === s.id ? (
                 <div key={s.id}>{renderEditCard(false)}</div>
               ) : (
