@@ -31,7 +31,7 @@ export function gradeChip(g: string) { return <span className={`inline-block px-
 export function calcTermSummary(studentId: string, term: string, subjects: any[], allResults: any[]) {
   const r = allResults.find((x: any) => x.studentId === studentId && x.term === term);
   if (!r?.marks || !subjects.length) return null;
-  let tot = 0, full = 0, gpas: number[] = [], hasF = false, n = 0;
+  let tot = 0, full = 0, hasF = false, n = 0; const gpas: number[] = [];
   subjects.forEach((sub: any) => { const m = r.marks[sub.name]; if (m !== undefined && m !== null) { const g = gradeFromMarks(+m, sub.fullMarks); gpas.push(g.gpa); if (g.grade === 'F') hasF = true; tot += +m; full += sub.fullMarks; n++; } });
   if (!n) return null;
   const gpa = gpas.reduce((a, b) => a + b, 0) / gpas.length;

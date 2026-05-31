@@ -67,9 +67,11 @@ export const useDarkMode = create<{ dark: boolean; toggle: () => void }>((set, g
   },
 }));
 
-useDarkMode.getState().dark
-  ? document.documentElement.classList.add('dark')
-  : document.documentElement.classList.remove('dark');
+if (useDarkMode.getState().dark) {
+  document.documentElement.classList.add('dark');
+} else {
+  document.documentElement.classList.remove('dark');
+}
 
 // ── UI Store (mode switching like old app) ──
 

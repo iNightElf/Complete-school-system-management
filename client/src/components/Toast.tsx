@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { useEffect, useState, useCallback } from 'react';
 import { X } from 'lucide-react';
 

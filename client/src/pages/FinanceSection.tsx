@@ -25,7 +25,7 @@ type TxTab = 'income' | 'expense' | 'transfer';
 
 const PAGE_SIZE = 25;
 
-function Ledger({ transactions, students: _students, fmt, fetchTransactions, fetchFinance, userMap }: { transactions: any[]; students: any[]; fmt: (n: number) => string; fetchTransactions: () => void; fetchFinance: () => void; userMap: Record<string, string> }) {
+function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }: { transactions: any[]; fmt: (n: number) => string; fetchTransactions: () => void; fetchFinance: () => void; userMap: Record<string, string> }) {
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
   const [dateFrom, setDateFrom] = useState('');
@@ -529,7 +529,7 @@ const FinanceSection: React.FC = () => {
           </form>
 
       {/* Ledger */}
-      <Ledger transactions={transactions} students={students} fmt={fmt} fetchTransactions={fetchTransactions} fetchFinance={fetchFinance} userMap={userMap} />
+      <Ledger transactions={transactions} fmt={fmt} fetchTransactions={fetchTransactions} fetchFinance={fetchFinance} userMap={userMap} />
       </div>)}
 
     </div>

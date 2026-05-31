@@ -19,7 +19,7 @@ export function addLogo(doc: jsPDF, y: number) {
     if (!el?.src) return;
     const raw = el.src.includes(',') ? el.src.split(',')[1] : el.src;
     doc.addImage(raw, 'JPEG', 12, y, 18, 18);
-  } catch (_e) {}
+  } catch { console.debug('Photo load skipped'); }
 }
 
 export function addHeader(doc: jsPDF, title: string, subtitle: string, y: number) {
@@ -279,7 +279,7 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(26, 26, 46);
   doc.text('Income', 12, y); y += 5;
   const hwInc = headwise(yearIncome);
-  hwInc.forEach(([cat, amt], _i) => {
+  hwInc.forEach(([cat, amt]) => {
     if (y > 270) { doc.addPage(); y = 14; }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(26, 26, 46);
     doc.text(cat, 14, y + 4); doc.text(fmt(amt) + ' /-', 196, y + 4, { align: 'right' });
@@ -294,7 +294,7 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(26, 26, 46);
   doc.text('Expenditure', 12, y); y += 5;
   const hwExp = headwise(yearExpense);
-  hwExp.forEach(([cat, amt], _i) => {
+  hwExp.forEach(([cat, amt]) => {
     if (y > 270) { doc.addPage(); y = 14; }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(26, 26, 46);
     doc.text(cat, 14, y + 4); doc.text(fmt(amt) + ' /-', 196, y + 4, { align: 'right' });

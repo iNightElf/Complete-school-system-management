@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: testdb
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Prisma generate
+        working-directory: server
+        run: npx prisma generate
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/testdb
+
+      - name: Server typecheck
+        working-directory: server
+        run: npx tsc --noEmit
+
+      - name: Server tests
+        working-directory: server
+        run: npm test
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Client lint
+        working-directory: client
+        run: npm run lint
+
+      - name: Client build
+        working-directory: client
+        run: npm run build

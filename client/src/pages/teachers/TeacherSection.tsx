@@ -169,7 +169,7 @@ export default function TeacherSection() {
             onClick={async () => {
               const photoCache: Record<string, string> = {};
               await Promise.all(filtered.filter((t: any) => t.hasPhoto).map(async (t: any) => {
-                try { const r = await fetch(`${API_URL}/teachers/${t.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[t.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+                try { const r = await fetch(`${API_URL}/teachers/${t.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[t.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch { console.debug('Photo load skipped'); }
               }));
               const doc = new jsPDF();
               doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
@@ -182,7 +182,7 @@ export default function TeacherSection() {
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
                 const lines = [`Designation: ${t.designation}`, t.email ? `Email: ${t.email}` : null, `Contact: ${t.contact || ''}`].filter(Boolean);
                 if (photoCache[t.id]) {
-                  try { doc.addImage(photoCache[t.id], 'JPEG', 15, y, 22, 22); } catch (_e) {}
+                  try { doc.addImage(photoCache[t.id], 'JPEG', 15, y, 22, 22); } catch { console.debug('PDF image add skipped'); }
                   lines.forEach((l, li) => doc.text(l!, 42, y + 5 + li * 5)); y += 28;
                 } else { lines.forEach(l => { doc.text(l!, 15, y); y += 5; }); }
                 doc.setDrawColor(200); doc.setLineWidth(0.3); doc.setLineDashPattern([4, 4], 0);

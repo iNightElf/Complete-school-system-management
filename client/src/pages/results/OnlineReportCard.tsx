@@ -33,11 +33,11 @@ export default function OnlineReportCard({ student, cls, subjects, allResults, t
     }
   });
 
-  let totObt = 0, totFull = 0, gpas: number[] = [], hasF = false;
+  let hasF = false; const gpas: number[] = [];
   if (!isFinal) {
     subjects.forEach((sub: any) => {
       const m = res?.marks?.[sub.name];
-      if (m !== undefined && m !== null) { const g = gradeFromMarks(+m, sub.fullMarks); gpas.push(g.gpa); if (g.grade === 'F') hasF = true; totObt += +m; totFull += sub.fullMarks; }
+      if (m !== undefined && m !== null) { const g = gradeFromMarks(+m, sub.fullMarks); gpas.push(g.gpa); if (g.grade === 'F') hasF = true; }
     });
   }
   const termGPA = gpas.length ? gpas.reduce((a, b) => a + b, 0) / gpas.length : null;
@@ -47,7 +47,7 @@ export default function OnlineReportCard({ student, cls, subjects, allResults, t
   const termRank = !isFinal ? (calcTermRanks(clsStudents, term, subjects, allResults)[student.id] || '—') : '—';
   const yearRank = ranks[student.id] || '—';
 
-  let attRows: { term: string; days: number; present: number; pct: string }[] = [];
+  const attRows: { term: string; days: number; present: number; pct: string }[] = [];
   if (isFinal) {
     ['1', '2', '3'].forEach(t => { const r = allResults.find((x: any) => x.studentId === student.id && x.term === t); const att = r?.attendance; attRows.push({ term: TERM_NAMES[t], days: att?.days || 0, present: att?.present || 0, pct: calcAttendPct(att) }); });
   } else {

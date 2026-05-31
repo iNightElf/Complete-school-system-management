@@ -53,7 +53,7 @@ export default function EnterByStudent() {
   const ranks = activeStudent ? calcTermRanks(clsStudents, activeTerm, subjects, allResults) : {};
   const myRank = activeStudent ? (ranks[activeStudent.id] || '—') : '—';
 
-  let totalObt = 0, totalFull = 0, gpas: number[] = [], hasF = false;
+  let totalObt = 0, totalFull = 0, hasF = false; const gpas: number[] = [];
   subjects.forEach((sub: any) => { const v = marks[sub.name]; if (v !== '' && v !== undefined && !isNaN(+v)) { const g = gradeFromMarks(+v, sub.fullMarks); gpas.push(g.gpa); if (g.grade === 'F') hasF = true; totalObt += +v; totalFull += sub.fullMarks; } });
   const termGPA = gpas.length ? gpas.reduce((a, b) => a + b, 0) / gpas.length : null;
   const termGrade = hasF ? 'F' : termGPA !== null ? gpaToGrade(termGPA) : '—';

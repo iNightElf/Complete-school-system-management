@@ -28,7 +28,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
   // Fetch photo on-demand
   let photoDataUri: string | null = null;
   if (student.hasPhoto) {
-    try { const r = await fetch(`${API_URL}/students/${student.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoDataUri = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+    try { const r = await fetch(`${API_URL}/students/${student.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoDataUri = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch { console.debug('Photo fetch skipped'); }
   }
 
   const W = 210, M = 12, CW = W - M * 2;
@@ -49,8 +49,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
       const raw = logoEl.src.includes(',') ? logoEl.src.split(',')[1] : logoEl.src;
       doc.addImage(raw, 'JPEG', M, y, 22, 22);
     }
-  } catch (_e) {}
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(...NAVY);
+  } catch { console.debug('Image add skipped'); }
   doc.text('AL RAWA English School', M + 26, y + 10);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
   doc.text('ESTD: 2022  ·  Read in the name of your Lord', M + 26, y + 16);
@@ -62,7 +61,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
   y += 30;
 
   // STUDENT INFO
-  if (photoDataUri) { try { doc.addImage(photoDataUri, 'JPEG', W - M - 26, y, 26, 30, '', 'FAST'); } catch (_e) {} }
+  if (photoDataUri) { try { doc.addImage(photoDataUri, 'JPEG', W - M - 26, y, 26, 30, '', 'FAST'); } catch { console.debug('Photo add skipped'); } }
   doc.setFontSize(9.5);
   const infoRows: [string, string][] = [['Student Name', student.name], ['Class', clsName]];
   if (student.roll) infoRows.push(['Roll No.', student.roll]);
@@ -96,7 +95,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
     y += HH;
 
     const tm = res?.marks || {};
-    let totObt = 0, totFull = 0, gpas: number[] = [], hasF = false;
+    let totObt = 0, totFull = 0, hasF = false; const gpas: number[] = [];
 
     subjects.forEach((subj, ri) => {
       if (y > 248) { doc.addPage(); y = 14; }

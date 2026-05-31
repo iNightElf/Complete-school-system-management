@@ -61,7 +61,7 @@ export function tabulationPDF({ clsName, subjects, clsStudents, allResults, term
     while (doc.getTextWidth(nm) > NAME_W - 4 && nm.length > 2) nm = nm.slice(0, -1);
     doc.text(nm, M + 3, y + RH / 2 + 0.8);
     ax = M + NAME_W;
-    let totObt = 0, gpas: number[] = [], hasF = false;
+    let totObt = 0, hasF = false; const gpas: number[] = [];
     subjects.forEach((subj) => {
       let obt: number | null = null, g: any = null;
       if (isFinal) {

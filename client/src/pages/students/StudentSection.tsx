@@ -218,7 +218,7 @@ export default function StudentSection() {
               const list = activeClass ? (filtered.length > 0 ? filtered : classStudents) : students;
               const photoCache: Record<string, string> = {};
               await Promise.all(list.filter((s: any) => s.hasPhoto).map(async (s: any) => {
-                try { const r = await fetch(`${API_URL}/students/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+                try { const r = await fetch(`${API_URL}/students/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch { console.debug('Photo load skipped'); }
               }));
               const doc = new jsPDF();
               const title = activeClass ? activeClass + ' — Students' : 'All Students';
@@ -232,7 +232,7 @@ export default function StudentSection() {
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
                 const lines = [`Class: ${s.class}${s.roll ? '   Roll No: ' + s.roll : ''}`, `Father: ${s.fatherName || ''}`, `Mother: ${s.motherName || ''}`, `Contact: ${s.contact || ''}`];
                 if (photoCache[s.id]) {
-                  try { doc.addImage(photoCache[s.id], 'JPEG', 15, y, 22, 22); } catch (_e) {}
+                  try { doc.addImage(photoCache[s.id], 'JPEG', 15, y, 22, 22); } catch { console.debug('PDF image add skipped'); }
                   lines.forEach((l, li) => doc.text(l, 42, y + 5 + li * 5)); y += 28;
                 } else { lines.forEach(l => { doc.text(l, 15, y); y += 5; }); }
                 doc.setDrawColor(200); doc.setLineWidth(0.3); doc.setLineDashPattern([4, 4], 0);
