@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useSchoolStore, useAuthStore, useUserManagementStore } from '../store';
+import { useSchoolStore, useAuthStore, useUserManagementStore, useUIStore } from '../store';
 import axios from 'axios';
 import { ArrowUpCircle, ArrowDownCircle, ArrowRightLeft, Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from '../components/Toast';
@@ -247,6 +247,7 @@ const FinanceSection: React.FC = () => {
   const [feeMonth, setFeeMonth] = useState('');
 
   useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); fetchUsers(); }, []);
+  useEffect(() => { useUIStore.getState().registerSwipeBack(() => setMainTab('transactions')); }, []);
 
   // Compute totals from transactions (exclude cancelled)
   const activeTransactions = transactions.filter((t: any) => !t.isCancelled);

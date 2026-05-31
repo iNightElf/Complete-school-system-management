@@ -59,13 +59,31 @@ interface UIState {
   activeSubMode: IdSubMode;
   setMode: (mode: MainMode) => void;
   setIdSubMode: (sub: IdSubMode) => void;
+  swipeBack: () => void;
+  registerSwipeBack: (fn: () => void) => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
+let _swipeBackFn: (() => void) | null = null;
+
+export const useUIStore = create<UIState>((set, get) => ({
   activeMode: null,
   activeSubMode: 'student',
   setMode: (mode) => set({ activeMode: mode }),
   setIdSubMode: (sub) => set({ activeSubMode: sub }),
+  swipeBack: () => {
+    const { activeMode, activeSubMode, setMode, setIdSubMode } = get();
+    if (_swipeBackFn) {
+      _swipeBackFn();
+      _swipeBackFn = null;
+      return;
+    }
+    if (activeMode === 'idcard' && activeSubMode !== 'student') {
+      setIdSubMode('student');
+    } else if (activeMode) {
+      setMode(null);
+    }
+  },
+  registerSwipeBack: (fn) => { _swipeBackFn = fn; },
 }));
 
 // ── School Store ──

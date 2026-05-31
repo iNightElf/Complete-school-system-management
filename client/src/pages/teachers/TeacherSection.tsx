@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import CameraModal from '../../components/CameraModal';
-import PhotoUpload from '../../components/PhotoUpload';
-import { RefreshCw, Mail, Download } from 'lucide-react';
+import { RefreshCw, Mail, Download, Camera } from 'lucide-react';
 import { contactLinks } from '../../lib/contacts';
 import DeleteConfirmModal from '../../components/DeleteConfirmModal';
 import jsPDF from 'jspdf';
@@ -16,8 +15,8 @@ export default function TeacherSection() {
   const isAdmin = role === 'admin';
 
   const [showCamera, setShowCamera] = useState(false);
-  const [formExpanded, setFormExpanded] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showAddNew, setShowAddNew] = useState(false);
   const [search, setSearch] = useState('');
   const [activeDesig, setActiveDesig] = useState<string | null>(null);
 
@@ -36,15 +35,14 @@ export default function TeacherSection() {
   const resetForm = () => {
     setForm({ designation: '', name: '', email: '', contact: '' });
     setPhoto(null);
-    setEditId(null);
-    setFormExpanded(false);
+    setEditingId(null);
+    setShowAddNew(false);
   };
 
   const handleEdit = (t: any) => {
     setForm({ designation: t.designation, name: t.name, email: t.email || '', contact: t.contact || '' });
     setPhoto(t.hasPhoto ? `${API_URL}/teachers/${t.id}/photo` : null);
-    setEditId(t.id);
-    setFormExpanded(true);
+    setEditingId(t.id);
   };
 
   const handleSubmit = async () => {
@@ -54,14 +52,14 @@ export default function TeacherSection() {
     const body = { ...form, photo: photo || undefined };
 
     try {
-      const url = editId ? `${API_URL}/teachers/${editId}` : `${API_URL}/teachers`;
+      const url = editingId ? `${API_URL}/teachers/${editingId}` : `${API_URL}/teachers`;
       await fetch(url, {
-        method: editId ? 'PUT' : 'POST',
+        method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(body),
       });
-      toast(editId ? 'Teacher updated ✓' : 'Teacher added ✓', 'success');
+      toast(editingId ? 'Teacher updated ✓' : 'Teacher added ✓', 'success');
       resetForm();
       fetchTeachers();
     } catch (e: any) {
@@ -82,48 +80,78 @@ export default function TeacherSection() {
     fetchTeachers();
   };
 
+  const inputCls = 'w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent';
+
+  const renderEditCard = (isNew: boolean) => (
+    <div className={`p-4 rounded-2xl border-2 transition-all ${isNew ? 'border-violet-400 bg-violet-50/50' : 'border-blue-400 bg-blue-50/50'}`}>
+      <div className="flex justify-center mb-3">
+        <button onClick={() => setShowCamera(true)} className="relative group">
+          {photo ? (
+            <img src={photo.startsWith('data:') ? photo : photo} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-white shadow-md" />
+          ) : (
+            <div className="w-20 h-20 rounded-full bg-emerald-600 text-white flex items-center justify-center text-3xl">👩‍🏫</div>
+          )}
+          <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <Camera size={20} className="text-white" />
+          </div>
+        </button>
+      </div>
+      <div>
+        <label className="text-xs font-bold text-school-muted mb-1 block">Designation</label>
+        <input type="text" value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Head Teacher" className={inputCls} />
+      </div>
+      <div className="mt-3">
+        <label className="text-xs font-bold text-school-muted mb-1 block">Full Name</label>
+        <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Teacher's full name" className={inputCls} />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+        <div>
+          <label className="text-xs font-bold text-school-muted mb-1 block">Email</label>
+          <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="teacher@school.com" className={inputCls} />
+        </div>
+        <div>
+          <label className="text-xs font-bold text-school-muted mb-1 block">Contact</label>
+          <input type="tel" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder="01XXXXXXXXX" className={inputCls} />
+        </div>
+      </div>
+      <div className="flex gap-2 mt-3">
+        <button onClick={handleSubmit} className={`flex-1 py-2 text-white rounded-xl text-sm font-bold hover:opacity-90 ${isNew ? 'bg-violet-600' : 'bg-blue-600'}`}>
+          {isNew ? '+ Add Teacher' : '✓ Save'}
+        </button>
+        <button onClick={resetForm} className="px-4 py-2 border border-school-border rounded-xl text-sm hover:bg-white">Cancel</button>
+      </div>
+    </div>
+  );
+
+  const renderViewCard = (t: any) => (
+    <div className="bg-white p-4 rounded-2xl border border-school-border hover:shadow-md transition-shadow">
+      <div className="flex items-start gap-3">
+        {t.hasPhoto ? (
+          <img src={`${API_URL}/teachers/${t.id}/photo`} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
+        ) : (
+          <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center text-lg flex-shrink-0">👩‍🏫</div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-sm text-school-primary truncate">{t.name}</div>
+          <div className="text-xs text-emerald-600 font-medium">{t.designation}</div>
+        </div>
+      </div>
+      <div className="mt-2 space-y-1">
+        {t.email && <div className="text-xs flex items-center gap-1"><Mail size={11} className="text-school-muted" /> {t.email}</div>}
+        {t.contact && <div className="text-xs">{contactLinks(t.contact)}</div>}
+      </div>
+      {isAdmin && (
+        <div className="flex gap-2 mt-3 pt-3 border-t border-school-border">
+          <button onClick={() => handleEdit(t)} className="flex-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100">✏️ Edit</button>
+          <button onClick={() => setDeleteId(t.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100">🗑 Delete</button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       <CameraModal open={showCamera} onClose={() => setShowCamera(false)} onCapture={(d) => { setPhoto(d); setShowCamera(false); }} />
-
-      {/* Form */}
-      <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
-        <button onClick={() => setFormExpanded(!formExpanded)} className="w-full flex items-center justify-between p-4 hover:bg-school-paper/50 transition-colors">
-          <span className="font-bold text-sm text-school-primary">{editId ? '✏️ Edit Teacher' : '➕ Add New Teacher'}</span>
-          <span className="text-school-muted text-xs">{formExpanded ? '▲' : '▼'}</span>
-        </button>
-        {formExpanded && (
-          <div className="p-4 border-t border-school-border space-y-3">
-            <div className="flex justify-center">
-              <PhotoUpload photo={photo} onPhotoChange={setPhoto} onOpenCamera={() => setShowCamera(true)} size="lg" />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-school-muted mb-1 block">Designation</label>
-              <input type="text" value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Head Teacher" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-school-muted mb-1 block">Full Name</label>
-              <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Teacher's full name" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-school-muted mb-1 block">Email</label>
-                <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="teacher@school.com" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-school-muted mb-1 block">Contact</label>
-                <input type="tel" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder="01XXXXXXXXX" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
-              </div>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button onClick={handleSubmit} className="flex-1 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:opacity-90">
-                {editId ? '✓ Update' : '+ Add Teacher'}
-              </button>
-              {editId && <button onClick={resetForm} className="px-4 py-2 border border-school-border rounded-xl text-sm">Cancel</button>}
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -139,38 +167,21 @@ export default function TeacherSection() {
                 try { const r = await fetch(`${API_URL}/teachers/${t.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[t.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
               }));
               const doc = new jsPDF();
-              doc.setFont('helvetica', 'bold');
-              doc.setFontSize(16);
+              doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
               doc.text('Teacher List', 105, 14, { align: 'center' });
               let y = 22;
               filtered.forEach((t: any, i) => {
                 if (y > 250) { doc.addPage(); y = 20; }
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(11);
-                doc.setTextColor(107, 63, 160);
-                doc.text(`${i + 1}. ${t.name}`, 15, y);
-                y += 7;
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(9);
-                doc.setTextColor(0, 0, 0);
-                const lines = [
-                  `Designation: ${t.designation}`,
-                  t.email ? `Email: ${t.email}` : null,
-                  `Contact: ${t.contact || ''}`,
-                ].filter(Boolean);
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(107, 63, 160);
+                doc.text(`${i + 1}. ${t.name}`, 15, y); y += 7;
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
+                const lines = [`Designation: ${t.designation}`, t.email ? `Email: ${t.email}` : null, `Contact: ${t.contact || ''}`].filter(Boolean);
                 if (photoCache[t.id]) {
                   try { doc.addImage(photoCache[t.id], 'JPEG', 15, y, 22, 22); } catch (_e) {}
-                  lines.forEach((l, li) => doc.text(l!, 42, y + 5 + li * 5));
-                  y += 28;
-                } else {
-                  lines.forEach(l => { doc.text(l!, 15, y); y += 5; });
-                }
-                doc.setDrawColor(200);
-                doc.setLineWidth(0.3);
-                doc.setLineDash([4, 4]);
-                doc.line(15, y + 2, 195, y + 2);
-                doc.setLineDash([]);
-                y += 8;
+                  lines.forEach((l, li) => doc.text(l!, 42, y + 5 + li * 5)); y += 28;
+                } else { lines.forEach(l => { doc.text(l!, 15, y); y += 5; }); }
+                doc.setDrawColor(200); doc.setLineWidth(0.3); doc.setLineDash([4, 4]);
+                doc.line(15, y + 2, 195, y + 2); doc.setLineDash([]); y += 8;
               });
               doc.save('Teacher_List.pdf');
             }}
@@ -184,20 +195,17 @@ export default function TeacherSection() {
         </div>
       </div>
 
-      {/* Designation Picker or List */}
+      {/* Designation Picker */}
       {!activeDesig && designations.length > 0 && (
-        <div>
-          <p className="text-sm text-school-muted mb-2">Filter by designation:</p>
-          <div className="flex flex-wrap gap-2 mb-4">
-            <button onClick={() => setActiveDesig(null)} className="px-3 py-1.5 bg-school-primary text-white rounded-full text-xs font-medium">All</button>
-            {designations.map((d) => (
-              <button key={d} onClick={() => setActiveDesig(d)} className="px-3 py-1.5 border border-school-border rounded-full text-xs font-medium hover:bg-school-paper">{d}</button>
-            ))}
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setActiveDesig(null)} className="px-3 py-1.5 bg-school-primary text-white rounded-full text-xs font-medium">All</button>
+          {designations.map((d) => (
+            <button key={d} onClick={() => setActiveDesig(d)} className="px-3 py-1.5 border border-school-border rounded-full text-xs font-medium hover:bg-school-paper">{d}</button>
+          ))}
         </div>
       )}
       {activeDesig && (
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2">
           <button onClick={() => setActiveDesig(null)} className="text-sm text-school-accent hover:underline">← All</button>
           <span className="text-sm font-medium">{activeDesig}</span>
         </div>
@@ -205,38 +213,20 @@ export default function TeacherSection() {
 
       <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or designation..." className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
 
-      {filtered.length === 0 ? (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {isAdmin && (showAddNew ? renderEditCard(true) : (
+          <button onClick={() => setShowAddNew(true)} className="border-2 border-dashed border-violet-300 bg-violet-50/30 p-4 rounded-2xl flex flex-col items-center justify-center min-h-[160px] hover:border-violet-400 hover:bg-violet-50/60 transition-all">
+            <div className="text-3xl text-violet-400 mb-2">+</div>
+            <div className="text-sm font-bold text-violet-600">Add New Teacher</div>
+          </button>
+        ))}
+        {filtered.map((t: any) => editingId === t.id ? <div key={t.id}>{renderEditCard(false)}</div> : <div key={t.id}>{renderViewCard(t)}</div>)}
+      </div>
+
+      {filtered.length === 0 && !showAddNew && (
         <div className="text-center py-12 text-school-muted">
           <div className="text-4xl mb-2">👩‍🏫</div>
           <p className="text-sm">No teachers found.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map((t: any) => (
-            <div key={t.id} className="bg-white p-4 rounded-2xl border border-school-border hover:shadow-md transition-shadow">
-              <div className="flex items-start gap-3">
-                {t.hasPhoto ? (
-                  <img src={`${API_URL}/teachers/${t.id}/photo`} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center text-lg flex-shrink-0">👩‍🏫</div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-sm text-school-primary truncate">{t.name}</div>
-                  <div className="text-xs text-emerald-600 font-medium">{t.designation}</div>
-                </div>
-              </div>
-              <div className="mt-2 space-y-1">
-                {t.email && <div className="text-xs flex items-center gap-1"><Mail size={11} className="text-school-muted" /> {t.email}</div>}
-                {t.contact && <div className="text-xs">{contactLinks(t.contact)}</div>}
-              </div>
-              {isAdmin && (
-                <div className="flex gap-2 mt-3 pt-3 border-t border-school-border">
-                  <button onClick={() => handleEdit(t)} className="flex-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100">✏️ Edit</button>
-                   <button onClick={() => setDeleteId(t.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100">🗑 Delete</button>
-                </div>
-              )}
-            </div>
-          ))}
         </div>
       )}
       <DeleteConfirmModal open={!!deleteId} title="Delete Teacher" message="This will permanently delete this teacher." onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} loading={deleteLoading} />

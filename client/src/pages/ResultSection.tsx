@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useUIStore } from '../store';
 import EnterBySubject from './results/EnterBySubject';
 import EnterByStudent from './results/EnterByStudent';
 import TabulationTab from './results/TabulationTab';
@@ -15,6 +16,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 
 const ResultSection: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('subject');
+  useEffect(() => { useUIStore.getState().registerSwipeBack(() => setActiveTab('subject')); }, []);
 
   return (
     <div className="space-y-4">

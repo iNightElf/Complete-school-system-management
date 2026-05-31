@@ -20,7 +20,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const { logout, user } = useAuthStore();
   const role = user?.role;
-  const { activeMode, setMode } = useUIStore();
+  const { activeMode, swipeBack } = useUIStore();
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
@@ -34,9 +34,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const dy = e.changedTouches[0].clientY - touchStartY.current;
     if (Math.abs(dy) > Math.abs(dx)) return;
     if (dx > 80 && activeMode) {
-      setMode(null);
+      swipeBack();
     }
-  }, [activeMode, setMode]);
+  }, [activeMode, swipeBack]);
 
   return (
     <div className="min-h-screen bg-school-paper flex flex-col selection:bg-school-accent selection:text-white">
@@ -45,7 +45,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="flex items-center gap-3">
           {activeMode && (
             <button
-              onClick={() => setMode(null)}
+              onClick={() => swipeBack()}
               className="p-1 hover:bg-white/10 rounded-full transition-colors"
             >
               <ChevronLeft size={24} />
