@@ -114,6 +114,8 @@ const FinanceReports: React.FC = () => {
       toast('PDF downloaded ✓', 'success');
     } catch (e) { console.error(e); toast('PDF generation failed', 'error'); }
   };
+
+  return (
     <div className="space-y-4">
       {/* Sub-tabs */}
       <div className="flex gap-2 flex-wrap">
