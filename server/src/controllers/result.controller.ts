@@ -101,9 +101,13 @@ export const saveStudentResult = async (req: Request, res: Response) => {
 
     let result;
     if (existing) {
+      const mergedMarks = { ...(existing.marks as Record<string, number>), ...marks };
+      const mergedAttendance = attendance
+        ? { ...((existing.attendance as Record<string, number>) || {}), ...attendance }
+        : existing.attendance;
       result = await prisma.result.update({
         where: { id: existing.id },
-        data: { marks, attendance, ...(comment !== undefined && { comment }) },
+        data: { marks: mergedMarks, attendance: mergedAttendance, ...(comment !== undefined && { comment }) },
       });
     } else {
       result = await prisma.result.create({

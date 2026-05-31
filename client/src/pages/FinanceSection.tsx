@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSchoolStore, useAuthStore } from '../store';
 import axios from 'axios';
-import { ArrowUpCircle, ArrowDownCircle, ArrowRightLeft, Clock, BarChart3, AlertTriangle, Users } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, ArrowRightLeft, Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from '../components/Toast';
 import FinanceReports from './FinanceReports';
 import DefaulterTab from './DefaulterTab';
 import FeeAssignmentTab from './FeeAssignmentTab';
+import ExcelImportTab from './ExcelImportTab';
 
 const API_URL = '/api';
 
@@ -18,8 +19,207 @@ const ACCOUNTS = [
 const INCOME_CATEGORIES = ['Tuition Fee', 'Admission Fee', 'Hifz Tuition Fee', 'Hifz Admission Fee', 'Books Fee', 'Copy Fee', 'Stationary Fee', 'Accessories Fee', 'Transfer from Global Forum', 'Donation', 'Other Income'];
 const EXPENSE_CATEGORIES = ['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense'];
 
-type MainTab = 'transactions' | 'reports' | 'fee-assignment' | 'defaulter';
+type MainTab = 'transactions' | 'reports' | 'fee-assignment' | 'defaulter' | 'import';
 type TxTab = 'income' | 'expense' | 'transfer';
+
+const PAGE_SIZE = 25;
+
+function Ledger({ transactions, students, fmt, fetchTransactions }: { transactions: any[]; students: any[]; fmt: (n: number) => string; fetchTransactions: () => void }) {
+  const role = useAuthStore((s) => s.user?.role);
+  const canWrite = role === 'admin' || role === 'accountant';
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+
+  const filtered = useMemo(() => {
+    return transactions.filter((tx: any) => {
+      if (tx.isCancelled) return false;
+      const d = new Date(tx.transactionDate).toISOString().split('T')[0];
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
+      if (typeFilter !== 'all' && tx.transactionType !== typeFilter) return false;
+      return true;
+    });
+  }, [transactions, dateFrom, dateTo, typeFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => { setPage(1); }, [dateFrom, dateTo, typeFilter]);
+
+  const handleCancel = async () => {
+    if (!cancelId || !canWrite) return;
+    setCancelling(true);
+    try {
+      await axios.post(`${API_URL}/finance/transactions/${cancelId}/cancel`, { reason: cancelReason }, { withCredentials: true });
+      toast('Transaction cancelled', 'success');
+      setCancelId(null);
+      setCancelReason('');
+      fetchTransactions();
+    } catch {
+      toast('Failed to cancel', 'error');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const cancelled = transactions.filter((tx: any) => tx.isCancelled);
+
+  return (
+    <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+      <div className="px-5 py-4 border-b border-school-border flex items-center gap-2">
+        <Clock size={18} className="text-school-muted" />
+        <h4 className="font-serif text-sm text-school-primary">Ledger</h4>
+        <span className="text-[10px] text-school-muted">({filtered.length} active{cancelled.length ? `, ${cancelled.length} cancelled` : ''})</span>
+      </div>
+
+      {/* Filters */}
+      <div className="px-5 py-3 border-b border-school-border flex flex-wrap gap-3 items-end">
+        <div>
+          <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">From</label>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border border-school-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-school-accent" />
+        </div>
+        <div>
+          <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">To</label>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border border-school-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-school-accent" />
+        </div>
+        <div>
+          <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Type</label>
+          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="border border-school-border rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:border-school-accent">
+            <option value="all">All</option>
+            <option value="INCOME">Income</option>
+            <option value="EXPENSE">Expense</option>
+            <option value="INTERNAL_TRANSFER">Transfer</option>
+          </select>
+        </div>
+        {(dateFrom || dateTo || typeFilter !== 'all') && (
+          <button onClick={() => { setDateFrom(''); setDateTo(''); setTypeFilter('all'); }} className="text-xs text-school-accent hover:underline">Clear filters</button>
+        )}
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
+            <tr>
+              <th className="px-4 py-3 text-left">Date</th>
+              <th className="px-4 py-3 text-left">Category</th>
+              <th className="px-4 py-3 text-left">Class</th>
+              <th className="px-4 py-3 text-left">Student</th>
+              <th className="px-4 py-3 text-left">Accounts</th>
+              <th className="px-4 py-3 text-right">Amount</th>
+              <th className="px-4 py-3 text-center">Type</th>
+              {canWrite && <th className="px-4 py-3 text-center">Actions</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-school-border/50">
+            {paged.length > 0 ? paged.map((tx: any) => (
+              <tr key={tx.id} className="hover:bg-school-paper/30 transition-colors">
+                <td className="px-4 py-3 whitespace-nowrap text-xs font-mono font-bold">{new Date(tx.transactionDate).toLocaleDateString()}</td>
+                <td className="px-4 py-3 font-bold text-xs">{tx.category || 'Uncategorized'}</td>
+                <td className="px-4 py-3 text-xs">{tx.student?.class || tx.className || '—'}</td>
+                <td className="px-4 py-3 text-xs">{tx.student?.name || '—'}</td>
+                <td className="px-4 py-3 text-[10px] text-school-muted">
+                  {tx.sourceAccount ? tx.sourceAccount.replace(/_/g, ' ') : 'External'} → {tx.destinationAccount ? tx.destinationAccount.replace(/_/g, ' ') : 'External'}
+                </td>
+                <td className={`px-4 py-3 text-right font-bold ${tx.transactionType === 'EXPENSE' ? 'text-rose-600' : tx.transactionType === 'INCOME' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                  {tx.transactionType === 'EXPENSE' ? '−' : '+'} ৳{fmt(Number(tx.amount))}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className={`text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded ${tx.transactionType === 'INCOME' ? 'bg-emerald-50 text-emerald-700' : tx.transactionType === 'EXPENSE' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
+                    {tx.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : tx.transactionType}
+                  </span>
+                </td>
+                {canWrite && (
+                  <td className="px-4 py-3 text-center">
+                    <button onClick={() => setCancelId(tx.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1" title="Cancel transaction">
+                      <Ban size={14} />
+                    </button>
+                  </td>
+                )}
+              </tr>
+            )) : (
+              <tr><td colSpan={canWrite ? 8 : 7} className="px-4 py-12 text-center text-sm text-school-muted italic">
+                {transactions.length ? 'No transactions match filters.' : 'No transactions yet.'}
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="px-5 py-3 border-t border-school-border flex items-center justify-between">
+          <span className="text-xs text-school-muted">
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 rounded-lg border border-school-border hover:bg-school-paper disabled:opacity-30">
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-xs font-bold">{page} / {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1.5 rounded-lg border border-school-border hover:bg-school-paper disabled:opacity-30">
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Cancelled Transactions Audit Trail */}
+      {cancelled.length > 0 && (
+        <div className="border-t border-school-border">
+          <details className="group">
+            <summary className="px-5 py-3 cursor-pointer text-xs font-bold text-school-muted hover:text-school-primary flex items-center gap-2">
+              <Ban size={12} /> Cancelled Transactions ({cancelled.length})
+            </summary>
+            <div className="px-5 pb-3">
+              <table className="w-full text-xs">
+                <thead className="text-[10px] uppercase text-school-muted">
+                  <tr><th className="px-2 py-1 text-left">Date</th><th className="px-2 py-1 text-left">Category</th><th className="px-2 py-1 text-right">Amount</th><th className="px-2 py-1 text-left">Cancelled By</th><th className="px-2 py-1 text-left">Reason</th></tr>
+                </thead>
+                <tbody className="divide-y divide-school-border/50">
+                  {cancelled.map((tx: any) => (
+                    <tr key={tx.id} className="text-school-muted line-through">
+                      <td className="px-2 py-1.5 font-mono">{new Date(tx.transactionDate).toLocaleDateString()}</td>
+                      <td className="px-2 py-1.5">{tx.category || '—'}</td>
+                      <td className="px-2 py-1.5 text-right">৳{fmt(Number(tx.amount))}</td>
+                      <td className="px-2 py-1.5">{tx.cancelledBy || '—'} {tx.cancelledAt ? `on ${new Date(tx.cancelledAt).toLocaleDateString()}` : ''}</td>
+                      <td className="px-2 py-1.5 text-school-accent">{tx.cancelReason || 'No reason'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      )}
+
+      {/* Cancel Modal */}
+      {cancelId && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setCancelId(null)}>
+          <div className="bg-white rounded-2xl border border-school-border p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+            <h4 className="font-serif text-sm text-school-primary">Cancel Transaction</h4>
+            <p className="text-xs text-school-muted">This will mark the transaction as cancelled. It will still appear in the audit trail.</p>
+            <div>
+              <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Reason (optional)</label>
+              <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={3} placeholder="Why is this being cancelled?" className="w-full border border-school-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-school-accent resize-none" />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setCancelId(null); setCancelReason(''); }} className="px-4 py-2 border border-school-border rounded-xl text-xs hover:bg-school-paper">Keep</button>
+              <button onClick={handleCancel} disabled={cancelling} className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:opacity-90 disabled:opacity-50">
+                {cancelling ? 'Cancelling...' : 'Cancel Transaction'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const FinanceSection: React.FC = () => {
   const { balances, transactions, fetchFinance, fetchTransactions, classes, students, fetchClasses, fetchStudents } = useSchoolStore();
@@ -40,6 +240,7 @@ const FinanceSection: React.FC = () => {
   const [transferTo, setTransferTo] = useState('AL_RAWA_BANK');
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');
+  const [feeMonth, setFeeMonth] = useState('');
 
   useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); }, []);
 
@@ -57,7 +258,7 @@ const FinanceSection: React.FC = () => {
   const resetForm = () => {
     setAmount(''); setCategory(''); setCustomCategory(''); setDesc('');
     setDate(new Date().toISOString().split('T')[0]);
-    setSelectedClass(''); setSelectedStudent('');
+    setSelectedClass(''); setSelectedStudent(''); setFeeMonth('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,6 +289,7 @@ const FinanceSection: React.FC = () => {
         description: desc,
         studentId: selectedStudent || undefined,
         className: selectedClass || undefined,
+        feeMonth: feeMonth || undefined,
       }, { withCredentials: true });
 
       toast(activeTab === 'income' ? 'Income recorded ✓' : activeTab === 'expense' ? 'Expense recorded ✓' : 'Transfer recorded ✓', 'success');
@@ -159,11 +361,15 @@ const FinanceSection: React.FC = () => {
         <button onClick={() => setMainTab('fee-assignment')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'fee-assignment' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
           <Users size={14} /> Fee Assignment
         </button>
+        {canWrite && <button onClick={() => setMainTab('import')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'import' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
+          <Upload size={14} /> Import Excel
+        </button>}
       </div>
 
       {mainTab === 'reports' ? <FinanceReports /> : null}
       {mainTab === 'defaulter' ? <DefaulterTab /> : null}
       {mainTab === 'fee-assignment' ? <FeeAssignmentTab /> : null}
+      {mainTab === 'import' ? <ExcelImportTab /> : null}
 
       {mainTab === 'transactions' && (<div className="space-y-4">
           {/* Tab Bar */}
@@ -221,6 +427,13 @@ const FinanceSection: React.FC = () => {
                         <option key={s.id} value={s.id}>{s.name}{s.fatherName ? ` (${s.fatherName})` : ''}{s.roll ? ` - Roll ${s.roll}` : ''}</option>
                       ))}
                     </select>
+                  </div>
+                )}
+                {(category === 'Tuition Fee' || category === 'Hifz Tuition Fee') && (
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee for Month</label>
+                    <input type="month" value={feeMonth} onChange={e => setFeeMonth(e.target.value)}
+                      className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent" />
                   </div>
                 )}
               </div>
@@ -285,55 +498,8 @@ const FinanceSection: React.FC = () => {
             </button>
           </form>
 
-      {/* Transaction History */}
-      <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
-        <div className="px-5 py-4 border-b border-school-border flex items-center gap-2">
-          <Clock size={18} className="text-school-muted" />
-          <h4 className="font-serif text-sm text-school-primary">Transaction History</h4>
-          <span className="text-[10px] text-school-muted">({transactions.length})</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
-              <tr>
-                <th className="px-4 py-3 text-left">Date</th>
-                <th className="px-4 py-3 text-left">Details</th>
-                <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3 text-center">Type</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-school-border/50">
-              {transactions.length > 0 ? transactions.map((tx: any) => (
-                <tr key={tx.id} className="hover:bg-school-paper/30 transition-colors">
-                  <td className="px-4 py-3 whitespace-nowrap text-xs font-mono font-bold">{new Date(tx.transactionDate).toLocaleDateString()}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {getTxIcon(tx.transactionType)}
-                      <div>
-                        <p className="font-bold text-xs">{tx.category || 'Uncategorized'}</p>
-                        {tx.className && <p className="text-[10px] text-school-primary font-semibold">{tx.className}{tx.studentId ? ` — ${students.find((s: any) => s.id === tx.studentId)?.name || 'Unknown Student'}` : ''}</p>}
-                        <p className="text-[10px] text-school-muted">
-                          {tx.sourceAccount ? tx.sourceAccount.replace(/_/g, ' ') : 'External'} → {tx.destinationAccount ? tx.destinationAccount.replace(/_/g, ' ') : 'External'}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className={`px-4 py-3 text-right font-bold ${tx.transactionType === 'EXPENSE' ? 'text-rose-600' : tx.transactionType === 'INCOME' ? 'text-emerald-600' : 'text-blue-600'}`}>
-                    {tx.transactionType === 'EXPENSE' ? '−' : '+'} ৳{fmt(Number(tx.amount))}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded ${tx.transactionType === 'INCOME' ? 'bg-emerald-50 text-emerald-700' : tx.transactionType === 'EXPENSE' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
-                      {tx.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : tx.transactionType}
-                    </span>
-                  </td>
-                </tr>
-              )) : (
-                <tr><td colSpan={4} className="px-4 py-12 text-center text-sm text-school-muted italic">No transactions yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* Ledger */}
+      <Ledger transactions={transactions} students={students} fmt={fmt} fetchTransactions={fetchTransactions} />
       </div>)}
 
     </div>

@@ -89,7 +89,19 @@ const FinanceReports: React.FC = () => {
     return ym >= dateFrom && ym <= dateTo;
   });
 
-  const yearFiltered = transactions.filter((t: any) => new Date(t.transactionDate).getFullYear() === Number(yearFilter));
+  const yearFiltered = transactions.filter((t: any) => {
+    const d = new Date(t.transactionDate);
+    const month = d.getMonth(); // 0-indexed
+    const year = d.getFullYear();
+    // Academic year: Sep (8) to Aug (7)
+    // yearFilter "2026" means Sep 2025 – Aug 2026
+    const filterYear = Number(yearFilter);
+    if (month >= 8) { // Sep-Dec
+      return year === filterYear;
+    } else { // Jan-Aug
+      return year === filterYear + 1;
+    }
+  });
 
   const incomeTx = filtered.filter((t: any) => t.transactionType === 'INCOME' && t.affectsIncomeLedger);
   const expenseTx = filtered.filter((t: any) => t.transactionType === 'EXPENSE' && t.affectsExpenseLedger);
@@ -298,7 +310,7 @@ const FinanceReports: React.FC = () => {
   // ── PDF: Audit Report ──
   function pdfAudit() {
     const doc = new jsPDF({ format: 'a4', unit: 'mm' });
-    let y = addHeader(doc, 'ANNUAL AUDIT REPORT', `Financial Year ${yearFilter}`, 10);
+    let y = addHeader(doc, 'ANNUAL AUDIT REPORT', `Financial Year ${Number(yearFilter)-1}-${yearFilter} (Sep ${Number(yearFilter)-1} – Aug ${yearFilter})`, 10);
 
     const totalIncome = yearIncome.reduce((s, t) => s + Number(t.amount), 0);
     const totalExpense = yearExpense.reduce((s, t) => s + Number(t.amount), 0);
@@ -368,7 +380,7 @@ const FinanceReports: React.FC = () => {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(26, 26, 46);
     doc.text('AUDIT CERTIFICATE', 12, y); y += 8;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
-    const certText = `This is to certify that the accounts of AL RAWA English School for the financial year ${yearFilter} have been examined. Total income stood at ${fmt(totalIncome)} /- and total expenditure at ${fmt(totalExpense)} /-, resulting in a net surplus of ${fmt(netSurplus)} /-. All transactions have been verified against supporting documents.`;
+    const certText = `This is to certify that the accounts of AL RAWA English School for the financial year ${Number(yearFilter)-1}-${yearFilter} (Sep ${Number(yearFilter)-1} – Aug ${yearFilter}) have been examined. Total income stood at ${fmt(totalIncome)} /- and total expenditure at ${fmt(totalExpense)} /-, resulting in a net surplus of ${fmt(netSurplus)} /-. All transactions have been verified against supporting documents.`;
     const lines = doc.splitTextToSize(certText, 186);
     doc.text(lines, 12, y); y += lines.length * 5 + 10;
 
@@ -387,7 +399,7 @@ const FinanceReports: React.FC = () => {
   // ── PDF: Yearly AGM Report ──
   function pdfYearlyAGM() {
     const doc = new jsPDF({ format: 'a4', unit: 'mm' });
-    let y = addHeader(doc, 'ANNUAL GENERAL MEETING REPORT', `Session: ${yearFilter}`, 10);
+    let y = addHeader(doc, 'ANNUAL GENERAL MEETING REPORT', `Session: ${Number(yearFilter)-1}-${yearFilter} (Sep ${Number(yearFilter)-1} – Aug ${yearFilter})`, 10);
 
     const totalIncome = yearIncome.reduce((s, t) => s + Number(t.amount), 0);
     const totalExpense = yearExpense.reduce((s, t) => s + Number(t.amount), 0);
@@ -452,7 +464,7 @@ const FinanceReports: React.FC = () => {
     doc.text('5. RECOMMENDATIONS', 12, y); y += 8;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
     const recs = [
-      `Net surplus of ${fmt(netSurplus)} /- for the year ${yearFilter}.`,
+      `Net surplus of ${fmt(netSurplus)} /- for FY ${Number(yearFilter)-1}-${yearFilter}.`,
       totalIncome > 0 ? `Expense-to-income ratio: ${((totalExpense / totalIncome) * 100).toFixed(1)}%.` : 'No income recorded.',
       `${yearFiltered.length} total transactions recorded during the year.`,
       'All financial records are available for detailed audit.',
@@ -509,7 +521,7 @@ const FinanceReports: React.FC = () => {
           <div>
             <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Financial Year</label>
             <select value={yearFilter} onChange={e => setYearFilter(e.target.value)} className="border border-school-border rounded-xl px-3 py-2 text-sm bg-white">
-              {[0, 1, 2].map(i => { const y = new Date().getFullYear() - i; return <option key={y} value={y}>{y}</option>; })}
+              {[0, 1, 2].map(i => { const y = new Date().getFullYear() - i; return <option key={y} value={y}>{`${y-1}-${y}`}</option>; })}
             </select>
           </div>
         )}
@@ -543,9 +555,13 @@ const FinanceReports: React.FC = () => {
             {(() => { const hw = headwise(incomeTx); const total = hw.reduce((s, x) => s + x[1], 0); return (
               <div>
                 <h4 className="font-serif text-sm text-school-primary mb-3">Headwise Income — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
-                <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">%</th><th className="px-3 py-2 text-right">Count</th></tr></thead>
-                  <tbody>{hw.map(([cat, amt]) => <tr key={cat} className="border-t border-school-border/50"><td className="px-3 py-2 font-medium">{cat}</td><td className="px-3 py-2 text-right">{fmt(amt)} /-</td><td className="px-3 py-2 text-right">{total > 0 ? ((amt / total) * 100).toFixed(1) : 0}%</td><td className="px-3 py-2 text-right">{incomeTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length}</td></tr>)}</tbody>
-                  <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2">Total Income</td><td className="px-3 py-2 text-right">{fmt(total)} /-</td><td></td><td className="px-3 py-2 text-right">{incomeTx.length}</td></tr></tfoot>
+                <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">%</th><th className="px-3 py-2 text-right">Txns</th><th className="px-3 py-2 text-right">Students</th></tr></thead>
+                  <tbody>{hw.map(([cat, amt]) => {
+                    const catTx = incomeTx.filter((t: any) => (t.category || 'Uncategorized') === cat);
+                    const uniqueStudents = new Set(catTx.filter((t: any) => t.student?.name).map((t: any) => t.student?.name)).size;
+                    return <tr key={cat} className="border-t border-school-border/50"><td className="px-3 py-2 font-medium">{cat}</td><td className="px-3 py-2 text-right">{fmt(amt)} /-</td><td className="px-3 py-2 text-right">{total > 0 ? ((amt / total) * 100).toFixed(1) : 0}%</td><td className="px-3 py-2 text-right">{catTx.length}</td><td className="px-3 py-2 text-right">{uniqueStudents || '—'}</td></tr>;
+                  })}</tbody>
+                  <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2">Total Income</td><td className="px-3 py-2 text-right">{fmt(total)} /-</td><td></td><td className="px-3 py-2 text-right">{incomeTx.length}</td><td className="px-3 py-2 text-right">{new Set(incomeTx.filter((t: any) => t.student?.name).map((t: any) => t.student?.name)).size || '—'}</td></tr></tfoot>
                 </table>
               </div>
             ); })()}
@@ -576,8 +592,8 @@ const FinanceReports: React.FC = () => {
             <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Date</th><th className="px-3 py-2 text-left">Class</th><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th></tr></thead>
               <tbody>{sorted.map((t, i) => <tr key={t.id} className={`border-t border-school-border/50 ${i % 2 ? 'bg-school-paper/30' : ''}`}>
                 <td className="px-3 py-2 whitespace-nowrap text-xs font-mono">{fmtDate(t.transactionDate)}</td>
-                <td className="px-3 py-2 text-xs">{t.className || '—'}</td>
-                <td className="px-3 py-2 text-xs font-medium">{t.studentId ? (students.find((s: any) => s.id === t.studentId)?.name || 'Unknown') : '—'}</td>
+                <td className="px-3 py-2 text-xs">{t.student?.class || t.className || '—'}</td>
+                <td className="px-3 py-2 text-xs font-medium">{t.student?.name || '—'}</td>
                 <td className="px-3 py-2 font-medium">{t.category || 'Uncategorized'}</td>
                 <td className="px-3 py-2 text-right font-bold text-emerald-600">{fmt(Number(t.amount))} /-</td>
               </tr>)}</tbody>
@@ -594,15 +610,14 @@ const FinanceReports: React.FC = () => {
             const sorted = [...expenseTx].sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
             const total = sorted.reduce((s, t) => s + Number(t.amount), 0);
             return (
-            <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Date</th><th className="px-3 py-2 text-left">Class</th><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th></tr></thead>
+            <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Date</th><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-left">Description</th><th className="px-3 py-2 text-right">Amount</th></tr></thead>
               <tbody>{sorted.map((t, i) => <tr key={t.id} className={`border-t border-school-border/50 ${i % 2 ? 'bg-school-paper/30' : ''}`}>
                 <td className="px-3 py-2 whitespace-nowrap text-xs font-mono">{fmtDate(t.transactionDate)}</td>
-                <td className="px-3 py-2 text-xs">{t.className || '—'}</td>
-                <td className="px-3 py-2 text-xs font-medium">{t.studentId ? (students.find((s: any) => s.id === t.studentId)?.name || 'Unknown') : '—'}</td>
                 <td className="px-3 py-2 font-medium">{t.category || 'Uncategorized'}</td>
+                <td className="px-3 py-2 text-xs text-school-muted">{t.description || '—'}</td>
                 <td className="px-3 py-2 text-right font-bold text-rose-600">{fmt(Number(t.amount))} /-</td>
               </tr>)}</tbody>
-              <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2" colSpan={4}>Total Expense ({sorted.length} transactions)</td><td className="px-3 py-2 text-right text-rose-600">{fmt(total)} /-</td></tr></tfoot>
+              <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2" colSpan={3}>Total Expense ({sorted.length} transactions)</td><td className="px-3 py-2 text-right text-rose-600">{fmt(total)} /-</td></tr></tfoot>
             </table>
           ); })()}
         </div>
@@ -612,7 +627,7 @@ const FinanceReports: React.FC = () => {
         <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
           {(() => { const ti = yearIncome.reduce((s, t) => s + Number(t.amount), 0); const te = yearExpense.reduce((s, t) => s + Number(t.amount), 0); const ns = ti - te; return (
             <div className="space-y-4">
-              <h4 className="font-serif text-sm text-school-primary">Audit Report — Financial Year {yearFilter}</h4>
+              <h4 className="font-serif text-sm text-school-primary">Audit Report — FY {Number(yearFilter)-1}-{yearFilter}</h4>
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-emerald-600 font-bold">Total Income</div><div className="font-serif text-lg text-emerald-700">{fmt(ti)} /-</div></div>
                 <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-rose-600 font-bold">Total Expense</div><div className="font-serif text-lg text-rose-700">{fmt(te)} /-</div></div>
@@ -639,7 +654,7 @@ const FinanceReports: React.FC = () => {
         <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
           {(() => { const ti = yearIncome.reduce((s, t) => s + Number(t.amount), 0); const te = yearExpense.reduce((s, t) => s + Number(t.amount), 0); const ns = ti - te; return (
             <div className="space-y-4">
-              <h4 className="font-serif text-sm text-school-primary">Annual General Meeting Report — Session {yearFilter}</h4>
+              <h4 className="font-serif text-sm text-school-primary">Annual General Meeting Report — FY {Number(yearFilter)-1}-{yearFilter}</h4>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Total Income</div><div className="font-serif text-lg text-emerald-600">{fmt(ti)} /-</div></div>
                 <div className="bg-school-paper rounded-xl p-3"><div className="text-[10px] uppercase text-school-muted font-bold mb-1">Total Expense</div><div className="font-serif text-lg text-rose-600">{fmt(te)} /-</div></div>

@@ -163,6 +163,11 @@ model Transaction {
   createdBy             String?   @map("created_by") @db.VarChar(100)
   approvedBy            String?   @map("approved_by") @db.VarChar(100)
   referenceId           String?   @map("reference_id") @db.VarChar(255)
+  feeMonth              String?   @map("fee_month") @db.VarChar(20)
+  isCancelled           Boolean   @default(false) @map("is_cancelled")
+  cancelledAt           DateTime? @map("cancelled_at")
+  cancelledBy           String?   @map("cancelled_by") @db.VarChar(100)
+  cancelReason          String?   @map("cancel_reason") @db.Text
   createdAt             DateTime  @default(now()) @map("created_at")
 
   @@index([transactionDate])

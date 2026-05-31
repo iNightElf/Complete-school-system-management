@@ -18,6 +18,7 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       directExpenseBeforeDeposit,
       studentId,
       className,
+      feeMonth,
     } = req.body;
 
     const { transactionType, affectsIncomeLedger, affectsExpenseLedger } =
@@ -47,6 +48,7 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
         affectsIncomeLedger,
         affectsExpenseLedger,
         referenceId: referenceId || null,
+        feeMonth: feeMonth || null,
         createdBy: req.session?.user?.id || "system",
       },
     });
@@ -95,10 +97,36 @@ export const getTransactions = async (req: Request, res: Response) => {
   try {
     const transactions = await prisma.transaction.findMany({
       orderBy: { transactionDate: "desc" },
+      include: { student: { select: { id: true, name: true, class: true, roll: true } } },
     });
     res.json(transactions);
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
+  }
+};
+
+export const cancelTransaction = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = param(req, "id");
+    const { reason } = req.body;
+
+    const tx = await prisma.transaction.findUnique({ where: { id } });
+    if (!tx) return res.status(404).json({ error: "Transaction not found" });
+    if (tx.isCancelled) return res.status(400).json({ error: "Transaction already cancelled" });
+
+    const updated = await prisma.transaction.update({
+      where: { id },
+      data: {
+        isCancelled: true,
+        cancelledAt: new Date(),
+        cancelledBy: req.session?.user?.id || "system",
+        cancelReason: reason || null,
+      },
+    });
+
+    res.json(updated);
+  } catch (error: any) {
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -234,6 +262,8 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
             studentTx
               .filter(t => t.studentId === student.id && t.category === cat)
               .map(t => {
+                // Prefer explicit feeMonth, fall back to transaction date
+                if (t.feeMonth) return t.feeMonth;
                 const d = new Date(t.transactionDate);
                 return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
               })
@@ -259,6 +289,7 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
             studentTx
               .filter(t => t.studentId === student.id && t.category === label)
               .map(t => {
+                if (t.feeMonth) return t.feeMonth;
                 const d = new Date(t.transactionDate);
                 return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
               })

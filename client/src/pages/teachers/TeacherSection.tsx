@@ -1,0 +1,237 @@
+import React, { useState, useEffect } from 'react';
+import { useSchoolStore, useAuthStore } from '../../store';
+import { toast } from '../../components/Toast';
+import CameraModal from '../../components/CameraModal';
+import PhotoUpload from '../../components/PhotoUpload';
+import { RefreshCw, Mail, Download } from 'lucide-react';
+import { contactLinks } from '../../lib/contacts';
+import jsPDF from 'jspdf';
+
+const API_URL = '/api';
+
+export default function TeacherSection() {
+  const { teachers, fetchTeachers } = useSchoolStore();
+  const role = useAuthStore((s) => s.user?.role);
+  const isAdmin = role === 'admin';
+
+  const [showCamera, setShowCamera] = useState(false);
+  const [formExpanded, setFormExpanded] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [activeDesig, setActiveDesig] = useState<string | null>(null);
+
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [form, setForm] = useState({ designation: '', name: '', email: '', contact: '' });
+
+  useEffect(() => { fetchTeachers(); }, []);
+
+  const designations = [...new Set(teachers.map((t: any) => t.designation))];
+  const filtered = teachers.filter((t: any) => {
+    if (activeDesig && t.designation !== activeDesig) return false;
+    if (search && !t.name.toLowerCase().includes(search.toLowerCase()) && !t.designation.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const resetForm = () => {
+    setForm({ designation: '', name: '', email: '', contact: '' });
+    setPhoto(null);
+    setEditId(null);
+    setFormExpanded(false);
+  };
+
+  const handleEdit = (t: any) => {
+    setForm({ designation: t.designation, name: t.name, email: t.email || '', contact: t.contact || '' });
+    setPhoto(t.hasPhoto ? `${API_URL}/teachers/${t.id}/photo` : null);
+    setEditId(t.id);
+    setFormExpanded(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return toast('Enter teacher name', 'error');
+    if (!form.designation.trim()) return toast('Enter designation', 'error');
+
+    const body = { ...form, photo: photo || undefined };
+
+    try {
+      const url = editId ? `${API_URL}/teachers/${editId}` : `${API_URL}/teachers`;
+      await fetch(url, {
+        method: editId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      toast(editId ? 'Teacher updated ✓' : 'Teacher added ✓', 'success');
+      resetForm();
+      fetchTeachers();
+    } catch (e: any) {
+      toast(e.message || 'Error', 'error');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this teacher?')) return;
+    await fetch(`${API_URL}/teachers/${id}`, { method: 'DELETE', credentials: 'include' });
+    toast('Teacher deleted');
+    fetchTeachers();
+  };
+
+  return (
+    <div className="space-y-4">
+      <CameraModal open={showCamera} onClose={() => setShowCamera(false)} onCapture={(d) => { setPhoto(d); setShowCamera(false); }} />
+
+      {/* Form */}
+      <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+        <button onClick={() => setFormExpanded(!formExpanded)} className="w-full flex items-center justify-between p-4 hover:bg-school-paper/50 transition-colors">
+          <span className="font-bold text-sm text-school-primary">{editId ? '✏️ Edit Teacher' : '➕ Add New Teacher'}</span>
+          <span className="text-school-muted text-xs">{formExpanded ? '▲' : '▼'}</span>
+        </button>
+        {formExpanded && (
+          <div className="p-4 border-t border-school-border space-y-3">
+            <div className="flex justify-center">
+              <PhotoUpload photo={photo} onPhotoChange={setPhoto} onOpenCamera={() => setShowCamera(true)} size="lg" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-school-muted mb-1 block">Designation</label>
+              <input type="text" value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Head Teacher" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-school-muted mb-1 block">Full Name</label>
+              <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Teacher's full name" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-school-muted mb-1 block">Email</label>
+                <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="teacher@school.com" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-school-muted mb-1 block">Contact</label>
+                <input type="tel" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder="01XXXXXXXXX" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button onClick={handleSubmit} className="flex-1 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:opacity-90">
+                {editId ? '✓ Update' : '+ Add Teacher'}
+              </button>
+              {editId && <button onClick={resetForm} className="px-4 py-2 border border-school-border rounded-xl text-sm">Cancel</button>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h3 className="font-serif text-lg text-school-primary">Teachers</h3>
+          <span className="bg-emerald-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{filtered.length}</span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              const photoCache: Record<string, string> = {};
+              await Promise.all(filtered.filter((t: any) => t.hasPhoto).map(async (t: any) => {
+                try { const r = await fetch(`${API_URL}/teachers/${t.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[t.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+              }));
+              const doc = new jsPDF();
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(16);
+              doc.text('Teacher List', 105, 14, { align: 'center' });
+              let y = 22;
+              filtered.forEach((t: any, i) => {
+                if (y > 250) { doc.addPage(); y = 20; }
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.setTextColor(107, 63, 160);
+                doc.text(`${i + 1}. ${t.name}`, 15, y);
+                y += 7;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(0, 0, 0);
+                const lines = [
+                  `Designation: ${t.designation}`,
+                  t.email ? `Email: ${t.email}` : null,
+                  `Contact: ${t.contact || ''}`,
+                ].filter(Boolean);
+                if (photoCache[t.id]) {
+                  try { doc.addImage(photoCache[t.id], 'JPEG', 15, y, 22, 22); } catch (_e) {}
+                  lines.forEach((l, li) => doc.text(l!, 42, y + 5 + li * 5));
+                  y += 28;
+                } else {
+                  lines.forEach(l => { doc.text(l!, 15, y); y += 5; });
+                }
+                doc.setDrawColor(200);
+                doc.setLineWidth(0.3);
+                doc.setLineDash([4, 4]);
+                doc.line(15, y + 2, 195, y + 2);
+                doc.setLineDash([]);
+                y += 8;
+              });
+              doc.save('Teacher_List.pdf');
+            }}
+            className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper"
+          >
+            <Download size={12} /> PDF
+          </button>
+          <button onClick={() => fetchTeachers()} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
+            <RefreshCw size={12} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Designation Picker or List */}
+      {!activeDesig && designations.length > 0 && (
+        <div>
+          <p className="text-sm text-school-muted mb-2">Filter by designation:</p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button onClick={() => setActiveDesig(null)} className="px-3 py-1.5 bg-school-primary text-white rounded-full text-xs font-medium">All</button>
+            {designations.map((d) => (
+              <button key={d} onClick={() => setActiveDesig(d)} className="px-3 py-1.5 border border-school-border rounded-full text-xs font-medium hover:bg-school-paper">{d}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {activeDesig && (
+        <div className="flex items-center gap-2 mb-2">
+          <button onClick={() => setActiveDesig(null)} className="text-sm text-school-accent hover:underline">← All</button>
+          <span className="text-sm font-medium">{activeDesig}</span>
+        </div>
+      )}
+
+      <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or designation..." className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-12 text-school-muted">
+          <div className="text-4xl mb-2">👩‍🏫</div>
+          <p className="text-sm">No teachers found.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filtered.map((t: any) => (
+            <div key={t.id} className="bg-white p-4 rounded-2xl border border-school-border hover:shadow-md transition-shadow">
+              <div className="flex items-start gap-3">
+                {t.hasPhoto ? (
+                  <img src={`${API_URL}/teachers/${t.id}/photo`} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center text-lg flex-shrink-0">👩‍🏫</div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm text-school-primary truncate">{t.name}</div>
+                  <div className="text-xs text-emerald-600 font-medium">{t.designation}</div>
+                </div>
+              </div>
+              <div className="mt-2 space-y-1">
+                {t.email && <div className="text-xs flex items-center gap-1"><Mail size={11} className="text-school-muted" /> {t.email}</div>}
+                {t.contact && <div className="text-xs">{contactLinks(t.contact)}</div>}
+              </div>
+              {isAdmin && (
+                <div className="flex gap-2 mt-3 pt-3 border-t border-school-border">
+                  <button onClick={() => handleEdit(t)} className="flex-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100">✏️ Edit</button>
+                  <button onClick={() => handleDelete(t.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100">🗑 Delete</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

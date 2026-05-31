@@ -91,6 +91,7 @@ app.delete("/api/classes/:classId/results", authenticate, authorizePermission("r
 app.get("/api/finance/balances", authenticate, authorizePermission("finance:read"), finance.getBalances);
 app.get("/api/finance/transactions", authenticate, authorizePermission("finance:read"), finance.getTransactions);
 app.post("/api/finance/transactions", authenticate, authorizePermission("finance:write"), finance.createTransaction);
+app.post("/api/finance/transactions/:id/cancel", authenticate, authorizePermission("finance:write"), finance.cancelTransaction);
 
 // ── Fee Assignments ──
 app.get("/api/finance/fee-assignments", authenticate, authorizePermission("finance:read"), finance.getFeeAssignments);
