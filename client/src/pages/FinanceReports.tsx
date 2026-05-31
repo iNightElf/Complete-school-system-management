@@ -67,7 +67,7 @@ const FinanceReports: React.FC = () => {
     const month = d.getMonth();
     const year = d.getFullYear();
     const filterYear = Number(yearFilter);
-    if (month >= 8) { return year === filterYear; } else { return year === filterYear + 1; }
+    if (month >= 8) { return year === filterYear - 1; } else { return year === filterYear; }
   });
 
   const incomeTx = filtered.filter((t: any) => t.transactionType === 'INCOME' && t.affectsIncomeLedger);
