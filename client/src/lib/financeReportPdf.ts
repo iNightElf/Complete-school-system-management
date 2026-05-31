@@ -122,10 +122,8 @@ export function pdfMonthly(type: 'income' | 'expense', data: any[], students: an
   const amtX = catX + catW;
   const balX = amtX + amtW;
 
-  const grouped: Record<string, any[]> = {};
-  data.forEach(t => { const c = t.category || 'Uncategorized'; if (!grouped[c]) grouped[c] = []; grouped[c].push(t); });
-  const cats = Object.keys(grouped).sort();
-  cats.forEach(c => grouped[c].sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime()));
+  // Sort all transactions by date (flat list, no grouping)
+  const sorted = [...data].sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
 
   let grandTotal = 0;
 
@@ -143,54 +141,35 @@ export function pdfMonthly(type: 'income' | 'expense', data: any[], students: an
 
   drawTableHeader();
 
-  cats.forEach(cat => {
-    if (y > 260) { doc.addPage(); y = 14; drawTableHeader(); }
-    doc.setFillColor(240, 235, 225);
-    doc.rect(M, y, PW, 6, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(26, 26, 46);
-    doc.text(cat, M + 2, y + 4);
-    let catTotal = 0;
-    grouped[cat].forEach(t => { catTotal += Number(t.amount); });
-    doc.text(fmt(catTotal) + ' /-', amtX + amtW - 2, y + 4, { align: 'right' });
-    y += 6;
+  sorted.forEach((t, i) => {
+    if (y > 270) { doc.addPage(); y = 14; drawTableHeader(); }
+    if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(M, y, PW, rowH, 'F'); }
 
-    grouped[cat].forEach((t, i) => {
-      if (y > 270) { doc.addPage(); y = 14; drawTableHeader(); }
-      if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(M, y, PW, rowH, 'F'); }
+    const dateStr = new Date(t.transactionDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const studentName = t.studentId ? (students.find((s: any) => s.id === t.studentId)?.name || '') : '';
+    const classStudent = [t.className || '', studentName].filter(Boolean).join(' / ') || t.description || `${(t.sourceAccount || '').replace(/_/g, ' ')} -> ${(t.destinationAccount || '').replace(/_/g, ' ')}`;
+    grandTotal += Number(t.amount);
 
-      const dateStr = new Date(t.transactionDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-      const studentName = t.studentId ? (students.find((s: any) => s.id === t.studentId)?.name || '') : '';
-      const classStudent = [t.className || '', studentName].filter(Boolean).join(' / ') || t.description || `${(t.sourceAccount || '').replace(/_/g, ' ')} -> ${(t.destinationAccount || '').replace(/_/g, ' ')}`;
-      grandTotal += Number(t.amount);
-
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
-      doc.setTextColor(80, 80, 80);
-      doc.text(dateStr, M + 2, y + 3.5);
-      doc.setTextColor(26, 26, 46);
-      doc.text(classStudent.substring(0, 38), M + dateW + 2, y + 3.5);
-      doc.setTextColor(130, 124, 114);
-      doc.text(cat.substring(0, 18), catX + 2, y + 3.5);
-      doc.setTextColor(...amountColor);
-      doc.text(fmt(Number(t.amount)) + ' /-', amtX + amtW - 2, y + 3.5, { align: 'right' });
-      doc.setTextColor(130, 124, 114);
-      doc.text(fmt(grandTotal) + ' /-', balX + balW - 2, y + 3.5, { align: 'right' });
-      y += rowH;
-    });
-
-    doc.setFillColor(245, 242, 235);
-    doc.rect(M, y, PW, rowH + 1, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(26, 26, 46);
-    doc.text(`Subtotal: ${cat}`, M + 2, y + 4);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+    doc.setTextColor(80, 80, 80);
+    doc.text(dateStr, M + 2, y + 3.5);
+    doc.setTextColor(26, 26, 46);
+    doc.text(classStudent.substring(0, 38), M + dateW + 2, y + 3.5);
+    doc.setTextColor(130, 124, 114);
+    doc.text((t.category || 'Uncategorized').substring(0, 18), catX + 2, y + 3.5);
     doc.setTextColor(...amountColor);
-    doc.text(fmt(catTotal) + ' /-', amtX - 2, y + 4, { align: 'right' });
-    y += rowH + 1 + 3;
+    doc.text(fmt(Number(t.amount)) + ' /-', amtX + amtW - 2, y + 3.5, { align: 'right' });
+    doc.setTextColor(130, 124, 114);
+    doc.text(fmt(grandTotal) + ' /-', balX + balW - 2, y + 3.5, { align: 'right' });
+    y += rowH;
   });
 
+  // Grand total
   if (y > 260) { doc.addPage(); y = 14; }
   doc.setFillColor(26, 26, 46);
   doc.rect(M, y, PW, 8, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
-  doc.text('GRAND TOTAL', M + 2, y + 5.5);
+  doc.text(`TOTAL (${sorted.length} transactions)`, M + 2, y + 5.5);
   doc.text(fmt(grandTotal) + ' /-', balX + balW - 2, y + 5.5, { align: 'right' });
 
   doc.save(`${title.replace(/ /g, '_')}_${dateFrom}_to_${dateTo}.pdf`);
