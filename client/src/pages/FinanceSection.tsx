@@ -75,7 +75,7 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
   const cancelled = transactions.filter((tx: any) => tx.isCancelled);
 
   return (
-    <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+    <div className="bg-white rounded-xl border border-school-border overflow-hidden">
       <div className="px-5 py-4 border-b border-school-border flex items-center gap-2">
         <Clock size={18} className="text-school-muted" />
         <h4 className="font-serif text-sm text-school-primary">Ledger</h4>
@@ -201,7 +201,7 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
       {/* Cancel Modal */}
       {cancelId && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setCancelId(null)}>
-          <div className="bg-white rounded-2xl border border-school-border p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-xl border border-school-border p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
             <h4 className="font-serif text-sm text-school-primary">Cancel Transaction</h4>
             <p className="text-xs text-school-muted">This will cancel the transaction and return the money to the original account. The cancelled row will remain in the ledger with a strikethrough.</p>
             <div>
@@ -257,6 +257,7 @@ const FinanceSection: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');
   const [feeMonth, setFeeMonth] = useState('');
+  const [selectedFeeScheduleId, setSelectedFeeScheduleId] = useState('');
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); fetchUsers(); }, []);
@@ -325,7 +326,7 @@ const FinanceSection: React.FC = () => {
   const resetForm = () => {
     setAmount(''); setCategory(''); setDesc('');
     setDate(new Date().toISOString().split('T')[0]);
-    setSelectedClass(''); setSelectedStudent(''); setFeeMonth('');
+    setSelectedClass(''); setSelectedStudent(''); setFeeMonth(''); setSelectedFeeScheduleId('');
     setDepositTo('CASH_IN_HAND');
   };
 
@@ -360,6 +361,7 @@ const FinanceSection: React.FC = () => {
         studentId: selectedStudent || undefined,
         className: selectedClass || undefined,
         feeMonth: feeMonth || undefined,
+        feeScheduleId: selectedFeeScheduleId || undefined,
       }, { withCredentials: true });
 
       toast(activeTab === 'income' ? 'Income recorded ✓' : activeTab === 'expense' ? 'Expense recorded ✓' : 'Transfer recorded ✓', 'success');
@@ -380,31 +382,31 @@ const FinanceSection: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      {/* Balance Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white p-5 shadow-md">
-          <p className="text-[10px] uppercase font-bold tracking-widest opacity-70 mb-1">AL RAWA Bank</p>
-          <h3 className="text-2xl font-serif">৳ {fmt(balances.AL_RAWA_BANK || 0)}</h3>
+      {/* Balance Cards — dedicated mobile card row */}
+      <div className="flex gap-3 overflow-x-auto pb-2 sm:hide-scrollbar sm:grid sm:grid-cols-3 snap-x snap-mandatory scrollbar-none">
+        <div className="flex-shrink-0 w-[200px] sm:w-auto snap-start rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 shadow-md sm:flex-1">
+          <p className="text-[9px] uppercase font-bold tracking-widest opacity-70 mb-1">AL RAWA Bank</p>
+          <h3 className="text-xl sm:text-2xl font-serif">৳ {fmt(balances.AL_RAWA_BANK || 0)}</h3>
         </div>
-        <div className="rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white p-5 shadow-md">
-          <p className="text-[10px] uppercase font-bold tracking-widest opacity-70 mb-1">Global Forum</p>
-          <h3 className="text-2xl font-serif">৳ {fmt(balances.GLOBAL_FORUM_BANK || 0)}</h3>
+        <div className="flex-shrink-0 w-[200px] sm:w-auto snap-start rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white p-4 shadow-md sm:flex-1">
+          <p className="text-[9px] uppercase font-bold tracking-widest opacity-70 mb-1">Global Forum</p>
+          <h3 className="text-xl sm:text-2xl font-serif">৳ {fmt(balances.GLOBAL_FORUM_BANK || 0)}</h3>
         </div>
-        <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-5 shadow-md">
-          <p className="text-[10px] uppercase font-bold tracking-widest opacity-70 mb-1">Cash in Hand</p>
-          <h3 className="text-2xl font-serif">৳ {fmt(balances.CASH_IN_HAND || 0)}</h3>
+        <div className="flex-shrink-0 w-[200px] sm:w-auto snap-start rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-4 shadow-md sm:flex-1">
+          <p className="text-[9px] uppercase font-bold tracking-widest opacity-70 mb-1">Cash in Hand</p>
+          <h3 className="text-xl sm:text-2xl font-serif">৳ {fmt(balances.CASH_IN_HAND || 0)}</h3>
         </div>
       </div>
 
       {/* Target & Deposit Remaining */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-white rounded-2xl border border-school-border p-4">
-          <p className="text-[10px] uppercase font-bold tracking-widest text-school-muted mb-1">Target Deposit (Total Income)</p>
-          <h3 className="text-xl font-serif text-school-primary">৳ {fmt(totalIncome)}</h3>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+        <div className="bg-white rounded-xl border border-school-border p-3 sm:p-4">
+          <p className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-school-muted mb-1">Target Deposit</p>
+          <h3 className="text-base sm:text-xl font-serif text-school-primary">৳ {fmt(totalIncome)}</h3>
         </div>
-        <div className="bg-white rounded-2xl border border-school-border p-4">
-          <p className="text-[10px] uppercase font-bold tracking-widest text-school-muted mb-1">Deposit Remaining</p>
-          <h3 className={`text-xl font-serif ${depositRemaining > 0 ? 'text-red-600' : 'text-emerald-600'}`}>৳ {fmt(depositRemaining)}</h3>
+        <div className="bg-white rounded-xl border border-school-border p-3 sm:p-4">
+          <p className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-school-muted mb-1">Deposit Remaining</p>
+          <h3 className={`text-base sm:text-xl font-serif ${depositRemaining > 0 ? 'text-red-600' : 'text-emerald-600'}`}>৳ {fmt(depositRemaining)}</h3>
         </div>
       </div>
 
@@ -475,7 +477,7 @@ const FinanceSection: React.FC = () => {
           {activeTab === 'import' ? <ExcelImportTab /> : (
           <>
           {/* Form */}
-          <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-school-border p-5 space-y-4">
+          <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-school-border p-5 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Date</label>
@@ -537,13 +539,35 @@ const FinanceSection: React.FC = () => {
                   </div>
                 )}
                 {selectedStudent && (
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee for Month</label>
-                    <div className="relative cursor-pointer" onClick={e => { const input = e.currentTarget.querySelector<HTMLInputElement>('input[type="month"]'); if (input) { if (typeof input.showPicker === 'function') input.showPicker(); else input.focus(); } }}>
-                      <input type="month" value={feeMonth} onChange={e => setFeeMonth(e.target.value)}
-                        className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent cursor-pointer" />
+                  <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee for Month</label>
+                      <div className="relative cursor-pointer" onClick={e => { const input = e.currentTarget.querySelector<HTMLInputElement>('input[type="month"]'); if (input) { if (typeof input.showPicker === 'function') input.showPicker(); else input.focus(); } }}>
+                        <input type="month" value={feeMonth} onChange={e => setFeeMonth(e.target.value)}
+                          className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent cursor-pointer" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee Schedule</label>
+                      <select value={selectedFeeScheduleId} onChange={e => {
+                        setSelectedFeeScheduleId(e.target.value);
+                        const fs = feeSchedules.find((f: any) => f.id === e.target.value);
+                        if (fs) { setCategory(fs.category); setAmount(String(fs.amount)); }
+                      }}
+                        className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
+                        <option value="">Auto-detect</option>
+                        {feeSchedules
+                          .filter((fs: any) => !fs.classId || fs.classRel?.name === selectedClass || (selectedStudent && students.find((s: any) => s.id === selectedStudent)?.classId === fs.classId))
+                          .map((fs: any) => (
+                            <option key={fs.id} value={fs.id}>
+                              {fs.category} ({fs.frequency}) — {Number(fs.amount).toLocaleString()} ৳
+                            </option>
+                          ))}
+                      </select>
                     </div>
                   </div>
+                  </>
                 )}
               </div>
             )}

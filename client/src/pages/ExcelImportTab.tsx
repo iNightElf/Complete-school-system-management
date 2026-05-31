@@ -288,7 +288,7 @@ export default function ExcelImportTab() {
   return (
     <div className="space-y-4">
       {/* Upload */}
-      <div className="bg-white rounded-2xl border border-school-border p-6">
+      <div className="bg-white rounded-xl border border-school-border p-6">
         <h4 className="font-serif text-lg text-school-primary mb-3 flex items-center gap-1.5"><Download size={16} /> Import Transactions from Excel</h4>
         <p className="text-sm text-school-muted mb-2">
           Required columns: <strong>Date, Category, Income/Expense, Amount, Class, Roll</strong>
@@ -304,7 +304,7 @@ export default function ExcelImportTab() {
 
       {/* Preview */}
       {rows.length > 0 && (
-        <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+        <div className="bg-white rounded-xl border border-school-border overflow-hidden">
           {/* Toolbar */}
           <div className="flex items-center justify-between p-4 border-b border-school-border">
             <div className="flex items-center gap-4">

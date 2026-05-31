@@ -25,6 +25,8 @@ const StudentWaiversTab: React.FC = () => {
   const [studentSearch, setStudentSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editExpected, setEditExpected] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [editApprovedBy, setEditApprovedBy] = useState('');
 
   useEffect(() => { fetchClasses(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (selectedClass) fetchStudents({ class: selectedClass }); }, [selectedClass]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -109,20 +111,30 @@ const StudentWaiversTab: React.FC = () => {
   const editWaiver = (w: any) => {
     setEditingId(w.id);
     setEditExpected(String(w.value));
+    setEditReason(w.reason || '');
+    setEditApprovedBy(w.approvedBy || '');
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setEditExpected('');
+    setEditReason('');
+    setEditApprovedBy('');
   };
 
   const saveInline = async (w: any) => {
     if (!editExpected) { toast('Enter expected amount', 'error'); return; }
     try {
-      await axios.put(`${API_URL}/finance/fee-waivers/${w.id}`, { value: Number(editExpected) }, { withCredentials: true });
+      // Immutable: deactivate old, create new
+      await axios.post(`${API_URL}/finance/fee-waivers/${w.id}/deactivate`, {}, { withCredentials: true });
+      await axios.post(`${API_URL}/finance/fee-waivers`, {
+        studentId: w.studentId, feeScheduleId: w.feeScheduleId, value: Number(editExpected), reason: editReason || w.reason, approvedBy: editApprovedBy || w.approvedBy,
+      }, { withCredentials: true });
       toast('Waiver updated ✓', 'success');
       setEditingId(null);
       setEditExpected('');
+      setEditReason('');
+      setEditApprovedBy('');
       loadActiveWaivers();
     } catch { toast('Failed to update', 'error'); }
   };
@@ -143,7 +155,7 @@ const StudentWaiversTab: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* ── Active Waivers List ── */}
-      <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+      <div className="bg-white rounded-xl border border-school-border overflow-hidden">
         <div className="px-5 py-4 border-b border-school-border flex items-center gap-2">
           <Shield size={16} className="text-emerald-600" />
           <h3 className="font-bold text-sm text-school-primary">Active Waivers</h3>
@@ -173,8 +185,8 @@ const StudentWaiversTab: React.FC = () => {
                     <th className="px-4 py-3 text-left">Roll</th>
                     <th className="px-4 py-3 text-left">Fee</th>
                     <th className="px-4 py-3 text-right">Full Fee</th>
-                    <th className="px-4 py-3 text-right">Expected</th>
-                    <th className="px-4 py-3 text-right">Waiver</th>
+                    <th className="px-4 py-3 text-right">Student Pays</th>
+                    <th className="px-4 py-3 text-right">Waived Amount</th>
                     <th className="px-4 py-3 text-left">Reason</th>
                     <th className="px-4 py-3 text-center">Actions</th>
                   </tr>
@@ -192,7 +204,7 @@ const StudentWaiversTab: React.FC = () => {
                       <td data-label="Roll" className="px-4 py-2.5 text-xs">{w.student?.roll || '—'}</td>
                       <td data-label="Fee" className="px-4 py-2.5 text-xs">{w.feeSchedule?.category || '—'}</td>
                       <td data-label="Full Fee" className="px-4 py-2.5 text-right font-mono text-xs">৳{fullFee}</td>
-                      <td data-label="Expected" className="px-4 py-2.5 text-right font-mono text-xs font-bold text-emerald-600">
+                      <td data-label="Student Pays" className="px-4 py-2.5 text-right font-mono text-xs font-bold text-emerald-600">
                         {isEditing ? (
                           <input type="number" min="0" value={editExpected} autoFocus
                             onChange={e => setEditExpected(e.target.value)}
@@ -200,8 +212,13 @@ const StudentWaiversTab: React.FC = () => {
                             onKeyDown={e => { if (e.key === 'Enter') saveInline(w); if (e.key === 'Escape') cancelEdit(); }} />
                         ) : '৳' + expected}
                       </td>
-                      <td data-label="Waiver" className="px-4 py-2.5 text-right font-mono text-xs text-rose-500">−৳{waiverVal}</td>
-                      <td data-label="Reason" className="px-4 py-2.5 text-xs text-school-muted">{w.reason || '—'}</td>
+                      <td data-label="Waived Amount" className="px-4 py-2.5 text-right font-mono text-xs text-rose-500">−৳{waiverVal}</td>
+                      <td data-label="Reason" className="px-4 py-2.5 text-xs text-school-muted">
+                        {isEditing ? (
+                          <input type="text" value={editReason} onChange={e => setEditReason(e.target.value)}
+                            className="w-full border border-blue-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500" placeholder="Reason" />
+                        ) : (w.reason || '—')}
+                      </td>
                       <td data-label="Actions" className="px-4 py-2.5 text-center">
                         {isEditing ? (
                           <div className="flex items-center justify-center gap-1">
@@ -239,7 +256,7 @@ const StudentWaiversTab: React.FC = () => {
       </div>
 
       {/* ── Per-Student Waiver Form ── */}
-      <div ref={manageRef} className="bg-white rounded-2xl border border-school-border overflow-hidden">
+      <div ref={manageRef} className="bg-white rounded-xl border border-school-border overflow-hidden">
         <div className="px-5 py-4 border-b border-school-border">
           <h3 className="font-bold text-sm text-school-primary">Manage Student Waivers</h3>
         </div>
@@ -317,7 +334,7 @@ const StudentWaiversTab: React.FC = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Expected Amount (৳)</label>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Student Pays (৳)</label>
                     <input type="number" min="0" value={expectedAmount} onChange={e => setExpectedAmount(e.target.value)}
                       placeholder="e.g. 500" className="w-full border border-school-border rounded-lg px-3 py-2 text-sm" />
                   </div>
@@ -335,8 +352,8 @@ const StudentWaiversTab: React.FC = () => {
                     {expectedVal > 0 && (
                       <div className="text-sm space-y-0.5">
                         <p>Full fee: <span className="font-mono">৳{baseAmt}</span></p>
-                        <p>Expected: <span className="font-mono text-emerald-600 font-bold">৳{expectedVal}</span></p>
-                        <p>Waiver: <span className="font-mono text-rose-500">−৳{waiverAmt}</span></p>
+                        <p>Student Pays: <span className="font-mono text-emerald-600 font-bold">৳{expectedVal}</span></p>
+                        <p>Waived Amount: <span className="font-mono text-rose-500">−৳{waiverAmt}</span></p>
                       </div>
                     )}
                   </div>
@@ -359,7 +376,7 @@ const StudentWaiversTab: React.FC = () => {
                 <thead>
                   <tr className="border-b border-school-border text-left">
                     <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Category</th>
-                    <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Expected</th>
+                    <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Student Pays</th>
                     <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Reason</th>
                     <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Approved By</th>
                     <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Created</th>

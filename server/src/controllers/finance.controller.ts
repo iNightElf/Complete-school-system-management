@@ -5,6 +5,8 @@ import { prisma } from "../lib/prisma.js";
 import { sanitizeError } from "../lib/errors.js";
 import { validate, createTransactionSchema } from "../lib/validate.js";
 import { logAudit } from "../lib/audit.js";
+import { getFiscalYearForDate, getFiscalYearRange } from "../lib/fiscal-year.js";
+import { param } from "../lib/param.js";
 
 export const createTransaction = async (req: AuthRequest, res: Response) => {
   try {
@@ -23,14 +25,15 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       studentId,
       className,
       feeMonth,
+      feeScheduleId: reqFeeScheduleId,
     } = validation.data;
 
-    const periodYear = new Date(date).getFullYear();
+    const fiscalYear = getFiscalYearForDate(new Date(date));
     const closedPeriod = await prisma.periodClose.findFirst({
-      where: { fiscalYear: periodYear },
+      where: { fiscalYear },
     });
     if (closedPeriod) {
-      return res.status(403).json({ error: `Fiscal year ${periodYear} is closed. No new transactions can be added.` });
+      return res.status(403).json({ error: `Fiscal year ${fiscalYear} is closed. No new transactions can be added.` });
     }
 
     const { transactionType, affectsIncomeLedger, affectsExpenseLedger } =
@@ -62,13 +65,41 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       note = `${note ? note + " — " : ""}Income ৳${collected.toLocaleString()}, Emergency expense ৳${emergency.toLocaleString()}, Net deposit ৳${finalAmount.toLocaleString()}`.trim();
     }
 
-    let feeScheduleId: string | null = null;
-    if (studentId && category && className) {
+    // Resolve feeScheduleId: prefer explicit from request, fall back to category+class lookup
+    let feeScheduleId: string | null = reqFeeScheduleId ?? null;
+    if (!feeScheduleId && studentId && category && className) {
       const sched = await prisma.feeSchedule.findFirst({
         where: { category, classRel: { name: className } },
         select: { id: true },
       });
       feeScheduleId = sched?.id ?? null;
+    }
+    if (feeScheduleId && studentId) {
+      const fs = await prisma.feeSchedule.findUnique({ where: { id: feeScheduleId }, select: { id: true, applicability: true } });
+      if (!fs) {
+        return res.status(400).json({ error: `Fee schedule "${feeScheduleId}" not found` });
+      }
+      if (fs.applicability === 'ASSIGNED_ONLY') {
+        const assigned = await prisma.studentFeeAssignment.findFirst({
+          where: { studentId, feeScheduleId, active: true },
+          select: { id: true, startsAt: true, endsAt: true },
+        });
+        if (!assigned) {
+          return res.status(400).json({ error: `Fee schedule is assigned-only and this student has no active assignment` });
+        }
+        if (feeMonth && assigned.startsAt) {
+          const startStr = dateToMonthStr(assigned.startsAt);
+          if (startStr && feeMonth < startStr) {
+            return res.status(400).json({ error: `Fee month ${feeMonth} is before the assignment start date` });
+          }
+        }
+        if (feeMonth && assigned.endsAt) {
+          const endStr = dateToMonthStr(assigned.endsAt);
+          if (endStr && feeMonth > endStr) {
+            return res.status(400).json({ error: `Fee month ${feeMonth} is after the assignment end date` });
+          }
+        }
+      }
     }
 
     const [transaction] = await prisma.$transaction(async (tx) => {
@@ -279,12 +310,12 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
     if (!tx) return res.status(404).json({ error: "Transaction not found" });
     if (tx.isCancelled) return res.status(400).json({ error: "Transaction already cancelled" });
 
-    const periodYear = new Date(tx.transactionDate).getFullYear();
+    const fiscalYear = getFiscalYearForDate(new Date(tx.transactionDate));
     const closedPeriod = await prisma.periodClose.findFirst({
-      where: { fiscalYear: periodYear },
+      where: { fiscalYear },
     });
     if (closedPeriod) {
-      return res.status(403).json({ error: `Fiscal year ${periodYear} is closed. Transactions in this period cannot be cancelled.` });
+      return res.status(403).json({ error: `Fiscal year ${fiscalYear} is closed. Transactions in this period cannot be cancelled.` });
     }
 
     const userId = req.session?.user?.id || "system";
@@ -336,6 +367,11 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
 
 // ── Defaulter Report ──
 
+function dateToMonthStr(d: Date | null): string | null {
+  if (!d) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 // Helper: get month range between two YYYY-MM strings
 function getMonthRange(from: string, to: string): string[] {
   const [y1, m1] = from.split('-').map(Number);
@@ -363,20 +399,36 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
     });
 
     const studentIds = students.map(s => s.id);
-    const allIncomeTx = await prisma.transaction.findMany({
-      where: { transactionType: 'INCOME', affectsIncomeLedger: true, isCancelled: false, reversalOfId: null },
-      orderBy: { transactionDate: 'desc' },
-    });
 
-    const studentTx = allIncomeTx.filter(t => studentIds.includes(t.studentId || ''));
+    // ── Use PaymentAllocation as source of truth for paid amounts ──
+    const allocations = await prisma.paymentAllocation.findMany({
+      where: { studentId: { in: studentIds } },
+      include: { transaction: { select: { isCancelled: true, reversalOfId: true } } },
+    });
+    const validAllocations = allocations.filter(a => !a.transaction.isCancelled && !a.transaction.reversalOfId);
+
+    // Build per-student per-schedule per-month paid map
+    const paidMap = new Map<string, number>();
+    validAllocations.forEach(a => {
+      const period = a.period || dateToMonthStr(new Date());
+      const key = `${a.studentId}|${a.feeScheduleId || ''}|${period}`;
+      paidMap.set(key, (paidMap.get(key) || 0) + Number(a.amount));
+    });
 
     // Fetch fee schedules, assignments, and active waivers
     const feeSchedules = await prisma.feeSchedule.findMany();
     const studentFeeAssignments = await prisma.studentFeeAssignment.findMany({
       where: { active: true, studentId: { in: studentIds } },
     });
-    const assignMap = new Map<string, true>();
-    studentFeeAssignments.forEach(a => assignMap.set(`${a.studentId}|${a.feeScheduleId}`, true));
+    const assignMap = new Map<string, { startsAt: string | null; endsAt: string | null }>();
+    studentFeeAssignments.forEach(a => assignMap.set(`${a.studentId}|${a.feeScheduleId}`, { startsAt: dateToMonthStr(a.startsAt), endsAt: dateToMonthStr(a.endsAt) }));
+
+    function isMonthInAssignment(monthStr: string, assign: { startsAt: string | null; endsAt: string | null } | undefined): boolean {
+      if (!assign) return false;
+      if (assign.startsAt && monthStr < assign.startsAt) return false;
+      if (assign.endsAt && monthStr > assign.endsAt) return false;
+      return true;
+    }
 
     const activeWaivers = await prisma.feeWaiver.findMany({
       where: { active: true, studentId: { in: studentIds } },
@@ -385,9 +437,9 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
     activeWaivers.forEach(w => waiverMap.set(`${w.studentId}|${w.feeScheduleId}`, w));
 
     // Resolve expected amount: fee schedule → waiver → fallback
-    const getExpectedAmount = (studentId: string, studentClass: string, cat: string, fsId?: string): number => {
-      const fs = fsId ? feeSchedules.find(f => f.id === fsId) : feeSchedules.find(f => f.category === cat && (f.classId === null || students.find(s => s.id === studentId)?.classId === f.classId));
-      const baseAmount = fs ? Number(fs.amount) : (getStudentDefault(studentId, cat) || getClassDefault(studentClass, cat) || 0);
+    const getExpectedAmount = (studentId: string, fsId?: string): number => {
+      const fs = fsId ? feeSchedules.find(f => f.id === fsId) : undefined;
+      const baseAmount = fs ? Number(fs.amount) : 0;
       if (!fs) return baseAmount;
       const waiver = waiverMap.get(`${studentId}|${fs.id}`);
       if (!waiver) return baseAmount;
@@ -398,40 +450,17 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
       return baseAmount;
     };
 
-    // Build per-class fee lookup from transactions (fallback)
-    const classFeeMap: Record<string, Record<string, number>> = {};
-    allIncomeTx.forEach(t => {
-      if (t.className) {
-        if (!classFeeMap[t.className]) classFeeMap[t.className] = {};
-        if (!classFeeMap[t.className][t.category!]) classFeeMap[t.className][t.category!] = Number(t.amount);
-      }
-    });
-
-    // Default fee amounts per student (last paid) — fallback
-    const getStudentDefault = (sid: string, cat: string): number | null => {
-      const tx = studentTx.find(t => t.studentId === sid && t.category === cat);
-      return tx ? Number(tx.amount) : null;
-    };
-
-    // Per-class default: last paid by any student in class — fallback
-    const getClassDefault = (cls: string, cat: string): number | null => {
-      return classFeeMap[cls]?.[cat] || null;
-    };
-
     const result = students.map(student => {
       const fees: any[] = [];
 
       // Determine applicable fee schedules for this student
       const applicableSchedules = feeSchedules.filter(fs => {
-        // Class-specific or school-wide
         if (fs.classId !== null && fs.classId !== student.classId) return false;
         if (fs.applicability === 'AUTO') return true;
-        // ASSIGNED_ONLY: check for active assignment
         if (fs.applicability === 'ASSIGNED_ONLY') return assignMap.has(`${student.id}|${fs.id}`);
         return false;
       });
 
-      // Group by category for dedup (class-specific wins over school-wide)
       const scheduleByCat = new Map<string, typeof feeSchedules[0]>();
       for (const fs of applicableSchedules) {
         const existing = scheduleByCat.get(fs.category);
@@ -440,29 +469,27 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
         }
       }
 
-      // ── Recurring fees (frequency: MONTHLY) ──
       if (monthFrom && monthTo) {
         const months = getMonthRange(String(monthFrom), String(monthTo));
         for (const [cat, fs] of scheduleByCat) {
           if (feeCategory && feeCategory !== cat) continue;
           if (fs.frequency !== 'MONTHLY') continue;
-          const defaultAmt = getExpectedAmount(student.id, student.class, cat, fs.id);
+          const defaultAmt = getExpectedAmount(student.id, fs.id);
           if (defaultAmt <= 0) continue;
-          const paidMonths = new Set(
-            studentTx
-              .filter(t => t.studentId === student.id && t.category === cat)
-              .map(t => {
-                if (t.feeMonth) return t.feeMonth;
-                const d = new Date(t.transactionDate);
-                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-              })
-          );
-          const monthDetail = months.map(m => ({ month: m, paid: paidMonths.has(m), amount: defaultAmt }));
+          const assignment = assignMap.get(`${student.id}|${fs.id}`);
+          const monthDetail = months
+            .filter(m => isMonthInAssignment(m, assignment))
+            .map(m => {
+              const key = `${student.id}|${fs.id}|${m}`;
+              const paidAmt = paidMap.get(key) || 0;
+              return { month: m, paid: paidAmt >= defaultAmt, paidAmt, amount: defaultAmt };
+            });
           const unpaidCount = monthDetail.filter(m => !m.paid).length;
+          if (monthDetail.length === 0) continue;
           fees.push({
             name: cat, type: 'recurring', amount: defaultAmt,
             totalDue: defaultAmt * unpaidCount,
-            totalPaid: defaultAmt * (months.length - unpaidCount),
+            totalPaid: monthDetail.reduce((s, m) => s + (m.paid ? defaultAmt : 0), 0),
             months: monthDetail,
           });
         }
@@ -473,9 +500,11 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
         for (const [cat, fs] of scheduleByCat) {
           if (feeCategory && feeCategory !== cat) continue;
           if (fs.frequency !== 'YEARLY' && fs.frequency !== 'ONETIME') continue;
-          const defaultAmt = getExpectedAmount(student.id, student.class, cat, fs.id);
+          const defaultAmt = getExpectedAmount(student.id, fs.id);
           if (defaultAmt <= 0) continue;
-          const paid = studentTx.some(t => t.studentId === student.id && t.category === cat && new Date(t.transactionDate).getFullYear() === Number(year));
+          const key = `${student.id}|${fs.id}|${String(year)}`;
+          const paidAmt = paidMap.get(key) || 0;
+          const paid = paidAmt >= defaultAmt;
           fees.push({
             name: cat, type: 'onetime', amount: defaultAmt,
             totalDue: paid ? 0 : defaultAmt,
@@ -507,14 +536,6 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
     res.status(500).json({ error: sanitizeError(error) });
   }
 };
-
-const FISCAL_YEAR_START_MONTH = 8;
-
-function getFiscalYearRange(fiscalYear: number): { start: Date; end: Date } {
-  const start = new Date(fiscalYear - 1, FISCAL_YEAR_START_MONTH, 1);
-  const end = new Date(fiscalYear, FISCAL_YEAR_START_MONTH, 0, 23, 59, 59, 999);
-  return { start, end };
-}
 
 function headwise(tx: any[]): [string, number][] {
   const map: Record<string, number> = {};
@@ -586,6 +607,7 @@ export const getAGMReport = async (req: Request, res: Response) => {
       closing,
       totalAssets,
       totalTransfers,
+      transferCount: transfers.length,
       transactionCount: tx.length,
     });
   } catch (error: any) {
@@ -681,12 +703,37 @@ export const createReconciliation = async (req: AuthRequest, res: Response) => {
     if (!account || !statementDate || closingBalance === undefined) {
       return res.status(400).json({ error: 'account, statementDate, and closingBalance are required' });
     }
+
+    const statementEnd = new Date(statementDate);
+    statementEnd.setHours(23, 59, 59, 999);
+
+    const openingRow = await prisma.openingBalance.findUnique({
+      where: { fiscalYear_account: { fiscalYear: String(getFiscalYearForDate(statementEnd)), account } },
+    });
+    const openingAmount = openingRow ? Number(openingRow.amount) : 0;
+
+    const raw = await prisma.$queryRaw<[{ net: string }]>`
+      SELECT COALESCE(SUM(
+        CASE WHEN destination_account = ${account} THEN amount
+             WHEN source_account = ${account} THEN -amount ELSE 0 END
+      ), 0) AS net
+      FROM transactions
+      WHERE is_cancelled = false AND reversal_of_id IS NULL
+        AND transaction_date <= ${statementEnd}
+    `;
+    const systemBalance = openingAmount + Number(raw[0].net);
+
+    const difference = Number(closingBalance) - systemBalance;
+    const reconciled = Math.abs(difference) < 0.01;
+
     const record = await prisma.reconciliation.create({
       data: {
         account,
-        statementDate: new Date(statementDate),
+        statementDate: statementEnd,
         closingBalance,
-        status: 'completed',
+        systemBalance,
+        difference,
+        status: reconciled ? 'reconciled' : 'difference',
         notes: notes || null,
         createdBy: req.session?.user?.id || "system",
       },
@@ -697,10 +744,42 @@ export const createReconciliation = async (req: AuthRequest, res: Response) => {
       action: "RECONCILIATION_CREATE",
       entityType: "Reconciliation",
       entityId: record.id,
-      details: `Reconciliation for ${account}: ${closingBalance}`,
+      details: `Reconciliation for ${account}: statement=${closingBalance}, system=${systemBalance}, diff=${difference}`,
     });
 
     res.status(201).json(record);
+  } catch (error: any) {
+    res.status(500).json({ error: sanitizeError(error) });
+  }
+};
+
+export const getReconciliationDetail = async (req: Request, res: Response) => {
+  try {
+    const id = param(req, "id");
+    const rec = await prisma.reconciliation.findUnique({ where: { id } });
+    if (!rec) return res.status(404).json({ error: "Not found" });
+
+    const statementEnd = rec.statementDate;
+    const openingRow = await prisma.openingBalance.findUnique({
+      where: { fiscalYear_account: { fiscalYear: String(getFiscalYearForDate(statementEnd)), account: rec.account } },
+    });
+    const openingAmount = openingRow ? Number(openingRow.amount) : 0;
+
+    const transactions = await prisma.$queryRaw<Array<{
+      id: string; transaction_date: Date; transaction_type: string; source_account: string | null;
+      destination_account: string | null; amount: string; description: string | null;
+      category: string | null; student_id: string | null; class_name: string | null;
+    }>>`
+      SELECT id, transaction_date, transaction_type, source_account, destination_account,
+             amount, description, category, student_id, class_name
+      FROM transactions
+      WHERE is_cancelled = false AND reversal_of_id IS NULL
+        AND transaction_date <= ${statementEnd}
+        AND (destination_account = ${rec.account} OR source_account = ${rec.account})
+      ORDER BY transaction_date ASC
+    `;
+
+    res.json({ reconciliation: rec, openingBalance: openingAmount, transactions });
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
   }

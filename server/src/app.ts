@@ -173,6 +173,7 @@ app.delete("/api/finance/period-closes/:fiscalYear", authenticate, authorizePerm
 // ── Reconciliation ──
 app.get("/api/finance/reconciliations", authenticate, authorizePermission("finance:read"), finance.getReconciliations);
 app.post("/api/finance/reconciliations", authenticate, authorizePermission("finance:admin"), finance.createReconciliation);
+app.get("/api/finance/reconciliations/:id", authenticate, authorizePermission("finance:read"), finance.getReconciliationDetail);
 
 // ── Audit Logs ──
 app.get("/api/audit", authenticate, authorizePermission("audit:read"), audit.getAuditLogs);
@@ -181,6 +182,9 @@ app.get("/api/audit/entity-types", authenticate, authorizePermission("audit:read
 
 // Health Check
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
+
+// ── API 404 handler — unmatched /api/* routes return JSON, not SPA HTML ──
+app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
 
 // ── Serve client build in production ──
 const clientDist = join(__dirname, '../../client/dist');

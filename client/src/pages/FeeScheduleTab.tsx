@@ -112,7 +112,7 @@ const FeeScheduleTab: React.FC = () => {
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-2xl border border-school-border p-4 space-y-3">
+        <div className="bg-white rounded-xl border border-school-border p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-bold uppercase text-school-muted block mb-1">Category</label>
@@ -151,7 +151,7 @@ const FeeScheduleTab: React.FC = () => {
       {loading ? (
         <div className="text-sm text-school-muted">Loading...</div>
       ) : schedules.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-school-border p-8 text-center text-school-muted text-sm">
+        <div className="bg-white rounded-xl border border-school-border p-8 text-center text-school-muted text-sm">
           No fee schedules defined. Add one to get started.
         </div>
       ) : (
@@ -160,7 +160,7 @@ const FeeScheduleTab: React.FC = () => {
             const items = grouped[key];
             const isOpen = openGroups[key] ?? false;
             return (
-              <div key={key} className="bg-white rounded-2xl border border-school-border overflow-hidden">
+              <div key={key} className="bg-white rounded-xl border border-school-border overflow-hidden">
                 <button
                   onClick={() => toggleGroup(key)}
                   className="w-full flex items-center gap-2 px-4 py-3 bg-school-paper hover:bg-gray-100 transition-colors text-left"

@@ -34,10 +34,14 @@ export const createFeeWaiver = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "studentId, feeScheduleId, and value (expected amount) are required" });
     }
 
-    const waiver = await prisma.feeWaiver.upsert({
-      where: { studentId_feeScheduleId: { studentId, feeScheduleId } },
-      update: { type: "CUSTOM_AMOUNT", value: Number(value), reason, approvedBy, active: true },
-      create: { studentId, feeScheduleId, type: "CUSTOM_AMOUNT", value: Number(value), reason, approvedBy },
+    // Immutable: deactivate any existing active waiver for this student+schedule, then create a new record
+    await prisma.feeWaiver.updateMany({
+      where: { studentId, feeScheduleId, active: true },
+      data: { active: false },
+    });
+
+    const waiver = await prisma.feeWaiver.create({
+      data: { studentId, feeScheduleId, type: "CUSTOM_AMOUNT", value: Number(value), reason, approvedBy },
     });
 
     logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "FeeWaiver", entityId: waiver.id, details: JSON.stringify({ studentId, feeScheduleId, value }) });
@@ -48,21 +52,9 @@ export const createFeeWaiver = async (req: AuthRequest, res: Response) => {
 };
 
 export const updateFeeWaiver = async (req: AuthRequest, res: Response) => {
-  try {
-    const id = param(req, "id");
-    const { value, reason, approvedBy, active } = req.body;
-    const data: any = { type: "CUSTOM_AMOUNT" };
-    if (value !== undefined) data.value = Number(value);
-    if (reason !== undefined) data.reason = reason;
-    if (approvedBy !== undefined) data.approvedBy = approvedBy;
-    if (active !== undefined) data.active = active;
-
-    const waiver = await prisma.feeWaiver.update({ where: { id }, data });
-    logAudit({ userId: req.session?.user?.id, action: "UPDATE", entityType: "FeeWaiver", entityId: id, details: JSON.stringify(data) });
-    res.json(waiver);
-  } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
-  }
+  // Immutable: update is forbidden — use deactivate + create instead
+  res.status(400).json({ error: "Direct update not allowed. Deactivate and create a new waiver instead." });
+  return;
 };
 
 export const deactivateFeeWaiver = async (req: AuthRequest, res: Response) => {

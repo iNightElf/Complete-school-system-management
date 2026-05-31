@@ -5,13 +5,13 @@ const MAGIC_BYTES: Record<string, Uint8Array> = {
   'image/png': new Uint8Array([0x89, 0x50, 0x4E, 0x47]),
 };
 
-export function detectMimeType(buffer: Buffer): string {
+export function detectMimeType(buffer: Buffer): string | null {
   for (const [mime, magic] of Object.entries(MAGIC_BYTES)) {
     if (buffer.length >= magic.length && magic.every((b, i) => buffer[i] === b)) {
       return mime;
     }
   }
-  return 'image/jpeg';
+  return null;
 }
 
 export function parsePhoto(body: any): { buffer: Buffer; mimeType: string } | null {
@@ -29,7 +29,7 @@ export function parsePhoto(body: any): { buffer: Buffer; mimeType: string } | nu
     if (buffer.length === 0 || buffer.length > MAX_PHOTO_BYTES) return null;
 
     const mimeType = detectMimeType(buffer);
-    if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') return null;
+    if (!mimeType) return null;
 
     return { buffer, mimeType };
   } catch {

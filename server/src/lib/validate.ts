@@ -19,6 +19,7 @@ export const createTransactionSchema = z.object({
   studentId: z.string().uuid().optional().nullable(),
   className: z.string().max(100).optional().nullable(),
   feeMonth: z.string().max(20).optional().nullable(),
+  feeScheduleId: z.string().uuid().optional().nullable(),
   totalIncomeCollected: z.number().optional().nullable(),
   directExpenseBeforeDeposit: z.number().optional().nullable(),
 }).refine(data => {

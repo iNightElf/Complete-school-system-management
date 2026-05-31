@@ -41,6 +41,12 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/testdb
 
+      - name: Prisma migrate deploy
+        working-directory: server
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/testdb
+
       - name: Server typecheck
         working-directory: server
         run: npx tsc --noEmit

@@ -124,7 +124,7 @@ export const getStudentPhoto = async (req: Request, res: Response) => {
     const buf = Buffer.from(student.photo);
     const etag = createHash('md5').update(buf).digest('hex');
     if (req.headers['if-none-match'] === etag) { return res.status(304).end(); }
-    res.set("Content-Type", detectMimeType(buf));
+    res.set("Content-Type", detectMimeType(buf) || 'application/octet-stream');
     res.set("Cache-Control", "public, max-age=86400");
     res.set("ETag", etag);
     res.send(buf);

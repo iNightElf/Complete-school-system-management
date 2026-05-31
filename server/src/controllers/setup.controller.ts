@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import * as argon2 from "argon2";
+import { timingSafeEqual } from "crypto";
 
 export const getSetupStatus = async (_req: Request, res: Response) => {
   try {
@@ -27,7 +28,10 @@ export const initSetup = async (req: Request, res: Response) => {
     if (!setupToken) {
       return res.status(500).json({ error: "SETUP_TOKEN is not configured on the server" });
     }
-    if (token !== setupToken) {
+    const tokenBuf = Buffer.from(String(token));
+    const setupBuf = Buffer.from(setupToken);
+    const valid = tokenBuf.length === setupBuf.length && timingSafeEqual(tokenBuf, setupBuf);
+    if (!valid) {
       return res.status(403).json({ error: "Invalid setup token" });
     }
 

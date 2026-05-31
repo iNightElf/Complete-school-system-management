@@ -118,7 +118,7 @@ const DefaulterTab: React.FC = () => {
   return (
     <div className="space-y-5">
       {/* Filters */}
-      <div className="bg-white rounded-2xl border border-school-border p-4 flex flex-wrap gap-4 items-end">
+      <div className="bg-white rounded-xl border border-school-border p-4 flex flex-wrap gap-4 items-end">
         <div>
           <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Class</label>
           <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterStudent(''); }}
@@ -196,7 +196,7 @@ const DefaulterTab: React.FC = () => {
       </div>
 
       {/* Defaulter Table */}
-      <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+      <div className="bg-white rounded-xl border border-school-border overflow-hidden">
         <div className="px-5 py-4 border-b border-school-border flex items-center gap-2">
           <AlertTriangle size={18} className="text-amber-500" />
           <h4 className="font-serif text-sm text-school-primary">Fee Defaulters</h4>

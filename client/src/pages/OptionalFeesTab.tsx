@@ -41,7 +41,7 @@ const OptionalFeesTab: React.FC = () => {
     try {
       const [fsRes, asRes] = await Promise.all([
         axios.get(`${API_URL}/finance/fee-schedules`, { withCredentials: true }),
-        selectedScheduleId ? axios.get(`${API_URL}/finance/student-fee-assignments`, { params: { feeScheduleId: selectedScheduleId }, withCredentials: true }) : Promise.resolve({ data: [] }),
+        selectedScheduleId ? axios.get(`${API_URL}/finance/student-fee-assignments`, { params: { feeScheduleId: selectedScheduleId, active: 'true' }, withCredentials: true }) : Promise.resolve({ data: [] }),
       ]);
       setFeeSchedules(fsRes.data);
       setAssignments(asRes.data);
@@ -58,7 +58,7 @@ const OptionalFeesTab: React.FC = () => {
   const classStudents = (selectedClass ? students.filter((s: any) => s.class === selectedClass) : students)
     .filter((s: any) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.fatherName || '').toLowerCase().includes(search.toLowerCase()));
 
-  const getAssignment = (studentId: string) => assignments.find(a => a.studentId === studentId);
+  const getAssignment = (studentId: string) => assignments.find(a => a.studentId === studentId && a.active);
 
   const toggleStudent = async (studentId: string) => {
     if (!selectedScheduleId) return;
@@ -77,11 +77,14 @@ const OptionalFeesTab: React.FC = () => {
     } catch { toast('Failed to update', 'error'); }
   };
 
+  const [bulkStartsAt, setBulkStartsAt] = useState('');
+  const [bulkEndsAt, setBulkEndsAt] = useState('');
+
   const bulkToggle = async (active: boolean) => {
     if (!selectedScheduleId || !classStudents.length) return;
     try {
       await axios.post(`${API_URL}/finance/student-fee-assignments/bulk`,
-        { feeScheduleId: selectedScheduleId, studentIds: classStudents.map((s: any) => s.id), active },
+        { feeScheduleId: selectedScheduleId, studentIds: classStudents.map((s: any) => s.id), active, startsAt: bulkStartsAt || undefined, endsAt: bulkEndsAt || undefined },
         { withCredentials: true });
       toast(`Assigned to ${classStudents.length} students`, 'success');
       load();
@@ -89,7 +92,7 @@ const OptionalFeesTab: React.FC = () => {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+    <div className="bg-white rounded-xl border border-school-border overflow-hidden">
       <div className="px-5 py-4 border-b border-school-border">
         <h4 className="font-serif text-sm text-school-primary">Optional Fees</h4>
         <p className="text-[10px] text-school-muted mt-1">Assign ASSIGNED_ONLY fee schedules to individual students</p>
@@ -127,15 +130,29 @@ const OptionalFeesTab: React.FC = () => {
       </div>
 
       {selectedScheduleId && classStudents.length > 0 && (
-        <div className="px-5 py-2 border-b border-school-border flex gap-2">
-          <button onClick={() => bulkToggle(true)}
-            className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200">
-            <CheckSquare size={14} /> Assign All
-          </button>
-          <button onClick={() => bulkToggle(false)}
-            className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">
-            <Square size={14} /> Remove All
-          </button>
+        <div className="px-5 py-2 border-b border-school-border flex flex-wrap items-end gap-3">
+          <div className="flex gap-2">
+            <button onClick={() => bulkToggle(true)}
+              className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200">
+              <CheckSquare size={14} /> Assign All
+            </button>
+            <button onClick={() => bulkToggle(false)}
+              className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">
+              <Square size={14} /> Remove All
+            </button>
+          </div>
+          <div className="flex gap-2 items-end ml-auto">
+            <div>
+              <label className="text-[9px] font-bold uppercase text-school-muted mb-0.5 block">Bulk Start</label>
+              <input type="date" value={bulkStartsAt} onChange={e => setBulkStartsAt(e.target.value)}
+                className="border border-school-border rounded-lg px-2 py-1 text-[11px] w-[140px] focus:outline-none focus:border-school-accent" />
+            </div>
+            <div>
+              <label className="text-[9px] font-bold uppercase text-school-muted mb-0.5 block">Bulk End</label>
+              <input type="date" value={bulkEndsAt} onChange={e => setBulkEndsAt(e.target.value)}
+                className="border border-school-border rounded-lg px-2 py-1 text-[11px] w-[140px] focus:outline-none focus:border-school-accent" />
+            </div>
+          </div>
         </div>
       )}
 

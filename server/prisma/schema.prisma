@@ -163,6 +163,8 @@ model FeeSchedule {
   amount         Decimal       @db.Decimal(12, 2)
   frequency      String        @default("MONTHLY") @db.VarChar(20)
   applicability  String        @default("AUTO") @db.VarChar(20) // AUTO or ASSIGNED_ONLY
+  effectiveFrom  DateTime?     @map("effective_from")
+  effectiveTo    DateTime?     @map("effective_to")
   createdAt      DateTime      @default(now()) @map("created_at")
 
   paymentAllocations PaymentAllocation[]
@@ -304,9 +306,9 @@ model StudentFeeAssignment {
   student       Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   feeSchedule   FeeSchedule @relation(fields: [feeScheduleId], references: [id], onDelete: Cascade)
 
-  @@unique([studentId, feeScheduleId])
   @@index([studentId])
   @@index([feeScheduleId])
+  @@index([studentId, feeScheduleId])
   @@map("student_fee_assignments")
 }
 
@@ -350,6 +352,8 @@ model Reconciliation {
   account        String   @db.VarChar(100)
   statementDate  DateTime @map("statement_date")
   closingBalance Decimal  @map("closing_balance") @db.Decimal(12, 2)
+  systemBalance  Decimal  @default(0) @map("system_balance") @db.Decimal(12, 2)
+  difference     Decimal  @default(0) @db.Decimal(12, 2)
   status         String   @default("pending") @db.VarChar(20)
   notes          String?  @db.Text
   createdAt      DateTime @default(now()) @map("created_at")

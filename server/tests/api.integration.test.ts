@@ -9,7 +9,7 @@ const mockPrisma = vi.hoisted(() => {
   };
   const ob = { findMany: vi.fn(), findUnique: vi.fn(), upsert: vi.fn(), create: vi.fn() };
   const obh = { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() };
-  const sfa = { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn(), upsert: vi.fn() };
+  const sfa = { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), create: vi.fn(), upsert: vi.fn() };
   const m = {
     transaction: tx,
     openingBalance: ob,
@@ -19,12 +19,13 @@ const mockPrisma = vi.hoisted(() => {
     student: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn(), create: vi.fn() },
     schoolClass: { findUnique: vi.fn() },
     feeSchedule: { findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
-    feeWaiver: { findMany: vi.fn(), upsert: vi.fn(), update: vi.fn() },
-    auditLog: { create: vi.fn() },
+    feeWaiver: { findMany: vi.fn(), upsert: vi.fn(), update: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
+    auditLog: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
     academicYear: { findMany: vi.fn() },
     user: { findMany: vi.fn() },
     periodClose: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), delete: vi.fn() },
-    reconciliation: { findMany: vi.fn(), create: vi.fn() },
+    reconciliation: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
+    paymentAllocation: { findMany: vi.fn() },
     $queryRaw: vi.fn(),
     $queryRawUnsafe: vi.fn(),
   };
@@ -397,7 +398,7 @@ describe("API Integration Tests", () => {
     });
 
     it("POST toggles assignment", async () => {
-      mockPrisma.studentFeeAssignment.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.studentFeeAssignment.findFirst.mockResolvedValueOnce(null);
       mockPrisma.studentFeeAssignment.create.mockResolvedValueOnce({ id: "sfa-2", studentId: "s1", feeScheduleId: "fs-2", active: true });
       const res = await request(app).post("/api/finance/student-fee-assignments/toggle").send({ studentId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", feeScheduleId: "fs-2" });
       expect(res.status).toBe(201);
@@ -405,7 +406,8 @@ describe("API Integration Tests", () => {
     });
 
     it("POST bulk assigns", async () => {
-      mockPrisma.studentFeeAssignment.upsert.mockResolvedValue({ id: "sfa-3", studentId: "s1", feeScheduleId: "fs-1", active: true });
+      mockPrisma.studentFeeAssignment.updateMany.mockResolvedValue({ count: 0 });
+      mockPrisma.studentFeeAssignment.create.mockResolvedValue({ id: "sfa-3", studentId: "s1", feeScheduleId: "fs-1", active: true });
       const res = await request(app).post("/api/finance/student-fee-assignments/bulk").send({ feeScheduleId: "fs-1", studentIds: ["s1", "s2"] });
       expect(res.status).toBe(200);
       expect(res.body.count).toBe(2);
@@ -418,7 +420,7 @@ describe("API Integration Tests", () => {
         { id: "s1", name: "Alice", fatherName: "Mr. A", class: "One", roll: "1" },
         { id: "s2", name: "Bob", fatherName: "Mr. B", class: "One", roll: "2" },
       ]);
-      mockPrisma.transaction.findMany.mockResolvedValueOnce([]);
+      mockPrisma.paymentAllocation.findMany.mockResolvedValueOnce([]);
       mockPrisma.feeSchedule.findMany.mockResolvedValueOnce([]);
       mockPrisma.studentFeeAssignment.findMany.mockResolvedValueOnce([]);
       mockPrisma.feeWaiver.findMany.mockResolvedValueOnce([]);
@@ -472,6 +474,63 @@ describe("API Integration Tests", () => {
       mockPrisma.feeSchedule.delete.mockResolvedValueOnce({ id: "fs-1" });
       const res = await request(app).delete("/api/finance/fee-schedules/fs-1");
       expect(res.status).toBe(204);
+    });
+  });
+
+  describe("Reconciliation Detail Export", () => {
+    it("GET returns reconciliation detail with transactions", async () => {
+      mockPrisma.reconciliation.findUnique.mockResolvedValueOnce({
+        id: "rec-1", account: "AL_RAWA_BANK", statementDate: new Date("2026-05-01"), closingBalance: 50000, systemBalance: 50000, difference: 0, status: "reconciled",
+      });
+      mockPrisma.openingBalance.findUnique.mockResolvedValueOnce({ id: "ob-1", fiscalYear: "2026", account: "AL_RAWA_BANK", amount: 0 });
+      mockPrisma.$queryRaw.mockResolvedValueOnce([{ id: "tx-1", transaction_date: new Date("2026-04-15"), transaction_type: "INCOME", source_account: null, destination_account: "AL_RAWA_BANK", amount: "50000", description: "Fee payment", category: "Tuition", student_id: "s1", class_name: "One" }]);
+      const res = await request(app).get("/api/finance/reconciliations/rec-1");
+      expect(res.status).toBe(200);
+      expect(res.body.reconciliation).toBeDefined();
+      expect(res.body.transactions).toHaveLength(1);
+    });
+
+    it("GET returns 404 for unknown reconciliation", async () => {
+      mockPrisma.reconciliation.findUnique.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/finance/reconciliations/nonexistent");
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("Finance — Fee Waivers (Immutable)", () => {
+    it("POST creates waiver (deactivates old first)", async () => {
+      mockPrisma.feeWaiver.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.feeWaiver.create.mockResolvedValueOnce({ id: "fw-new", studentId: "s1", feeScheduleId: "fs-1", value: 500, active: true });
+      const res = await request(app).post("/api/finance/fee-waivers").send({ studentId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", feeScheduleId: "fs-1", value: 500 });
+      expect(res.status).toBe(201);
+      expect(res.body.active).toBe(true);
+    });
+  });
+
+  describe("Audit Log Filters", () => {
+    it("GET filters by date range", async () => {
+      mockPrisma.auditLog.findMany.mockResolvedValueOnce([{ id: "log-1", action: "CREATE", entityType: "Student", createdAt: new Date("2026-05-01") }]);
+      mockPrisma.auditLog.count.mockResolvedValueOnce(1);
+      const res = await request(app).get("/api/audit?dateFrom=2026-04-01&dateTo=2026-06-01");
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+    });
+
+    it("GET filters by userId", async () => {
+      mockPrisma.auditLog.findMany.mockResolvedValueOnce([{ id: "log-2", action: "UPDATE", entityType: "FeeSchedule", userId: "user-1", createdAt: new Date() }]);
+      mockPrisma.auditLog.count.mockResolvedValueOnce(1);
+      const res = await request(app).get("/api/audit?userId=user-1");
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+    });
+
+    it("GET empty result returns empty array", async () => {
+      mockPrisma.auditLog.findMany.mockResolvedValueOnce([]);
+      mockPrisma.auditLog.count.mockResolvedValueOnce(0);
+      const res = await request(app).get("/api/audit?action=CREATE&entityType=FooBar");
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(0);
+      expect(res.body.total).toBe(0);
     });
   });
 });

@@ -228,7 +228,7 @@ const FinanceReports: React.FC = () => {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-2xl border border-school-border p-4 flex flex-wrap gap-4 items-end">
+      <div className="bg-white rounded-xl border border-school-border p-4 flex flex-wrap gap-4 items-end">
         {(tab === 'headwise-income' || tab === 'headwise-expense' || tab === 'monthly-income' || tab === 'monthly-expense') && (
           <>
             <div>
@@ -267,7 +267,7 @@ const FinanceReports: React.FC = () => {
 
       {/* Report Content */}
       {tab === 'headwise-income' && (
-        <div className="bg-white rounded-2xl border border-school-border overflow-hidden p-4" id="print-area">
+        <div className="bg-white rounded-xl border border-school-border overflow-hidden p-4" id="print-area">
             {(() => { const hw = headwise(incomeTx); const total = hw.reduce((s, x) => s + x[1], 0); return (
               <div>
                 <h4 className="font-serif text-sm text-school-primary mb-3">Headwise Income — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
@@ -285,7 +285,7 @@ const FinanceReports: React.FC = () => {
       )}
 
       {tab === 'headwise-expense' && (
-        <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
+        <div className="bg-white rounded-xl border border-school-border p-4" id="print-area">
           {(() => { const hw = headwise(expenseTx); const total = hw.reduce((s, x) => s + x[1], 0); return (
             <div>
               <h4 className="font-serif text-sm text-school-primary mb-3">Headwise Expense — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
@@ -299,7 +299,7 @@ const FinanceReports: React.FC = () => {
       )}
 
       {tab === 'monthly-income' && (
-        <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
+        <div className="bg-white rounded-xl border border-school-border p-4" id="print-area">
           <h4 className="font-serif text-sm text-school-primary mb-3">Monthly Income — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
           {(() => { if (!incomeTx.length) return <p className="text-sm text-school-muted">No income data for this period.</p>;
             const sorted = [...incomeTx].sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
@@ -320,7 +320,7 @@ const FinanceReports: React.FC = () => {
       )}
 
       {tab === 'monthly-expense' && (
-        <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
+        <div className="bg-white rounded-xl border border-school-border p-4" id="print-area">
           <h4 className="font-serif text-sm text-school-primary mb-3">Monthly Expense — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
           {(() => { if (!expenseTx.length) return <p className="text-sm text-school-muted">No expense data for this period.</p>;
             const sorted = [...expenseTx].sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
@@ -340,7 +340,7 @@ const FinanceReports: React.FC = () => {
       )}
 
       {tab === 'audit' && (
-        <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
+        <div className="bg-white rounded-xl border border-school-border p-4" id="print-area">
           {(() => { const ti = yearIncome.reduce((s, t) => s + Number(t.amount), 0); const te = yearExpense.reduce((s, t) => s + Number(t.amount), 0); const ns = ti - te; return (
             <div className="space-y-4">
               <h4 className="font-serif text-sm text-school-primary">Audit Report — FY {Number(yearFilter)-1}-{yearFilter}</h4>
@@ -367,7 +367,7 @@ const FinanceReports: React.FC = () => {
       )}
 
       {tab === 'yearly-agm' && (
-        <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
+        <div className="bg-white rounded-xl border border-school-border p-4" id="print-area">
           {agmLoading ? (
             <div className="flex items-center justify-center py-12 text-school-muted text-sm gap-2"><Loader size={16} className="animate-spin" /> Loading AGM report…</div>
           ) : !agmData ? (
@@ -434,7 +434,7 @@ const FinanceReports: React.FC = () => {
               {/* 4. Internal Transfers */}
               <div>
                 <h5 className="font-bold text-sm uppercase text-school-primary mb-2 border-b border-school-border pb-1">4. Internal Transfers</h5>
-                <p className="text-sm">Total: {fmt(totalTransfers)} /- ({agmData.transfers?.length || 0} transactions)</p>
+                <p className="text-sm">Total: {fmt(totalTransfers)} /- ({agmData.transferCount || 0} transactions)</p>
                 <p className="text-xs text-school-muted mt-1">Internal transfers between bank accounts and Cash in Hand do not affect income/expense.</p>
               </div>
 

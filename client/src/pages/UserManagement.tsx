@@ -57,7 +57,7 @@ const UserManagement: React.FC = () => {
       </div>
 
       {/* Role Legend */}
-      <div className="bg-white rounded-2xl border border-school-border p-4">
+      <div className="bg-white rounded-xl border border-school-border p-4">
         <h3 className="text-xs font-bold uppercase text-school-muted mb-3">Role Permissions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
           <div className="space-y-1">
@@ -80,7 +80,7 @@ const UserManagement: React.FC = () => {
       </div>
 
       {/* Users Table */}
-      <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+      <div className="bg-white rounded-xl border border-school-border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

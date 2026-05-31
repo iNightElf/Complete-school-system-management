@@ -55,7 +55,7 @@ export default function PeriodCloseTab() {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+    <div className="bg-white rounded-xl border border-school-border overflow-hidden">
       <div className="px-5 py-4 border-b border-school-border flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Lock size={18} className="text-school-muted" />

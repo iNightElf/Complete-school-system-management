@@ -39,10 +39,10 @@ SMTP_PASS=your-app-password
 docker compose up -d --build
 ```
 
-4. Apply database schema:
+4. Apply database schema (uses migration history — never use `prisma db push` in production):
 
 ```bash
-docker compose exec app npx prisma db push
+docker compose exec app npx prisma migrate deploy
 ```
 
 5. Open `http://localhost:5000` and bootstrap the first admin using the setup token.
@@ -81,12 +81,14 @@ npm run build
 cd server
 npm ci
 npx prisma generate
-npx prisma db push
+npx prisma migrate deploy
 npm run build
 npm start
 ```
 
 The server will serve both the API and the built client files on port 5000.
+
+> **Important:** Always use `prisma migrate deploy` in production. Never use `prisma db push` on a production database — it bypasses migration history and can cause schema drift. Use `prisma db push` only for local development.
 
 ### 5. First Admin Setup
 
@@ -163,7 +165,7 @@ docker compose up -d --build
 
 # If manual:
 cd client && npm ci && npm run build
-cd ../server && npm ci && npx prisma generate && npx prisma db push && npm run build && npm restart
+cd ../server && npm ci && npx prisma generate && npx prisma migrate deploy && npm run build && npm restart
 ```
 
 ## Health Check

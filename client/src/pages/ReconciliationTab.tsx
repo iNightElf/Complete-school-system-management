@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Scale, Plus, X } from 'lucide-react';
+import { Scale, Plus, X, Download } from 'lucide-react';
 import { toast } from '../components/Toast';
 import { useAuthStore } from '../store';
 
@@ -19,6 +19,46 @@ export default function ReconciliationTab() {
   const [closingBalance, setClosingBalance] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [exporting, setExporting] = useState<string | null>(null);
+
+  const handleExport = async (reconciliationId: string) => {
+    setExporting(reconciliationId);
+    try {
+      const res = await axios.get(`${API_URL}/finance/reconciliations/${reconciliationId}`, { withCredentials: true });
+      const { reconciliation, openingBalance, transactions } = res.data;
+      const rows = [
+        ['Account', reconciliation.account],
+        ['Statement Date', new Date(reconciliation.statementDate).toLocaleDateString()],
+        ['Opening Balance', openingBalance],
+        ['Closing Balance (Statement)', Number(reconciliation.closingBalance).toLocaleString()],
+        ['System Balance', Number(reconciliation.systemBalance || 0).toLocaleString()],
+        ['Difference', Number(reconciliation.difference || 0).toLocaleString()],
+        ['Status', Math.abs(Number(reconciliation.difference || 0)) < 0.01 ? 'Reconciled' : 'Difference'],
+        [],
+        ['Date', 'Type', 'Source', 'Destination', 'Amount', 'Description', 'Category', 'Student'],
+        ...transactions.map((t: any) => [
+          new Date(t.transaction_date).toLocaleDateString(),
+          t.transaction_type,
+          t.source_account || '',
+          t.destination_account || '',
+          Number(t.amount).toLocaleString(),
+          t.description || '',
+          t.category || '',
+          t.student_id ? `#${t.student_id.slice(0, 8)}` : '',
+        ]),
+      ];
+      const csv = rows.map(r => r.map((c: any) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reconciliation-${reconciliation.account}-${new Date(reconciliation.statementDate).toISOString().split('T')[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Exported ✓', 'success');
+    } catch { toast('Export failed', 'error'); }
+    finally { setExporting(null); }
+  };
 
   const fetchRecords = async () => {
     try {
@@ -50,7 +90,7 @@ export default function ReconciliationTab() {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+    <div className="bg-white rounded-xl border border-school-border overflow-hidden">
       <div className="px-5 py-4 border-b border-school-border flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Scale size={18} className="text-school-muted" />
@@ -95,16 +135,35 @@ export default function ReconciliationTab() {
           <div className="px-5 py-8 text-center text-xs text-school-muted">Loading...</div>
         ) : records.length === 0 ? (
           <div className="px-5 py-8 text-center text-xs text-school-muted">No reconciliations recorded</div>
-        ) : records.map(r => (
+        ) : records.map(r => {
+          const diff = Number(r.difference || 0);
+          const reconciled = Math.abs(diff) < 0.01;
+          return (
           <div key={r.id} className="px-5 py-3 flex items-center justify-between">
-            <div>
-              <span className="text-sm font-bold text-school-primary">{r.account.replace(/_/g, ' ')}</span>
-              <span className="ml-2 text-xs font-bold text-school-muted">{Number(r.closingBalance).toLocaleString()} IQD</span>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-school-primary">{r.account.replace(/_/g, ' ')}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${reconciled ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                  {reconciled ? 'Reconciled' : 'Difference'}
+                </span>
+              </div>
+              <div className="flex gap-4 mt-1">
+                <span className="text-xs text-school-muted">Statement: <strong>{Number(r.closingBalance).toLocaleString()} IQD</strong></span>
+                <span className="text-xs text-school-muted">System: <strong>{Number(r.systemBalance || 0).toLocaleString()} IQD</strong></span>
+                <span className={`text-xs font-bold ${reconciled ? 'text-emerald-600' : 'text-red-600'}`}>
+                  Diff: {diff >= 0 ? '+' : ''}{diff.toLocaleString()} IQD
+                </span>
+              </div>
               {r.notes && <p className="text-xs text-school-muted mt-0.5">{r.notes}</p>}
-              <p className="text-[10px] text-school-muted mt-0.5">Statement: {new Date(r.statementDate).toLocaleDateString()} &middot; Recorded: {new Date(r.createdAt).toLocaleDateString()}</p>
+              <p className="text-[10px] text-school-muted mt-0.5">{new Date(r.statementDate).toLocaleDateString()} &middot; Recorded: {new Date(r.createdAt).toLocaleDateString()}</p>
             </div>
+            <button onClick={() => handleExport(r.id)} disabled={exporting === r.id}
+              className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-school-paper text-school-muted hover:bg-school-accent/10 hover:text-school-accent border border-school-border transition-all disabled:opacity-50">
+              <Download size={12} /> {exporting === r.id ? '...' : 'Export'}
+            </button>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

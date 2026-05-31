@@ -7,10 +7,11 @@ import { param } from "../lib/param.js";
 
 export const getStudentFeeAssignments = async (req: AuthRequest, res: Response) => {
   try {
-    const { studentId, feeScheduleId, className } = req.query;
+    const { studentId, feeScheduleId, className, active } = req.query;
     const where: any = {};
     if (studentId) where.studentId = String(studentId);
     if (feeScheduleId) where.feeScheduleId = String(feeScheduleId);
+    if (active !== undefined) where.active = active === "true";
 
     let assignments = await prisma.studentFeeAssignment.findMany({
       where,
@@ -40,26 +41,32 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
       return res.status(400).json({ error: "studentId and feeScheduleId are required" });
     }
 
-    const existing = await prisma.studentFeeAssignment.findUnique({
-      where: { studentId_feeScheduleId: { studentId, feeScheduleId } },
+    // Find existing active record
+    const existing = await prisma.studentFeeAssignment.findFirst({
+      where: { studentId, feeScheduleId, active: true },
     });
 
+    const newActive = active !== undefined ? active : !existing;
+
     if (existing) {
-      const updated = await prisma.studentFeeAssignment.update({
+      if (newActive === existing.active && startsAt === undefined && endsAt === undefined && note === undefined) {
+        // Toggle off — deactivate only (immutable)
+        const updated = await prisma.studentFeeAssignment.update({
+          where: { id: existing.id },
+          data: { active: false },
+        });
+        logAudit({ userId: req.session?.user?.id, action: "DEACTIVATE", entityType: "StudentFeeAssignment", entityId: updated.id, details: JSON.stringify({ studentId, feeScheduleId }) });
+        return res.json(updated);
+      }
+      // Deactivate old (immutable history)
+      await prisma.studentFeeAssignment.update({
         where: { id: existing.id },
-        data: {
-          active: active !== undefined ? active : !existing.active,
-          startsAt: startsAt !== undefined ? (startsAt ? new Date(startsAt) : null) : undefined,
-          endsAt: endsAt !== undefined ? (endsAt ? new Date(endsAt) : null) : undefined,
-          note: note !== undefined ? note : undefined,
-        },
+        data: { active: false },
       });
-      logAudit({ userId: req.session?.user?.id, action: "UPDATE", entityType: "StudentFeeAssignment", entityId: updated.id, details: JSON.stringify({ studentId, feeScheduleId, active: updated.active }) });
-      return res.json(updated);
     }
 
     const created = await prisma.studentFeeAssignment.create({
-      data: { studentId, feeScheduleId, active: active !== undefined ? active : true, startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null, note },
+      data: { studentId, feeScheduleId, active: true, startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null, note },
     });
     logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "StudentFeeAssignment", entityId: created.id, details: JSON.stringify({ studentId, feeScheduleId }) });
     res.status(201).json(created);
@@ -70,19 +77,29 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
 
 export const bulkAssign = async (req: AuthRequest, res: Response) => {
   try {
-    const { feeScheduleId, studentIds, active } = req.body;
+    const { feeScheduleId, studentIds, active, startsAt, endsAt } = req.body;
     if (!feeScheduleId || !Array.isArray(studentIds)) {
       return res.status(400).json({ error: "feeScheduleId and studentIds array are required" });
     }
 
     const results = await Promise.allSettled(
-      studentIds.map((sid: string) =>
-        prisma.studentFeeAssignment.upsert({
-          where: { studentId_feeScheduleId: { studentId: sid, feeScheduleId } },
-          update: { active: active !== undefined ? active : true },
-          create: { studentId: sid, feeScheduleId, active: active !== undefined ? active : true },
-        })
-      )
+      studentIds.map(async (sid: string) => {
+        // Deactivate any existing active assignment
+        await prisma.studentFeeAssignment.updateMany({
+          where: { studentId: sid, feeScheduleId, active: true },
+          data: { active: false },
+        });
+        // Create new record
+        return prisma.studentFeeAssignment.create({
+          data: {
+            studentId: sid,
+            feeScheduleId,
+            active: active !== undefined ? active : true,
+            ...(startsAt ? { startsAt: new Date(startsAt) } : {}),
+            ...(endsAt ? { endsAt: new Date(endsAt) } : {}),
+          },
+        });
+      })
     );
 
     const count = results.filter(r => r.status === "fulfilled").length;

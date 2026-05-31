@@ -9,7 +9,7 @@ const API_URL = '/api';
 
 function BookSkeleton() {
   return (
-    <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+    <div className="bg-white rounded-xl border border-school-border overflow-hidden">
       <div className="overflow-x-auto p-4 space-y-3">
         {[1,2,3].map(i => (
           <div key={i} className="h-10 bg-school-paper rounded-lg animate-pulse" />
@@ -104,7 +104,7 @@ const AccessoriesSection: React.FC = () => {
       <ClassManagerModal open={showClassManager} onClose={() => setShowClassManager(false)} />
 
       {/* Form */}
-      <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+      <div className="bg-white rounded-xl border border-school-border overflow-hidden">
         <button onClick={() => setFormExpanded(!formExpanded)} className="w-full flex items-center justify-between p-4 hover:bg-school-paper/50 transition-colors">
           <span className="font-bold text-sm text-school-primary flex items-center gap-1.5">{editId ? <><Pencil size={14} /> Edit Accessory</> : <><Plus size={14} /> Add Accessory</>}</span>
           <span className="text-school-muted text-xs">{formExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
@@ -202,7 +202,7 @@ const AccessoriesSection: React.FC = () => {
               <p className="text-sm">No accessories in {activeClass} yet.</p>
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+            <div className="bg-white rounded-xl border border-school-border overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
