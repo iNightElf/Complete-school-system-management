@@ -209,7 +209,6 @@ fa2bb28 fix: WHAT-TO-IMPROVE items — 14 fixes (critical + serious + code quali
 ```
 
 ## Known Issues (Remaining)
-- `node_modules/` not tracked in git
 - Photos kept as BYTEA in PostgreSQL (~13MB for 500 photos)
 
 ### ~~Fixed This Session~~
