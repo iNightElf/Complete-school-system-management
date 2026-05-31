@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import { gradeFromMarks, gpaToGrade, calcYearSummary, calcTermRanks, calcYearRanks } from './grading';
+import { gradeFromMarks, gpaToGrade, calcYearSummary, calcTermRanks, calcYearRanks, calcAttendPct } from './grading';
 
 const API_URL = '/api';
 const TERM_NAMES: Record<string, string> = { '1': '1st Term', '2': '2nd Term', '3': 'Final Exam' };
@@ -45,7 +45,10 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
   // HEADER with logo
   try {
     const logoEl = document.getElementById('school-logo') as HTMLImageElement;
-    if (logoEl?.src) doc.addImage(logoEl.src, 'JPEG', M, y, 22, 22);
+    if (logoEl?.src) {
+      const raw = logoEl.src.includes(',') ? logoEl.src.split(',')[1] : logoEl.src;
+      doc.addImage(raw, 'JPEG', M, y, 22, 22);
+    }
   } catch (_e) {}
   doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(...NAVY);
   doc.text('AL RAWA English School', M + 26, y + 10);

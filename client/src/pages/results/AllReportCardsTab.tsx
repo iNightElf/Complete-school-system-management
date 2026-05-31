@@ -22,7 +22,7 @@ export default function AllReportCardsTab() {
 
   const downloadAll = async (term: string) => {
     if (!clsStudents.length) { toast('No students', 'error'); return; }
-    toast(`Generating ${clsStudents.length} report cards…`, '');
+    toast(`Generating ${clsStudents.length} report cards…`, 'info');
     const doc = new jsPDF({ format: 'a4', unit: 'mm' });
     for (const s of clsStudents) { await downloadReportCardPDF(s, cls.name, subjects, allResults, term, doc); }
     const isFinal = term === 'final';
