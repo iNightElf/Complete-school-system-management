@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { X, RotateCw } from 'lucide-react';
+import { X, RotateCw, Camera } from 'lucide-react';
 import { toast } from './Toast';
 
 interface Props {
@@ -26,7 +26,7 @@ const CameraModal: React.FC<Props> = ({ open, onClose, onCapture }) => {
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch (err: any) {
-      toast('Camera access denied: ' + err.message, 'error');
+      toast('Camera access denied: ' + (err?.message || 'Unknown error'), 'error');
       onClose();
     }
   }, [onClose]);
@@ -70,7 +70,7 @@ const CameraModal: React.FC<Props> = ({ open, onClose, onCapture }) => {
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
       <div className="bg-school-primary rounded-2xl overflow-hidden max-w-md w-full">
         <div className="flex items-center justify-between p-3 text-white">
-          <h3 className="font-medium text-sm">📷 Take Photo</h3>
+          <h3 className="font-medium text-sm flex items-center gap-1.5"><Camera size={16} /> Take Photo</h3>
           <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full"><X size={20} /></button>
         </div>
         <div className="relative">
@@ -81,8 +81,8 @@ const CameraModal: React.FC<Props> = ({ open, onClose, onCapture }) => {
         </div>
         <canvas ref={canvasRef} className="hidden" />
         <div className="flex gap-2 p-3">
-          <button onClick={capture} className="flex-1 py-2 bg-school-accent text-white rounded-xl font-bold text-sm hover:opacity-90">
-            📸 Capture
+          <button onClick={capture} className="flex-1 py-2 bg-school-accent text-white rounded-xl font-bold text-sm hover:opacity-90 flex items-center justify-center gap-1.5">
+            <Camera size={14} /> Capture
           </button>
           <button onClick={onClose} className="px-4 py-2 border border-white/30 text-white rounded-xl text-sm hover:bg-white/10">
             Cancel

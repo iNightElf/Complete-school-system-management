@@ -3,6 +3,7 @@ import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import ClassSelect from '../../components/ClassSelect';
 import { gradeFromMarks, gradeChip } from '../../lib/grading';
+import { Save } from 'lucide-react';
 
 const API_URL = '/api';
 const TERM_NAMES: Record<string, string> = { '1': '1st Term', '2': '2nd Term', '3': 'Final Exam' };
@@ -158,8 +159,8 @@ export default function EnterBySubject() {
               </tbody>
             </table>
           </div>
-          {isAdmin && <button onClick={isComment ? saveBulkComments : isAttendance ? saveBulkAttendance : saveBulkMarks} className="w-full py-2 bg-green-600 text-white rounded-xl text-sm font-bold hover:opacity-90">
-            💾 Save {isComment ? 'All Comments' : isAttendance ? `${TERM_NAMES[bulkTerm]} Attendance` : 'All Marks'}
+          {isAdmin && <button onClick={isComment ? saveBulkComments : isAttendance ? saveBulkAttendance : saveBulkMarks} className="w-full py-2 bg-green-600 text-white rounded-xl text-sm font-bold hover:opacity-90 flex items-center justify-center gap-1.5">
+            <Save size={14} /> Save {isComment ? 'All Comments' : isAttendance ? `${TERM_NAMES[bulkTerm]} Attendance` : 'All Marks'}
           </button>}
         </div>
       )}

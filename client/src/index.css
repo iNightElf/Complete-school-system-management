@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --color-school-primary: #1a1a2e;
@@ -10,6 +11,8 @@
   --color-school-border: #d4cfc4;
   --color-school-muted: #8c8c8c;
   --color-school-success: #10b981;
+  --color-school-success-light: #d1fae5;
+  --color-school-danger-light: #fee2e2;
 
   --font-serif: "DM Serif Display", serif;
   --font-sans: "DM Sans", sans-serif;
@@ -35,8 +38,6 @@
   }
 }
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
-
 * {
   -webkit-tap-highlight-color: transparent;
 }
@@ -49,9 +50,89 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+table thead { position: sticky; top: 0; z-index: 1; }
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-school-border); border-radius: 10px; }
+
+/* ── Warm accent polish ── */
+.section-header::after {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 3px;
+  background: var(--color-school-accent);
+  border-radius: 4px;
+  margin-top: 6px;
+}
+.card-shadow {
+  box-shadow: 0 1px 3px rgba(200, 75, 49, 0.08), 0 1px 2px rgba(200, 75, 49, 0.06);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.card-shadow:hover {
+  box-shadow: 0 8px 25px rgba(200, 75, 49, 0.12), 0 2px 8px rgba(200, 75, 49, 0.08);
+  transform: translateY(-2px);
+}
+
+/* ── Dark Mode ── */
+.dark body {
+  background: #0f0f1a;
+  color: #e0e0e8;
+}
+.dark .bg-white { background-color: #1a1a2e; }
+.dark .bg-school-paper { background-color: #14142a; }
+.dark .border-school-border { border-color: #2a2a3e; }
+.dark .text-school-muted { color: #8c8ca8; }
+.dark .text-school-primary { color: #e0e0e8; }
+.dark .bg-school-paper\/50 { background-color: rgba(20, 20, 42, 0.5); }
+.dark .bg-school-paper\/30 { background-color: rgba(20, 20, 42, 0.3); }
+.dark .hover\:bg-school-paper:hover { background-color: #1e1e36; }
+.dark .hover\:bg-school-paper\/30:hover { background-color: rgba(20, 20, 42, 0.3); }
+.dark .bg-school-primary { background-color: #2d2d5e; }
+.dark .bg-school-secondary { background-color: #1a1a3e; }
+.dark .hover\:bg-amber-50:hover { background-color: rgba(217, 119, 6, 0.15); }
+.dark header.bg-school-primary { background-color: #0d0d1a; }
+.dark footer.bg-school-secondary { background-color: #0a0a18; }
+.dark input, .dark select, .dark textarea { background-color: #22223a; color: #e0e0e8; border-color: #3a3a5e; }
+.dark .bg-amber-50 { background-color: rgba(217, 119, 6, 0.15); }
+.dark .bg-green-50, .dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.12); }
+.dark .bg-rose-50, .dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.12); }
+.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.12); }
+.dark .bg-violet-50\/50 { background-color: rgba(139, 92, 246, 0.15); }
+.dark .bg-blue-50\/50 { background-color: rgba(59, 130, 246, 0.15); }
+
+/* ── Mobile Card Layout (hide table, show card on small screens) ── */
+@media (max-width: 640px) {
+  .mobile-card-table thead { display: none; }
+  .mobile-card-table tbody tr {
+    display: block;
+    border: 1px solid var(--color-school-border);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 8px;
+    background: white;
+  }
+  .mobile-card-table tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border: none;
+    text-align: right;
+    gap: 8px;
+  }
+  .mobile-card-table tbody td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--color-school-muted);
+    text-align: left;
+    flex: 1;
+  }
+  .mobile-card-table tfoot { display: none; }
+}
 
 @media print {
   header, footer, .no-print { display: none !important; }

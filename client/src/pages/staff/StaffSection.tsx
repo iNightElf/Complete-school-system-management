@@ -3,7 +3,7 @@ import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import CameraModal from '../../components/CameraModal';
 import { CardSkeleton } from '../../components/Skeleton';
-import { RefreshCw, Mail, Download, Camera } from 'lucide-react';
+import { RefreshCw, Mail, Download, Camera, Pencil, Trash2, Check, Building2 } from 'lucide-react';
 import { contactLinks } from '../../lib/contacts';
 import DeleteConfirmModal from '../../components/DeleteConfirmModal';
 import jsPDF from 'jspdf';
@@ -51,12 +51,13 @@ export default function StaffSection() {
 
     try {
       const url = editingId ? `${API_URL}/staff/${editingId}` : `${API_URL}/staff`;
-      await fetch(url, {
+      const res = await fetch(url, {
         method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(body),
       });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Save failed'); }
       toast(editingId ? 'Staff updated ✓' : 'Staff added ✓', 'success');
       resetForm();
       fetchStaff();
@@ -71,8 +72,11 @@ export default function StaffSection() {
   const confirmDelete = async () => {
     if (!deleteId) return;
     setDeleteLoading(true);
-    await fetch(`${API_URL}/staff/${deleteId}`, { method: 'DELETE', credentials: 'include' });
-    toast('Staff deleted');
+    try {
+      const res = await fetch(`${API_URL}/staff/${deleteId}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Delete failed'); }
+      toast('Staff deleted');
+    } catch (e: any) { toast(e.message || 'Error', 'error'); }
     setDeleteId(null);
     setDeleteLoading(false);
     fetchStaff();
@@ -85,9 +89,9 @@ export default function StaffSection() {
       <div className="flex justify-center mb-3">
         <button onClick={() => setShowCamera(true)} className="relative group">
           {photo ? (
-            <img src={photo.startsWith('data:') ? photo : photo} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-white shadow-md" />
+            <img src={photo} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-white shadow-md" />
           ) : (
-            <div className="w-20 h-20 rounded-full bg-indigo-600 text-white flex items-center justify-center text-3xl">🏢</div>
+            <div className="w-20 h-20 rounded-full bg-indigo-600 text-white flex items-center justify-center"><Building2 size={32} className="text-white" /></div>
           )}
           <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
             <Camera size={20} className="text-white" />
@@ -113,8 +117,8 @@ export default function StaffSection() {
         </div>
       </div>
       <div className="flex gap-2 mt-3">
-        <button onClick={handleSubmit} className={`flex-1 py-2 text-white rounded-xl text-sm font-bold hover:opacity-90 ${isNew ? 'bg-violet-600' : 'bg-blue-600'}`}>
-          {isNew ? '+ Add Staff' : '✓ Save'}
+        <button onClick={handleSubmit} className={`flex-1 py-2 text-white rounded-xl text-sm font-bold hover:opacity-90 flex items-center justify-center gap-1.5 ${isNew ? 'bg-violet-600' : 'bg-blue-600'}`}>
+          {isNew ? '+ Add Staff' : <><Check size={14} /> Save</>}
         </button>
         <button onClick={resetForm} className="px-4 py-2 border border-school-border rounded-xl text-sm hover:bg-white">Cancel</button>
       </div>
@@ -122,26 +126,26 @@ export default function StaffSection() {
   );
 
   const renderViewCard = (s: any) => (
-    <div className="bg-white p-4 rounded-2xl border border-school-border hover:shadow-md transition-shadow">
-      <div className="flex items-start gap-3">
+    <div className="bg-white p-4 rounded-2xl border border-school-border card-shadow text-center">
+      <div className="flex flex-col items-center gap-2">
         {s.hasPhoto ? (
-          <img src={`${API_URL}/staff/${s.id}/photo`} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
+          <img src={`${API_URL}/staff/${s.id}/photo`} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-school-border shadow-sm" />
         ) : (
-          <div className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center text-lg flex-shrink-0">🏢</div>
+          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center shadow-sm"><Building2 size={24} className="text-white" /></div>
         )}
-        <div className="flex-1 min-w-0">
-          <div className="font-bold text-sm text-school-primary truncate">{s.name}</div>
+        <div>
+          <div className="font-bold text-sm text-school-primary">{s.name}</div>
           <div className="text-xs text-indigo-600 font-medium">{s.role}</div>
         </div>
       </div>
-      <div className="mt-2 space-y-1">
-        {s.email && <div className="text-xs flex items-center gap-1"><Mail size={11} className="text-school-muted" /> {s.email}</div>}
+      <div className="mt-2 space-y-0.5">
+        {s.email && <div className="text-xs flex items-center justify-center gap-1"><Mail size={11} className="text-school-muted" /> {s.email}</div>}
         {s.contact && <div className="text-xs">{contactLinks(s.contact)}</div>}
       </div>
       {isAdmin && (
         <div className="flex gap-2 mt-3 pt-3 border-t border-school-border">
-          <button onClick={() => handleEdit(s)} className="flex-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100">✏️ Edit</button>
-          <button onClick={() => setDeleteId(s.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100">🗑 Delete</button>
+          <button onClick={() => handleEdit(s)} className="flex-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 flex items-center justify-center gap-1"><Pencil size={14} /> Edit</button>
+          <button onClick={() => setDeleteId(s.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center justify-center gap-1"><Trash2 size={14} /> Delete</button>
         </div>
       )}
     </div>
@@ -208,7 +212,7 @@ export default function StaffSection() {
 
       {filtered.length === 0 && !showAddNew && (
         <div className="text-center py-12 text-school-muted">
-          <div className="text-4xl mb-2">🏢</div>
+          <div className="text-4xl mb-2"><Building2 size={48} className="text-school-muted mx-auto mb-2" /></div>
           <p className="text-sm">No staff found.</p>
         </div>
       )}

@@ -1,11 +1,20 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import VerifyEmail from './pages/VerifyEmail';
-import UserManagement from './pages/UserManagement';
+
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
+const UserManagement = lazy(() => import('./pages/UserManagement'));
+
+function PageLoader() {
+  return (
+    <div className="min-h-screen bg-school-paper flex items-center justify-center">
+      <div className="w-8 h-8 border-3 border-school-primary/20 border-t-school-primary rounded-full animate-spin"></div>
+    </div>
+  );
+}
 
 const App: React.FC = () => {
   const { user, loading, fetchSession } = useAuthStore();
@@ -15,38 +24,21 @@ const App: React.FC = () => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-school-paper flex items-center justify-center">
-        <div className="w-8 h-8 border-3 border-school-primary/20 border-t-school-primary rounded-full animate-spin"></div>
-      </div>
-    );
+    return <PageLoader />;
   }
 
   return (
     <Router>
-      <Routes>
-        <Route
-          path="/login"
-          element={!user ? <Login /> : <Navigate to="/" />}
-        />
-        <Route
-          path="/register"
-          element={!user ? <Register /> : <Navigate to="/" />}
-        />
-        <Route
-          path="/verify-email"
-          element={<VerifyEmail />}
-        />
-        <Route
-          path="/users"
-          element={user?.role === 'admin' ? <UserManagement /> : <Navigate to="/" />}
-        />
-        <Route
-          path="/"
-          element={user ? <Dashboard /> : <Navigate to="/login" />}
-        />
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
+          <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/users" element={user?.role === 'admin' ? <UserManagement /> : <Navigate to="/" />} />
+          <Route path="/" element={user ? <Dashboard /> : <Navigate to="/login" />} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </Suspense>
     </Router>
   );
 };

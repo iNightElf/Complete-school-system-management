@@ -52,7 +52,7 @@ const PhotoUpload: React.FC<Props> = ({ photo, onPhotoChange, onOpenCamera, size
         </div>
       ) : (
         <div className={`${sizeClasses[size]} rounded-full border-2 border-dashed border-school-border flex items-center justify-center bg-school-paper`}>
-          <span className="text-2xl">📷</span>
+          <Camera size={24} className="text-school-muted" />
         </div>
       )}
       <div className="flex gap-2">

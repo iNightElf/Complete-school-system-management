@@ -4,14 +4,15 @@ import EnterBySubject from './results/EnterBySubject';
 import EnterByStudent from './results/EnterByStudent';
 import TabulationTab from './results/TabulationTab';
 import AllReportCardsTab from './results/AllReportCardsTab';
+import { PenLine, User, ClipboardList, FileSpreadsheet } from 'lucide-react';
 
 type Tab = 'subject' | 'student' | 'tabulation' | 'reports';
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'subject', label: 'Enter by Subject', icon: '📝' },
-  { key: 'student', label: 'Enter by Student', icon: '👤' },
-  { key: 'tabulation', label: 'Tabulation', icon: '📋' },
-  { key: 'reports', label: 'Report Cards', icon: '📑' },
+const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
+  { key: 'subject', label: 'Enter by Subject', icon: <PenLine size={14} /> },
+  { key: 'student', label: 'Enter by Student', icon: <User size={14} /> },
+  { key: 'tabulation', label: 'Tabulation', icon: <ClipboardList size={14} /> },
+  { key: 'reports', label: 'Report Cards', icon: <FileSpreadsheet size={14} /> },
 ];
 
 const ResultSection: React.FC = () => {
@@ -24,7 +25,7 @@ const ResultSection: React.FC = () => {
         {TABS.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === t.key ? 'bg-school-primary text-white shadow-lg' : 'bg-white border border-school-border hover:border-school-accent'}`}>
-            <span>{t.icon}</span> {t.label}
+            {t.icon} {t.label}
           </button>
         ))}
       </div>

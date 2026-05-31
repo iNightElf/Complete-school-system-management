@@ -1,23 +1,34 @@
 import type { Request, Response } from "express";
+import { createHash } from "crypto";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
+import { sanitizeError } from "../lib/errors.js";
 import { validate, createStudentSchema } from "../lib/validate.js";
 
 function parsePhoto(body: any): Buffer | null {
   if (!body.photo) return null;
   if (typeof body.photo === "string" && body.photo.startsWith("data:image")) {
-    const base64 = body.photo.split(",")[1];
-    return Buffer.from(base64, "base64");
+    try {
+      const base64 = body.photo.split(",")[1];
+      if (!base64) return null;
+      return Buffer.from(base64, "base64");
+    } catch { return null; }
   }
   return null;
 }
 
 export const getAllStudents = async (req: Request, res: Response) => {
   try {
-    const students = await prisma.student.findMany({
-      include: { results: true },
-      orderBy: { createdAt: "desc" },
-    });
+    const skip = Math.max(0, parseInt(String(req.query.skip || '0')));
+    const take = Math.min(500, Math.max(1, parseInt(String(req.query.take || '200'))));
+    const [students, total] = await Promise.all([
+      prisma.student.findMany({
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.student.count(),
+    ]);
     const result = students.map((s) => ({
       id: s.id,
       class: s.class,
@@ -28,11 +39,10 @@ export const getAllStudents = async (req: Request, res: Response) => {
       contact: s.contact,
       hasPhoto: !!s.photo,
       createdAt: s.createdAt,
-      results: s.results,
     }));
-    res.json(result);
+    res.json({ data: result, total, skip, take });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -57,7 +67,7 @@ export const createStudent = async (req: Request, res: Response) => {
 
     res.status(201).json({ ...student, photo: null });
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -90,7 +100,7 @@ export const updateStudent = async (req: Request, res: Response) => {
       hasPhoto: !!student.photo,
     });
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -100,7 +110,7 @@ export const deleteStudent = async (req: Request, res: Response) => {
     await prisma.student.delete({ where: { id } });
     res.status(204).send();
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -110,9 +120,14 @@ export const getStudentPhoto = async (req: Request, res: Response) => {
     const student = await prisma.student.findUnique({ where: { id }, select: { photo: true } });
     if (!student?.photo) return res.status(404).json({ error: "Photo not found" });
 
+    const buf = Buffer.from(student.photo);
+    const etag = createHash('md5').update(buf).digest('hex');
+    if (req.headers['if-none-match'] === etag) { return res.status(304).end(); }
     res.set("Content-Type", "image/jpeg");
-    res.send(Buffer.from(student.photo));
+    res.set("Cache-Control", "public, max-age=86400");
+    res.set("ETag", etag);
+    res.send(buf);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };

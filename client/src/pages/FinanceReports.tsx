@@ -3,10 +3,31 @@ import { useSchoolStore } from '../store';
 import { FileText, Download, Printer, Calendar, BarChart3, Scale, Users } from 'lucide-react';
 import { toast } from '../components/Toast';
 import { getMonthName, fmt, headwise, pdfHeadwiseIncome, pdfHeadwiseExpense, pdfMonthly, pdfAudit, pdfYearlyAGM } from '../lib/financeReportPdf';
+import { FISCAL_YEAR_START_MONTH, FISCAL_START_LABEL, FISCAL_END_LABEL } from '../lib/config';
+import * as XLSX from 'xlsx';
 
 const API_URL = '/api';
 
 type ReportTab = 'headwise-income' | 'headwise-expense' | 'monthly-income' | 'monthly-expense' | 'audit' | 'yearly-agm';
+
+function downloadCSV(filename: string, headers: string[], rows: any[][]) {
+  const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+function downloadExcel(filename: string, headers: string[], rows: any[][]) {
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Report');
+  const colWidths = headers.map((h, i) => {
+    const max = rows.reduce((m, r) => Math.max(m, String(r[i] || '').length), h.length);
+    return { wch: Math.min(max + 3, 40) };
+  });
+  ws['!cols'] = colWidths;
+  XLSX.writeFile(wb, filename);
+}
 
 const REPORT_TABS: { key: ReportTab; label: string; icon: React.ReactNode }[] = [
   { key: 'headwise-income', label: 'Headwise Income', icon: <BarChart3 size={14} /> },
@@ -46,13 +67,51 @@ function printDiv(id: string) {
 }
 
 const FinanceReports: React.FC = () => {
-  const { transactions, fetchTransactions, students, fetchStudents, balances, fetchFinance } = useSchoolStore();
+  const { transactions, fetchTransactions, students, fetchStudents, balances, fetchFinance, openingBalances, fetchOpeningBalances, setOpeningBalances, openingBalancesHistory, fetchOpeningBalanceHistory, revertOpeningBalance } = useSchoolStore();
   const [tab, setTab] = useState<ReportTab>('headwise-income');
   const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
   const [dateTo, setDateTo] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
   const [yearFilter, setYearFilter] = useState(String(new Date().getFullYear()));
+  const [showOpeningBalModal, setShowOpeningBalModal] = useState(false);
+  const [editOpenBal, setEditOpenBal] = useState<Record<string, string>>({});
+  const [savingOpenBal, setSavingOpenBal] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
-  useEffect(() => { fetchTransactions(); fetchStudents(); fetchFinance(); }, []);
+  useEffect(() => { fetchTransactions(); fetchStudents(); fetchFinance(); fetchOpeningBalances(); }, []);
+
+  const openOpeningBalModal = async () => {
+    await fetchOpeningBalances(yearFilter);
+    await fetchOpeningBalanceHistory(yearFilter);
+    const fresh = useSchoolStore.getState().openingBalances;
+    setEditOpenBal({
+      AL_RAWA_BANK: String(fresh.AL_RAWA_BANK || 0),
+      GLOBAL_FORUM_BANK: String(fresh.GLOBAL_FORUM_BANK || 0),
+      CASH_IN_HAND: String(fresh.CASH_IN_HAND || 0),
+    });
+    setShowOpeningBalModal(true);
+  };
+
+  const handleSaveOpeningBal = async () => {
+    setSavingOpenBal(true);
+    try {
+      await setOpeningBalances(yearFilter, {
+        AL_RAWA_BANK: Number(editOpenBal.AL_RAWA_BANK) || 0,
+        GLOBAL_FORUM_BANK: Number(editOpenBal.GLOBAL_FORUM_BANK) || 0,
+        CASH_IN_HAND: Number(editOpenBal.CASH_IN_HAND) || 0,
+      });
+      toast('Opening balances saved ✓', 'success');
+      setShowOpeningBalModal(false);
+    } catch { toast('Failed to save opening balances', 'error'); }
+    finally { setSavingOpenBal(false); }
+  };
+
+  const handleRevert = async (historyId: string) => {
+    try {
+      await revertOpeningBalance(historyId);
+      await fetchOpeningBalances(yearFilter);
+      toast('Reverted ✓', 'success');
+    } catch { toast('Revert failed', 'error'); }
+  };
 
   const filtered = transactions.filter((t: any) => {
     if (t.isCancelled || t.reversalOfId) return false;
@@ -67,7 +126,7 @@ const FinanceReports: React.FC = () => {
     const month = d.getMonth();
     const year = d.getFullYear();
     const filterYear = Number(yearFilter);
-    if (month >= 8) { return year === filterYear - 1; } else { return year === filterYear; }
+    if (month >= FISCAL_YEAR_START_MONTH) { return year === filterYear - 1; } else { return year === filterYear; }
   });
 
   const incomeTx = filtered.filter((t: any) => t.transactionType === 'INCOME' && t.affectsIncomeLedger);
@@ -103,6 +162,52 @@ const FinanceReports: React.FC = () => {
 
   const monthRange = getMonthRange(dateFrom, dateTo);
 
+  const handleCsv = () => {
+    if (tab === 'headwise-income') {
+      const rows = headwise(incomeTx).map(([cat, amt]: [string, number]) => [cat, fmt(amt), incomeTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length]);
+      downloadCSV(`Headwise_Income_${dateFrom}_${dateTo}.csv`, ['Category', 'Amount', 'Count'], rows);
+    } else if (tab === 'headwise-expense') {
+      const rows = headwise(expenseTx).map(([cat, amt]: [string, number]) => [cat, fmt(amt), expenseTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length]);
+      downloadCSV(`Headwise_Expense_${dateFrom}_${dateTo}.csv`, ['Category', 'Amount', 'Count'], rows);
+    } else if (tab === 'monthly-income') {
+      const sorted = [...incomeTx].sort((a: any, b: any) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
+      const rows = sorted.map((t: any) => [fmtDate(t.transactionDate), t.student?.class || t.className || '', t.student?.name || '', t.category || 'Uncategorized', fmt(Number(t.amount))]);
+      downloadCSV(`Monthly_Income_${dateFrom}_${dateTo}.csv`, ['Date', 'Class', 'Student', 'Category', 'Amount'], rows);
+    } else if (tab === 'monthly-expense') {
+      const sorted = [...expenseTx].sort((a: any, b: any) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
+      const rows = sorted.map((t: any) => [fmtDate(t.transactionDate), t.category || 'Uncategorized', t.description || '', fmt(Number(t.amount))]);
+      downloadCSV(`Monthly_Expense_${dateFrom}_${dateTo}.csv`, ['Date', 'Category', 'Description', 'Amount'], rows);
+    } else if (tab === 'audit' || tab === 'yearly-agm') {
+      const incRows = headwise(yearIncome).map(([cat, amt]: [string, number]) => ['Income', cat, fmt(amt)]);
+      const expRows = headwise(yearExpense).map(([cat, amt]: [string, number]) => ['Expense', cat, fmt(amt)]);
+      downloadCSV(`Annual_Report_${yearFilter}.csv`, ['Type', 'Category', 'Amount'], [...incRows, ...expRows]);
+    }
+    toast('CSV downloaded ✓', 'success');
+  };
+
+  const handleExcel = () => {
+    if (tab === 'headwise-income') {
+      const rows = headwise(incomeTx).map(([cat, amt]: [string, number]) => [cat, Number(amt), incomeTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length]);
+      downloadExcel(`Headwise_Income_${dateFrom}_${dateTo}.xlsx`, ['Category', 'Amount', 'Count'], rows);
+    } else if (tab === 'headwise-expense') {
+      const rows = headwise(expenseTx).map(([cat, amt]: [string, number]) => [cat, Number(amt), expenseTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length]);
+      downloadExcel(`Headwise_Expense_${dateFrom}_${dateTo}.xlsx`, ['Category', 'Amount', 'Count'], rows);
+    } else if (tab === 'monthly-income') {
+      const sorted = [...incomeTx].sort((a: any, b: any) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
+      const rows = sorted.map((t: any) => [fmtDate(t.transactionDate), t.student?.class || t.className || '', t.student?.name || '', t.category || 'Uncategorized', Number(t.amount)]);
+      downloadExcel(`Monthly_Income_${dateFrom}_${dateTo}.xlsx`, ['Date', 'Class', 'Student', 'Category', 'Amount'], rows);
+    } else if (tab === 'monthly-expense') {
+      const sorted = [...expenseTx].sort((a: any, b: any) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
+      const rows = sorted.map((t: any) => [fmtDate(t.transactionDate), t.category || 'Uncategorized', t.description || '', Number(t.amount)]);
+      downloadExcel(`Monthly_Expense_${dateFrom}_${dateTo}.xlsx`, ['Date', 'Category', 'Description', 'Amount'], rows);
+    } else if (tab === 'audit' || tab === 'yearly-agm') {
+      const incRows = headwise(yearIncome).map(([cat, amt]: [string, number]) => ['Income', cat, Number(amt)]);
+      const expRows = headwise(yearExpense).map(([cat, amt]: [string, number]) => ['Expense', cat, Number(amt)]);
+      downloadExcel(`Annual_Report_${yearFilter}.xlsx`, ['Type', 'Category', 'Amount'], [...incRows, ...expRows]);
+    }
+    toast('Excel downloaded ✓', 'success');
+  };
+
   const handlePdf = () => {
     try {
       if (tab === 'headwise-income') pdfHeadwiseIncome(incomeTx, dateFrom, dateTo);
@@ -110,7 +215,7 @@ const FinanceReports: React.FC = () => {
       else if (tab === 'monthly-income') pdfMonthly('income', incomeTx, students, dateFrom, dateTo);
       else if (tab === 'monthly-expense') pdfMonthly('expense', expenseTx, students, dateFrom, dateTo);
       else if (tab === 'audit') pdfAudit(yearIncome, yearExpense, yearFilter);
-      else if (tab === 'yearly-agm') pdfYearlyAGM(yearIncome, yearExpense, yearFiltered, allTransfers, yearFilter, balances);
+      else if (tab === 'yearly-agm') pdfYearlyAGM(yearIncome, yearExpense, yearFiltered, allTransfers, yearFilter, balances, openingBalances);
       toast('PDF downloaded ✓', 'success');
     } catch (e) { console.error(e); toast('PDF generation failed', 'error'); }
   };
@@ -154,8 +259,19 @@ const FinanceReports: React.FC = () => {
           </div>
         )}
         <div className="flex gap-2 ml-auto">
+          {tab === 'yearly-agm' && (
+            <button onClick={openOpeningBalModal} className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-300 text-amber-800 rounded-xl text-xs font-bold hover:bg-amber-100">
+              <Calendar size={14} /> Opening Balances
+            </button>
+          )}
           {(tab === 'headwise-income' || tab === 'headwise-expense' || tab === 'monthly-income' || tab === 'monthly-expense' || tab === 'audit' || tab === 'yearly-agm') && (
             <>
+              <button onClick={handleCsv} className="flex items-center gap-1.5 px-3 py-2 border border-school-border rounded-xl text-xs font-bold hover:border-school-accent">
+                <Download size={14} /> CSV
+              </button>
+              <button onClick={handleExcel} className="flex items-center gap-1.5 px-3 py-2 border border-green-400 text-green-700 rounded-xl text-xs font-bold hover:bg-green-50">
+                <Download size={14} /> Excel
+              </button>
               <button onClick={handlePdf} className="flex items-center gap-1.5 px-3 py-2 bg-school-primary text-white rounded-xl text-xs font-bold hover:opacity-90">
                 <Download size={14} /> PDF
               </button>
@@ -273,15 +389,31 @@ const FinanceReports: React.FC = () => {
           {(() => { const ti = yearIncome.reduce((s, t) => s + Number(t.amount), 0); const te = yearExpense.reduce((s, t) => s + Number(t.amount), 0); const ns = ti - te;
             const totalAssets = (balances.AL_RAWA_BANK || 0) + (balances.GLOBAL_FORUM_BANK || 0) + (balances.CASH_IN_HAND || 0);
             const fyLabel = `${Number(yearFilter)-1}-${yearFilter}`;
-            const openingAL = (balances.AL_RAWA_BANK || 0) - ti + te;
-            const openingGF = balances.GLOBAL_FORUM_BANK || 0;
-            const openingCash = balances.CASH_IN_HAND || 0;
+            // Use stored opening balances (user-settable, default 0)
+            const openingAL = Number(openingBalances.AL_RAWA_BANK) || 0;
+            const openingGF = Number(openingBalances.GLOBAL_FORUM_BANK) || 0;
+            const openingCash = Number(openingBalances.CASH_IN_HAND) || 0;
             const openTotal = openingAL + openingGF + openingCash;
+            // Validate: closing ≈ opening + netChange
+            function accountNetChange(account: string) {
+              return yearFiltered.reduce((sum: number, t: any) => {
+                if (t.transactionType === 'INCOME' && t.destinationAccount === account) return sum + Number(t.amount);
+                if (t.transactionType === 'EXPENSE' && t.sourceAccount === account) return sum - Number(t.amount);
+                if (t.transactionType === 'INTERNAL_TRANSFER') {
+                  if (t.destinationAccount === account) return sum + Number(t.amount);
+                  if (t.sourceAccount === account) return sum - Number(t.amount);
+                }
+                return sum;
+              }, 0);
+            }
+            const netAL = accountNetChange('AL_RAWA_BANK');
+            const netGF = accountNetChange('GLOBAL_FORUM_BANK');
+            const netCash = accountNetChange('CASH_IN_HAND');
             const totalTransfers = allTransfers.reduce((s: number, t: any) => s + Number(t.amount), 0);
             return (
             <div className="space-y-6">
               <h4 className="font-serif text-lg text-school-primary">Annual General Meeting Report — FY {fyLabel}</h4>
-              <p className="text-xs text-school-muted">Financial Year {fyLabel} (Sep {Number(yearFilter)-1} – Aug {yearFilter})</p>
+              <p className="text-xs text-school-muted">Financial Year {fyLabel} ({FISCAL_START_LABEL} {Number(yearFilter)-1} – {FISCAL_END_LABEL} {yearFilter})</p>
 
               {/* 1. Income & Expenditure */}
               <div>
@@ -365,6 +497,53 @@ const FinanceReports: React.FC = () => {
               </div>
             </div>
           ); })()}
+        </div>
+      )}
+
+      {/* Opening Balance Settings Modal */}
+      {showOpeningBalModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={() => setShowOpeningBalModal(false)}>
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-lg text-school-primary mb-1">Opening Balances — FY {Number(yearFilter)-1}-{yearFilter}</h3>
+            <p className="text-xs text-school-muted mb-4">Set the opening balances for each account at the start of the fiscal year ({FISCAL_START_LABEL} 1). Default is 0 for new schools.</p>
+            <div className="space-y-3">
+              {['AL_RAWA_BANK', 'GLOBAL_FORUM_BANK', 'CASH_IN_HAND'].map(acct => (
+                <div key={acct}>
+                  <label className="text-xs font-bold uppercase text-school-muted block mb-1">{acct.replace(/_/g, ' ')}</label>
+                  <input type="number" value={editOpenBal[acct] || '0'} onChange={e => setEditOpenBal({ ...editOpenBal, [acct]: e.target.value })}
+                    className="w-full border border-school-border rounded-xl px-3 py-2 text-sm" />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between mt-4">
+              <button onClick={() => setShowHistory(!showHistory)} className="text-xs text-school-accent font-bold hover:underline">
+                {showHistory ? 'Hide History' : 'View History'}
+              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setShowOpeningBalModal(false)} className="px-4 py-2 border border-school-border rounded-xl text-sm">Cancel</button>
+                <button onClick={handleSaveOpeningBal} disabled={savingOpenBal} className="px-4 py-2 bg-school-primary text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50">
+                  {savingOpenBal ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+            {showHistory && openingBalancesHistory.length > 0 && (
+              <div className="mt-4 max-h-48 overflow-y-auto border-t border-school-border pt-3">
+                <h4 className="text-xs font-bold uppercase text-school-muted mb-2">Change History</h4>
+                {openingBalancesHistory.map((h: any) => (
+                  <div key={h.id} className="flex justify-between items-center py-1.5 border-b border-school-border/50 text-xs">
+                    <div>
+                      <span className="font-bold">{h.account.replace(/_/g, ' ')}</span>
+                      <span className="text-school-muted ml-2">{Number(h.oldAmount).toLocaleString()} → {Number(h.newAmount).toLocaleString()}</span>
+                    </div>
+                    <button onClick={() => handleRevert(h.id)} className="text-amber-700 font-bold hover:underline">Undo</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {showHistory && openingBalancesHistory.length === 0 && (
+              <p className="mt-4 text-xs text-school-muted">No change history recorded yet.</p>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -17,7 +17,7 @@ export const createTransactionSchema = z.object({
 
 export const saveStudentResultSchema = z.object({
   term: z.string().min(1, "Term is required"),
-  marks: z.record(z.number()),
+  marks: z.record(z.string(), z.number()),
   attendance: z.object({ days: z.number(), present: z.number() }).optional().nullable(),
   comment: z.string().max(2000).optional().nullable(),
 });
@@ -63,6 +63,6 @@ export const toggleFeeAssignmentSchema = z.object({
 export function validate<T>(schema: z.ZodSchema<T>, data: unknown): { success: true; data: T } | { success: false; error: string } {
   const result = schema.safeParse(data);
   if (result.success) return { success: true, data: result.data };
-  const error = result.error.errors.map(e => e.message).join(", ");
+  const error = result.error.issues.map(e => e.message).join(", ");
   return { success: false, error };
 }

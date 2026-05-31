@@ -2,13 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { useSchoolStore, useAuthStore } from '../store';
 import { toast } from '../components/Toast';
 import ClassManagerModal from '../components/ClassManagerModal';
-import { Settings, RefreshCw } from 'lucide-react';
+import { Settings, RefreshCw, Plus, Pencil, ChevronUp, ChevronDown, Check, BookOpen, ArrowLeft } from 'lucide-react';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 
 const API_URL = '/api';
 
+function BookSkeleton() {
+  return (
+    <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+      <div className="overflow-x-auto p-4 space-y-3">
+        {[1,2,3].map(i => (
+          <div key={i} className="h-10 bg-school-paper rounded-lg animate-pulse" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const AccessoriesSection: React.FC = () => {
-  const { classes, books, fetchClasses, fetchBooks } = useSchoolStore();
+  const { classes, books, loading, fetchClasses, fetchBooks } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'admin';
 
@@ -93,8 +105,8 @@ const AccessoriesSection: React.FC = () => {
       {/* Form */}
       <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
         <button onClick={() => setFormExpanded(!formExpanded)} className="w-full flex items-center justify-between p-4 hover:bg-school-paper/50 transition-colors">
-          <span className="font-bold text-sm text-school-primary">{editId ? '✏️ Edit Accessory' : '➕ Add Accessory'}</span>
-          <span className="text-school-muted text-xs">{formExpanded ? '▲' : '▼'}</span>
+          <span className="font-bold text-sm text-school-primary flex items-center gap-1.5">{editId ? <><Pencil size={14} /> Edit Accessory</> : <><Plus size={14} /> Add Accessory</>}</span>
+          <span className="text-school-muted text-xs">{formExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
         </button>
         {formExpanded && (
           <div className="p-4 border-t border-school-border space-y-3">
@@ -128,8 +140,8 @@ const AccessoriesSection: React.FC = () => {
               </div>
             </div>
             <div className="flex gap-2 pt-2">
-              <button onClick={handleSubmit} className="flex-1 py-2 bg-amber-600 text-white rounded-xl text-sm font-bold hover:opacity-90">
-                {editId ? '✓ Update' : '+ Add Book'}
+              <button onClick={handleSubmit} className="flex-1 py-2 bg-amber-600 text-white rounded-xl text-sm font-bold hover:opacity-90 flex items-center justify-center gap-1.5">
+                {editId ? <><Check size={14} /> Update</> : '+ Add Book'}
               </button>
               {editId && <button onClick={resetForm} className="px-4 py-2 border border-school-border rounded-xl text-sm">Cancel</button>}
             </div>
@@ -166,7 +178,7 @@ const AccessoriesSection: React.FC = () => {
                 onClick={() => { setActiveClass(cls.name); setForm({ ...form, classId: cls.id }); }}
                 className="bg-white p-4 rounded-2xl border border-school-border text-center hover:border-amber-500 hover:shadow-md transition-all"
               >
-                <div className="text-2xl mb-1">📚</div>
+                <BookOpen size={24} className="text-amber-600 mx-auto mb-1" />
                 <div className="font-bold text-sm text-school-primary">{cls.name}</div>
                 <div className="text-[11px] text-school-muted mt-1">{cls.bookCount} book{cls.bookCount !== 1 ? 's' : ''}</div>
               </button>
@@ -176,14 +188,16 @@ const AccessoriesSection: React.FC = () => {
       ) : (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <button onClick={() => { setActiveClass(null); resetForm(); }} className="text-sm text-school-accent hover:underline">← All Classes</button>
+            <button onClick={() => { setActiveClass(null); resetForm(); }} className="text-sm text-school-accent hover:underline flex items-center gap-1"><ArrowLeft size={14} /> All Classes</button>
             <span className="font-serif text-sm text-school-primary">{activeClass}</span>
             <span className="text-xs text-school-muted">({classBooks.length} books, Total sell: ৳{totalSell.toLocaleString()})</span>
           </div>
 
-          {classBooks.length === 0 ? (
+          {loading.books ? (
+            <BookSkeleton />
+          ) : classBooks.length === 0 ? (
             <div className="text-center py-12 text-school-muted">
-              <div className="text-4xl mb-2">📚</div>
+              <BookOpen size={48} className="text-school-muted mx-auto mb-2" />
               <p className="text-sm">No accessories in {activeClass} yet.</p>
             </div>
           ) : (

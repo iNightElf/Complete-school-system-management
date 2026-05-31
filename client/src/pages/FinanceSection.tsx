@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSchoolStore, useAuthStore, useUserManagementStore, useUIStore } from '../store';
 import axios from 'axios';
-import { ArrowUpCircle, ArrowDownCircle, ArrowRightLeft, Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, ArrowRightLeft, Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw } from 'lucide-react';
 import { toast } from '../components/Toast';
 import FinanceReports from './FinanceReports';
 import DefaulterTab from './DefaulterTab';
@@ -36,13 +36,15 @@ function Ledger({ transactions, students, fmt, fetchTransactions, fetchFinance, 
   const [cancelling, setCancelling] = useState(false);
 
   const filtered = useMemo(() => {
-    return transactions.filter((tx: any) => {
-      const d = new Date(tx.transactionDate).toISOString().split('T')[0];
-      if (dateFrom && d < dateFrom) return false;
-      if (dateTo && d > dateTo) return false;
-      if (typeFilter !== 'all' && tx.transactionType !== typeFilter) return false;
-      return true;
-    });
+    return transactions
+      .filter((tx: any) => {
+        const d = new Date(tx.transactionDate).toISOString().split('T')[0];
+        if (dateFrom && d < dateFrom) return false;
+        if (dateTo && d > dateTo) return false;
+        if (typeFilter !== 'all' && tx.transactionType !== typeFilter) return false;
+        return true;
+      })
+      .sort((a: any, b: any) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime() || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [transactions, dateFrom, dateTo, typeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -353,7 +355,7 @@ const FinanceSection: React.FC = () => {
       {/* Deposit Alert */}
       {depositRemaining > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-3 flex items-center gap-3">
-          <span className="text-lg">⚠️</span>
+          <AlertTriangle size={16} className="text-amber-500 flex-shrink-0" />
           <p className="text-sm text-red-700 font-medium">
             <strong>৳ {fmt(depositRemaining)}</strong> still in Cash in Hand waiting to be deposited to AL RAWA Bank.
           </p>
@@ -387,10 +389,14 @@ const FinanceSection: React.FC = () => {
       {mainTab === 'transactions' && (<div className="space-y-4">
           {/* Tab Bar */}
           <div className="flex gap-2">
-            {([['income', '💰 Income', 'text-emerald-700 bg-emerald-50 border-emerald-200'], ['expense', '💸 Expense', 'text-rose-700 bg-rose-50 border-rose-200'], ['transfer', '🔄 Transfer', 'text-blue-700 bg-blue-50 border-blue-200']] as const).map(([key, label, active]) => (
-              <button key={key} onClick={() => { setActiveTab(key); resetForm(); }}
-                className={`px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${activeTab === key ? active + ' shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
-                {label}
+            {[
+              { k: 'income', lbl: <><DollarSign size={14} /> Income</>, cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+              { k: 'expense', lbl: <><TrendingDown size={14} /> Expense</>, cls: 'text-rose-700 bg-rose-50 border-rose-200' },
+              { k: 'transfer', lbl: <><RefreshCw size={14} /> Transfer</>, cls: 'text-blue-700 bg-blue-50 border-blue-200' },
+            ].map(({ k, lbl, cls }) => (
+              <button key={k} onClick={() => { setActiveTab(k); resetForm(); }}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold border transition-all flex items-center gap-1.5 ${activeTab === k ? cls + ' shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
+                {lbl}
               </button>
             ))}
           </div>
@@ -516,8 +522,8 @@ const FinanceSection: React.FC = () => {
                 className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent" />
             </div>
 
-            <button disabled={loading} className="w-full py-3 bg-school-primary text-white rounded-xl font-bold text-sm hover:opacity-90 transition-all disabled:opacity-50">
-              {loading ? 'Processing...' : activeTab === 'income' ? '💰 Record Income' : activeTab === 'expense' ? '💸 Record Expense' : '🔄 Record Transfer'}
+            <button disabled={loading} className="w-full py-3 bg-school-primary text-white rounded-xl font-bold text-sm hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5">
+              {loading ? 'Processing...' : activeTab === 'income' ? <><DollarSign size={16} /> Record Income</> : activeTab === 'expense' ? <><TrendingDown size={16} /> Record Expense</> : <><RefreshCw size={16} /> Record Transfer</>}
             </button>
           </form>
 

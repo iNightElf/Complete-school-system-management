@@ -1,35 +1,36 @@
 import type { Request, Response } from "express";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
+import { sanitizeError } from "../lib/errors.js";
 
 export const getAllClasses = async (req: Request, res: Response) => {
   try {
-    const classes = await prisma.schoolClass.findMany({
-      orderBy: { order: "asc" },
-      include: {
-        _count: { select: { books: true, subjects: true } },
-      },
-    });
+    const [classes, studentCounts] = await Promise.all([
+      prisma.schoolClass.findMany({
+        orderBy: { order: "asc" },
+        include: {
+          _count: { select: { books: true, subjects: true } },
+        },
+      }),
+      prisma.student.groupBy({ by: ["class"], _count: true }),
+    ]);
 
-    const classesWithCounts = await Promise.all(
-      classes.map(async (cls) => {
-        const studentCount = await prisma.student.count({
-          where: { class: cls.name },
-        });
-        return {
-          id: cls.id,
-          name: cls.name,
-          order: cls.order,
-          studentCount,
-          bookCount: cls._count.books,
-          subjectCount: cls._count.subjects,
-        };
-      })
+    const countMap = Object.fromEntries(
+      studentCounts.map((s) => [s.class, s._count])
     );
 
-    res.json(classesWithCounts);
+    const result = classes.map((cls) => ({
+      id: cls.id,
+      name: cls.name,
+      order: cls.order,
+      studentCount: countMap[cls.name] ?? 0,
+      bookCount: cls._count.books,
+      subjectCount: cls._count.subjects,
+    }));
+
+    res.json(result);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -53,7 +54,7 @@ export const createClass = async (req: Request, res: Response) => {
     if (error.code === "P2002") {
       return res.status(400).json({ error: "Class already exists" });
     }
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -67,7 +68,7 @@ export const deleteClass = async (req: Request, res: Response) => {
 
     res.json({ message: "Class deleted" });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -89,6 +90,6 @@ export const reorderClasses = async (req: Request, res: Response) => {
 
     res.json({ message: "Classes reordered" });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };

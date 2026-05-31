@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
+import { sanitizeError } from "../lib/errors.js";
 import { validate, saveStudentResultSchema } from "../lib/validate.js";
 
 export const getSubjectsByClass = async (req: Request, res: Response) => {
@@ -16,7 +17,7 @@ export const getSubjectsByClass = async (req: Request, res: Response) => {
 
     res.json(subjects);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -40,7 +41,7 @@ export const createSubject = async (req: Request, res: Response) => {
 
     res.status(201).json(subject);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -59,7 +60,7 @@ export const updateSubject = async (req: Request, res: Response) => {
 
     res.json(subject);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -69,7 +70,7 @@ export const deleteSubject = async (req: Request, res: Response) => {
     await prisma.subject.delete({ where: { id } });
     res.json({ message: "Subject deleted" });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -83,7 +84,7 @@ export const getStudentResults = async (req: Request, res: Response) => {
 
     res.json(results);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -99,36 +100,35 @@ export const saveStudentResult = async (req: Request, res: Response) => {
     const validation = validate(saveStudentResultSchema, req.body);
     if (!validation.success) return res.status(400).json({ error: validation.error });
 
-    const result = await prisma.$transaction(async (tx) => {
-      const existing = await tx.result.findFirst({
-        where: { studentId: id, term: String(term) },
-      });
+    const existing = await prisma.result.findUnique({
+      where: { studentId_term: { studentId: id, term: String(term) } },
+    });
+    const mergedMarks = existing
+      ? { ...(existing.marks as Record<string, number>), ...marks }
+      : marks;
+    const mergedAttendance = attendance && existing?.attendance
+      ? { ...((existing.attendance as Record<string, number>) || {}), ...attendance }
+      : (attendance || existing?.attendance);
 
-      if (existing) {
-        const mergedMarks = { ...(existing.marks as Record<string, number>), ...marks };
-        const mergedAttendance = attendance
-          ? { ...((existing.attendance as Record<string, number>) || {}), ...attendance }
-          : existing.attendance;
-        return tx.result.update({
-          where: { id: existing.id },
-          data: { marks: mergedMarks, attendance: mergedAttendance, ...(comment !== undefined && { comment }) },
-        });
-      } else {
-        return tx.result.create({
-          data: {
-            studentId: id,
-            term: String(term),
-            marks,
-            attendance: attendance || null,
-            comment: comment || null,
-          },
-        });
-      }
+    const result = await prisma.result.upsert({
+      where: { studentId_term: { studentId: id, term: String(term) } },
+      create: {
+        studentId: id,
+        term: String(term),
+        marks: mergedMarks,
+        attendance: mergedAttendance || null,
+        comment: comment || null,
+      },
+      update: {
+        marks: mergedMarks,
+        attendance: mergedAttendance,
+        ...(comment !== undefined ? { comment } : {}),
+      },
     });
 
     res.json(result);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -145,7 +145,7 @@ export const getClassResults = async (req: Request, res: Response) => {
 
     res.json(results);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -170,6 +170,6 @@ export const deleteClassResults = async (req: Request, res: Response) => {
 
     res.json({ message: "All results and subjects for this class deleted" });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };

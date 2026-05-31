@@ -102,11 +102,23 @@ Browser `confirm()` dialogs are blocked in many contexts (iframes, some mobile b
 
 ## 🔧 Priority Improvements
 
-1. **Immediate:** Add Zod validation to all controllers
-2. **Immediate:** Replace `saveStudentResult` find+create with `prisma.result.upsert()`
-3. **High:** Move balance calculation to DB aggregation: `prisma.transaction.aggregate({ _sum: { amount: true }, where: { destinationAccount: 'AL_RAWA_BANK', isCancelled: false } })`
+1. **Immediate:** Add Zod validation to all controllers ✅
+2. **Immediate:** Replace `saveStudentResult` find+create with `prisma.result.upsert()` ✅
+3. **High:** Move balance calculation to DB aggregation ✅
 4. **High:** Add `@@unique([referenceId])` or at minimum a pre-import duplicate check
 5. **Medium:** Extract PDF logic from components into lib files
 6. **Medium:** Add `feeMonth` uniqueness check — currently a student can have multiple payments for the same month recorded
 7. **Medium:** Fix the `comment` parameter in the store type signature
 8. **Low:** Replace `confirm()` dialogs with inline confirmation UI
+
+---
+
+## ✅ New Fixes (May 31, 2026)
+
+- **Opening Balances (Approach 3):** Added `OpeningBalance` + `OpeningBalanceHistory` models. User-settable opening balances per fiscal year per account, default 0. AGM report uses stored balances with per-account net change tracking. Full change history with one-click revert (backtrack).
+- **Server-side Pagination:** All `getAll*` endpoints (`Students`, `Teachers`, `Staff`, `Books`) accept `skip`/`take` params and return `{ data, total }`. Client store handles paginated responses.
+- **Configurable Fiscal Year:** Hardcoded Sep–Aug replaced with `FISCAL_YEAR_START_MONTH` in `client/src/lib/config.ts`. All labels and filter logic use the config value.
+- **CORS from Env Var:** Origins read from `CORS_ORIGINS` env var with fallback to localhost.
+- **CSV Export:** Download buttons added to all report tabs with UTF-8 BOM for Excel.
+- **Photo Caching:** `Cache-Control: public, max-age=86400` + ETag with `304 Not Modified` on all photo endpoints.
+- **Prisma Upsert:** `saveStudentResult` uses `result.upsert()` instead of `findFirst`+`update/create`.

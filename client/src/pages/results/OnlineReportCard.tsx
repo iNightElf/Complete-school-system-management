@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSchoolStore } from '../../store';
-import { Download } from 'lucide-react';
+import { Download, User, CalendarDays, MessageSquare } from 'lucide-react';
 import { gradeFromMarks, gradeChip, gpaToGrade, calcTermRanks, calcYearRanks, calcYearSummary, calcAttendPct } from '../../lib/grading';
 import { downloadReportCardPDF } from '../../lib/reportPdf';
 import { SCHOOL_LOGO } from '../../lib/logo';
@@ -11,7 +11,7 @@ const TERM_NAMES: Record<string, string> = { '1': '1st Term', '2': '2nd Term', '
 export default function OnlineReportCard({ student, cls, subjects, allResults, term, onBack }: { student: any; cls: any; subjects: any[]; allResults: any[]; term: string; onBack: () => void }) {
   const isFinal = term === 'final';
   const label = isFinal ? 'Annual Result' : TERM_NAMES[term];
-  const clsStudents = useSchoolStore.getState().students.filter((s: any) => s.class === cls.name);
+  const clsStudents = useSchoolStore((s) => s.students).filter((s: any) => s.class === cls.name);
   const ranks = isFinal ? calcYearRanks(clsStudents, subjects, allResults) : calcTermRanks(clsStudents, term, subjects, allResults);
   const rank = ranks[student.id] || '—';
 
@@ -69,7 +69,7 @@ export default function OnlineReportCard({ student, cls, subjects, allResults, t
           <p className="text-sm font-bold text-red-600 mt-2">{isFinal ? 'ANNUAL REPORT CARD' : `TERM REPORT CARD — ${label.toUpperCase()}`}</p>
         </div>
         <div className="flex items-center gap-4">
-          {student.hasPhoto ? <img src={`${API_URL}/students/${student.id}/photo`} alt="" className="w-16 h-16 rounded-full object-cover border border-school-border" /> : <div className="w-16 h-16 rounded-full bg-school-primary text-white flex items-center justify-center text-2xl">👤</div>}
+          {student.hasPhoto ? <img src={`${API_URL}/students/${student.id}/photo`} alt="" className="w-16 h-16 rounded-full object-cover border border-school-border" /> : <div className="w-16 h-16 rounded-full bg-school-primary text-white flex items-center justify-center"><User size={24} className="text-white" /></div>}
           <div className="space-y-1 text-sm">
             <div><span className="text-school-muted">Student Name:</span> <strong>{student.name}</strong></div>
             <div><span className="text-school-muted">Class:</span> <strong>{cls.name}{student.roll ? ` · Roll: ${student.roll}` : ''}</strong></div>
@@ -118,14 +118,14 @@ export default function OnlineReportCard({ student, cls, subjects, allResults, t
           </div>
         </div>
         <div>
-          <h4 className="font-bold text-sm mb-2">📅 Attendance</h4>
+          <h4 className="font-bold text-sm mb-2 flex items-center gap-1.5"><CalendarDays size={16} /> Attendance</h4>
           <table className="w-full text-sm border border-school-border">
             <thead><tr className="bg-gray-100 text-xs uppercase"><th className="px-3 py-2 text-left">Term</th><th className="px-3 py-2 text-center">Days</th><th className="px-3 py-2 text-center">Present</th><th className="px-3 py-2 text-center">%</th></tr></thead>
             <tbody>{attRows.map((a, i) => <tr key={i} className="border-t border-school-border"><td className="px-3 py-2">{a.term}</td><td className="px-3 py-2 text-center">{a.days || '—'}</td><td className="px-3 py-2 text-center">{a.present || '—'}</td><td className="px-3 py-2 text-center font-bold">{a.pct}</td></tr>)}</tbody>
           </table>
         </div>
         <div>
-          <h4 className="font-bold text-sm mb-2">💬 Teacher's Comment</h4>
+          <h4 className="font-bold text-sm mb-2 flex items-center gap-1.5"><MessageSquare size={16} /> Teacher's Comment</h4>
           <div className="border border-school-border rounded-xl p-3 text-sm min-h-[40px]">{comment || <em className="text-school-muted">No comment added.</em>}</div>
         </div>
         <div className="grid grid-cols-3 gap-4 pt-4 border-t border-school-border">

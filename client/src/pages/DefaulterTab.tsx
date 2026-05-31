@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSchoolStore } from '../store';
 import axios from 'axios';
 import { toast } from '../components/Toast';
-import { AlertTriangle, Download, Printer } from 'lucide-react';
+import { AlertTriangle, Download, Printer, Check, X } from 'lucide-react';
 import { getMonthNameShort } from '../lib/financeReportPdf';
 import { defaulterPDF } from '../lib/defaulterPdf';
 
@@ -230,7 +230,15 @@ const DefaulterTab: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-school-border/50">
               {loading ? (
-                <tr><td colSpan={8 + monthRange.length} className="px-4 py-8 text-center text-sm text-school-muted">Loading...</td></tr>
+                Array.from({ length: 4 }).map((_, i) => (
+                  <tr key={i}>
+                    {[1,2,3,4,5,6].map(j => (
+                      <td key={j} className="px-4 py-3"><div className="h-4 bg-school-paper rounded animate-pulse w-3/4" /></td>
+                    ))}
+                    {monthRange.map(m => <td key={m} className="px-2 py-3"><div className="h-4 w-4 bg-school-paper rounded animate-pulse mx-auto" /></td>)}
+                    {[1,2,3].map(j => <td key={j} className="px-3 py-3"><div className="h-4 bg-school-paper rounded animate-pulse w-12 ml-auto" /></td>)}
+                  </tr>
+                ))
               ) : displayData.length > 0 ? displayData.map((row: any) => {
                 const recurring = row.fees.filter((f: any) => f.type === 'recurring' || f.type === 'special');
                 const onetime = row.fees.filter((f: any) => f.type === 'onetime' || f.type === 'global');
@@ -264,7 +272,7 @@ const DefaulterTab: React.FC = () => {
                         if (md) {
                           return <td key={m} className="px-1 py-2 text-center">
                             <span className={`inline-block w-4 h-4 rounded text-[8px] leading-4 font-bold ${md.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                              {md.paid ? '✓' : '✗'}
+                              {md.paid ? <Check size={10} /> : <X size={10} />}
                             </span>
                           </td>;
                         }

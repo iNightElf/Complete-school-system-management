@@ -1,13 +1,18 @@
 import type { Request, Response } from "express";
+import { createHash } from "crypto";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
+import { sanitizeError } from "../lib/errors.js";
 import { validate, createTeacherSchema, createStaffSchema, createBookSchema } from "../lib/validate.js";
 
 function parsePhoto(body: any): Buffer | null {
   if (!body.photo) return null;
   if (typeof body.photo === "string" && body.photo.startsWith("data:image")) {
-    const base64 = body.photo.split(",")[1];
-    return Buffer.from(base64, "base64");
+    try {
+      const base64 = body.photo.split(",")[1];
+      if (!base64) return null;
+      return Buffer.from(base64, "base64");
+    } catch { return null; }
   }
   return null;
 }
@@ -16,7 +21,12 @@ function parsePhoto(body: any): Buffer | null {
 
 export const getAllTeachers = async (req: Request, res: Response) => {
   try {
-    const teachers = await prisma.teacher.findMany({ orderBy: { createdAt: "desc" } });
+    const skip = Math.max(0, parseInt(String(req.query.skip || '0')));
+    const take = Math.min(500, Math.max(1, parseInt(String(req.query.take || '200'))));
+    const [teachers, total] = await Promise.all([
+      prisma.teacher.findMany({ orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.teacher.count(),
+    ]);
     const result = teachers.map((t) => ({
       id: t.id,
       designation: t.designation,
@@ -26,9 +36,9 @@ export const getAllTeachers = async (req: Request, res: Response) => {
       hasPhoto: !!t.photo,
       createdAt: t.createdAt,
     }));
-    res.json(result);
+    res.json({ data: result, total, skip, take });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -51,7 +61,7 @@ export const createTeacher = async (req: Request, res: Response) => {
 
     res.status(201).json({ ...teacher, photo: null });
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -74,7 +84,7 @@ export const updateTeacher = async (req: Request, res: Response) => {
     const teacher = await prisma.teacher.update({ where: { id }, data });
     res.json({ ...teacher, photo: undefined, hasPhoto: !!teacher.photo });
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -84,7 +94,7 @@ export const deleteTeacher = async (req: Request, res: Response) => {
     await prisma.teacher.delete({ where: { id } });
     res.json({ message: "Teacher deleted" });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -94,10 +104,15 @@ export const getTeacherPhoto = async (req: Request, res: Response) => {
     const teacher = await prisma.teacher.findUnique({ where: { id }, select: { photo: true } });
     if (!teacher?.photo) return res.status(404).json({ error: "Photo not found" });
 
+    const buf = Buffer.from(teacher.photo);
+    const etag = createHash('md5').update(buf).digest('hex');
+    if (req.headers['if-none-match'] === etag) { return res.status(304).end(); }
     res.set("Content-Type", "image/jpeg");
-    res.send(Buffer.from(teacher.photo));
+    res.set("Cache-Control", "public, max-age=86400");
+    res.set("ETag", etag);
+    res.send(buf);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -105,7 +120,12 @@ export const getTeacherPhoto = async (req: Request, res: Response) => {
 
 export const getAllStaff = async (req: Request, res: Response) => {
   try {
-    const staff = await prisma.staff.findMany({ orderBy: { createdAt: "desc" } });
+    const skip = Math.max(0, parseInt(String(req.query.skip || '0')));
+    const take = Math.min(500, Math.max(1, parseInt(String(req.query.take || '200'))));
+    const [staff, total] = await Promise.all([
+      prisma.staff.findMany({ orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.staff.count(),
+    ]);
     const result = staff.map((s) => ({
       id: s.id,
       role: s.role,
@@ -115,9 +135,9 @@ export const getAllStaff = async (req: Request, res: Response) => {
       hasPhoto: !!s.photo,
       createdAt: s.createdAt,
     }));
-    res.json(result);
+    res.json({ data: result, total, skip, take });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -140,7 +160,7 @@ export const createStaff = async (req: Request, res: Response) => {
 
     res.status(201).json({ ...staff, photo: null });
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -163,7 +183,7 @@ export const updateStaff = async (req: Request, res: Response) => {
     const staff = await prisma.staff.update({ where: { id }, data });
     res.json({ ...staff, photo: undefined, hasPhoto: !!staff.photo });
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -173,7 +193,7 @@ export const deleteStaff = async (req: Request, res: Response) => {
     await prisma.staff.delete({ where: { id } });
     res.json({ message: "Staff deleted" });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -183,10 +203,15 @@ export const getStaffPhoto = async (req: Request, res: Response) => {
     const staff = await prisma.staff.findUnique({ where: { id }, select: { photo: true } });
     if (!staff?.photo) return res.status(404).json({ error: "Photo not found" });
 
+    const buf = Buffer.from(staff.photo);
+    const etag = createHash('md5').update(buf).digest('hex');
+    if (req.headers['if-none-match'] === etag) { return res.status(304).end(); }
     res.set("Content-Type", "image/jpeg");
-    res.send(Buffer.from(staff.photo));
+    res.set("Cache-Control", "public, max-age=86400");
+    res.set("ETag", etag);
+    res.send(buf);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -194,13 +219,20 @@ export const getStaffPhoto = async (req: Request, res: Response) => {
 
 export const getAllBooks = async (req: Request, res: Response) => {
   try {
-    const books = await prisma.book.findMany({
-      include: { class: { select: { id: true, name: true } } },
-      orderBy: { name: "asc" },
-    });
-    res.json(books);
+    const skip = Math.max(0, parseInt(String(req.query.skip || '0')));
+    const take = Math.min(500, Math.max(1, parseInt(String(req.query.take || '200'))));
+    const [books, total] = await Promise.all([
+      prisma.book.findMany({
+        include: { class: { select: { id: true, name: true } } },
+        orderBy: { name: "asc" },
+        skip,
+        take,
+      }),
+      prisma.book.count(),
+    ]);
+    res.json({ data: books, total, skip, take });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };
 
@@ -227,7 +259,7 @@ export const createBook = async (req: Request, res: Response) => {
 
     res.status(201).json(book);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -254,7 +286,7 @@ export const updateBook = async (req: Request, res: Response) => {
 
     res.json(book);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: sanitizeError(error) });
   }
 };
 
@@ -264,6 +296,6 @@ export const deleteBook = async (req: Request, res: Response) => {
     await prisma.book.delete({ where: { id } });
     res.json({ message: "Book deleted" });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: sanitizeError(error) });
   }
 };

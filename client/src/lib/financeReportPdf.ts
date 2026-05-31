@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { FISCAL_START_LABEL, FISCAL_END_LABEL } from './config';
 
 export function getMonthName(m: number) {
   return ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m];
@@ -177,7 +178,7 @@ export function pdfMonthly(type: 'income' | 'expense', data: any[], students: an
 
 export function pdfAudit(yearIncome: any[], yearExpense: any[], yearFilter: string) {
   const doc = new jsPDF({ format: 'a4', unit: 'mm' });
-  let y = addHeader(doc, 'ANNUAL AUDIT REPORT', `Financial Year ${Number(yearFilter)-1}-${yearFilter} (Sep ${Number(yearFilter)-1} – Aug ${yearFilter})`, 10);
+  let y = addHeader(doc, 'ANNUAL AUDIT REPORT', `Financial Year ${Number(yearFilter)-1}-${yearFilter} (${FISCAL_START_LABEL} ${Number(yearFilter)-1} – ${FISCAL_END_LABEL} ${yearFilter})`, 10);
 
   const totalIncome = yearIncome.reduce((s, t) => s + Number(t.amount), 0);
   const totalExpense = yearExpense.reduce((s, t) => s + Number(t.amount), 0);
@@ -243,7 +244,7 @@ export function pdfAudit(yearIncome: any[], yearExpense: any[], yearFilter: stri
   doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(26, 26, 46);
   doc.text('AUDIT CERTIFICATE', 12, y); y += 8;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
-  const certText = `This is to certify that the accounts of AL RAWA English School for the financial year ${Number(yearFilter)-1}-${yearFilter} (Sep ${Number(yearFilter)-1} – Aug ${yearFilter}) have been examined. Total income stood at ${fmt(totalIncome)} /- and total expenditure at ${fmt(totalExpense)} /-, resulting in a net surplus of ${fmt(netSurplus)} /-. All transactions have been verified against supporting documents.`;
+  const certText = `This is to certify that the accounts of AL RAWA English School for the financial year ${Number(yearFilter)-1}-${yearFilter} (${FISCAL_START_LABEL} ${Number(yearFilter)-1} – ${FISCAL_END_LABEL} ${yearFilter}) have been examined. Total income stood at ${fmt(totalIncome)} /- and total expenditure at ${fmt(totalExpense)} /-, resulting in a net surplus of ${fmt(netSurplus)} /-. All transactions have been verified against supporting documents.`;
   const lines = doc.splitTextToSize(certText, 186);
   doc.text(lines, 12, y); y += lines.length * 5 + 10;
 
@@ -258,9 +259,9 @@ export function pdfAudit(yearIncome: any[], yearExpense: any[], yearFilter: stri
   doc.save(`Audit_Report_${yearFilter}.pdf`);
 }
 
-export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered: any[], allTransfers: any[], yearFilter: string, balances: { AL_RAWA_BANK: number; GLOBAL_FORUM_BANK: number; CASH_IN_HAND: number }) {
+export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered: any[], allTransfers: any[], yearFilter: string, balances: { AL_RAWA_BANK: number; GLOBAL_FORUM_BANK: number; CASH_IN_HAND: number }, openingBalances?: { AL_RAWA_BANK?: number; GLOBAL_FORUM_BANK?: number; CASH_IN_HAND?: number }) {
   const doc = new jsPDF({ format: 'a4', unit: 'mm' });
-  let y = addHeader(doc, 'ANNUAL GENERAL MEETING REPORT', `Session: ${Number(yearFilter)-1}-${yearFilter} (Sep ${Number(yearFilter)-1} – Aug ${yearFilter})`, 10);
+  let y = addHeader(doc, 'ANNUAL GENERAL MEETING REPORT', `Session: ${Number(yearFilter)-1}-${yearFilter} (${FISCAL_START_LABEL} ${Number(yearFilter)-1} – ${FISCAL_END_LABEL} ${yearFilter})`, 10);
 
   const totalIncome = yearIncome.reduce((s, t) => s + Number(t.amount), 0);
   const totalExpense = yearExpense.reduce((s, t) => s + Number(t.amount), 0);
@@ -272,7 +273,7 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   doc.text('1. INCOME AND EXPENDITURE STATEMENT', 12, y); y += 8;
 
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(130, 124, 114);
-  doc.text(`For the financial year ${fyLabel} (Sep ${Number(yearFilter)-1} – Aug ${yearFilter})`, 12, y); y += 6;
+  doc.text(`For the financial year ${fyLabel} (${FISCAL_START_LABEL} ${Number(yearFilter)-1} – ${FISCAL_END_LABEL} ${yearFilter})`, 12, y); y += 6;
 
   // Income heads
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(26, 26, 46);
@@ -360,10 +361,10 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(130, 124, 114);
   doc.text(`For the financial year ${fyLabel}`, 12, y); y += 6;
 
-  // Compute opening balances (closing - income + expense)
-  const openingAL = balances.AL_RAWA_BANK - totalIncome + totalExpense;
-  const openingGF = balances.GLOBAL_FORUM_BANK;
-  const openingCash = balances.CASH_IN_HAND;
+  // Use stored opening balances (Approach 3: user-settable, default 0)
+  const openingAL = openingBalances?.AL_RAWA_BANK ?? 0;
+  const openingGF = openingBalances?.GLOBAL_FORUM_BANK ?? 0;
+  const openingCash = openingBalances?.CASH_IN_HAND ?? 0;
 
   doc.setFillColor(26, 26, 46); doc.rect(12, y, 186, 6, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);

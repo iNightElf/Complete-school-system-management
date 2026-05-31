@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { X } from 'lucide-react';
 
 interface ToastState {
   message: string;
@@ -15,21 +16,24 @@ export const toast = (msg: string, type: 'success' | 'error' = '') => {
 const Toast: React.FC = () => {
   const [state, setState] = useState<ToastState>({ message: '', type: '', visible: false });
 
+  const hide = useCallback(() => setState((s) => ({ ...s, visible: false })), []);
+
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     toastFn = (message, type = '') => {
       setState({ message, type, visible: true });
       clearTimeout(timer);
-      timer = setTimeout(() => setState((s) => ({ ...s, visible: false })), 3000);
+      const duration = type === 'error' ? 6000 : 3000;
+      timer = setTimeout(hide, duration);
     };
     return () => { clearTimeout(timer); toastFn = null; };
-  }, []);
+  }, [hide]);
 
   if (!state.visible) return null;
 
   return (
     <div
-      className={`fixed bottom-20 left-1/2 -translate-x-1/2 z-[100] px-5 py-3 rounded-xl shadow-lg text-sm font-medium transition-all duration-300 ${
+      className={`fixed bottom-20 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all duration-300 flex items-center gap-3 max-w-xs ${
         state.visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
       } ${
         state.type === 'success' ? 'bg-green-600 text-white' :
@@ -37,7 +41,10 @@ const Toast: React.FC = () => {
         'bg-school-primary text-white'
       }`}
     >
-      {state.message}
+      <span className="flex-1">{state.message}</span>
+      <button onClick={hide} className="p-0.5 rounded-full hover:bg-white/20 transition-colors flex-shrink-0">
+        <X size={14} />
+      </button>
     </div>
   );
 };

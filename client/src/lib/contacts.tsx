@@ -1,4 +1,5 @@
 import React from 'react';
+import { Phone, MessageSquare } from 'lucide-react';
 
 export function formatBDPhone(raw: string): string {
   if (!raw) return '';
@@ -14,9 +15,9 @@ export function contactLinks(raw: string) {
   if (!(e164.startsWith('+880') && e164.length === 14)) return <span>{raw}</span>;
   const wa = e164.slice(1);
   return (
-    <span className="flex gap-2 flex-wrap">
-      <a href={`tel:${e164}`} className="text-blue-600 hover:underline text-xs">📞 {e164}</a>
-      <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" className="text-green-600 hover:underline text-xs">💬 WhatsApp</a>
+    <span className="flex gap-2 flex-wrap items-center justify-center">
+      <a href={`tel:${e164}`} className="text-blue-600 hover:underline text-xs inline-flex items-center gap-1"><Phone size={14} /> {e164}</a>
+      <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" className="text-green-600 hover:underline text-xs inline-flex items-center gap-1"><MessageSquare size={14} /> WhatsApp</a>
     </span>
   );
 }

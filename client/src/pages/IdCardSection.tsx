@@ -1,5 +1,6 @@
 import React from 'react';
 import { useUIStore } from '../store';
+import { GraduationCap, Building2 } from 'lucide-react';
 import StudentSection from './students/StudentSection';
 import TeacherSection from './teachers/TeacherSection';
 import StaffSection from './staff/StaffSection';
@@ -8,9 +9,9 @@ const IdCardSection: React.FC = () => {
   const { activeSubMode, setIdSubMode } = useUIStore();
 
   const tabs = [
-    { id: 'student' as const, label: '🎓 Students', color: 'bg-blue-600' },
-    { id: 'teacher' as const, label: '👩‍🏫 Teachers', color: 'bg-emerald-600' },
-    { id: 'staff' as const, label: '🏢 Staff', color: 'bg-indigo-600' },
+    { id: 'student' as const, label: <><GraduationCap size={14} /> Students</>, color: 'bg-blue-600' },
+    { id: 'teacher' as const, label: <><GraduationCap size={14} /> Teachers</>, color: 'bg-emerald-600' },
+    { id: 'staff' as const, label: <><Building2 size={14} /> Staff</>, color: 'bg-indigo-600' },
   ];
 
   return (

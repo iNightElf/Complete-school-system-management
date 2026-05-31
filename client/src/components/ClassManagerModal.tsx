@@ -1,14 +1,10 @@
 import React, { useState } from 'react';
 import { useSchoolStore } from '../store';
-import { X, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
+import { toast } from './Toast';
+import { X, ArrowUp, ArrowDown, Trash2, Settings, GraduationCap, ChevronUp, ChevronDown } from 'lucide-react';
 import DeleteConfirmModal from './DeleteConfirmModal';
 
-const CLASS_ICONS: Record<string, string> = {
-  Play: '🧸', Nursery: '🌱', KG: '🎨',
-  'Class One': '1️⃣', 'Class Two': '2️⃣', 'Class Three': '3️⃣',
-  'Class Four': '4️⃣', 'Class Five': '5️⃣',
-};
-const classIcon = (cls: string) => CLASS_ICONS[cls] || '📖';
+const classIcon = (cls: string) => <GraduationCap size={20} />;
 
 interface Props {
   open: boolean;
@@ -28,13 +24,13 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
   const handleAdd = async () => {
     const name = newName.trim();
     if (!name) return;
-    if (classes.some((c) => c.name === name)) return alert('Class already exists');
+    if (classes.some((c) => c.name === name)) return toast('Class already exists', 'error');
     setLoading(true);
     try {
       await createClass(name);
       setNewName('');
     } catch (e: any) {
-      alert(e.response?.data?.error || 'Error');
+      toast(e.response?.data?.error || 'Error', 'error');
     }
     setLoading(false);
   };
@@ -59,7 +55,7 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-school-border">
-          <h3 className="font-serif text-lg text-school-primary">⚙️ Manage Classes</h3>
+          <h3 className="font-serif text-lg text-school-primary flex items-center gap-1.5"><Settings size={16} /> Manage Classes</h3>
           <button onClick={onClose} className="p-1 hover:bg-school-paper rounded-full"><X size={20} /></button>
         </div>
         <div className="p-4">
@@ -85,7 +81,7 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
           <ul className="space-y-2 max-h-64 overflow-y-auto">
             {sorted.map((cls, i) => (
               <li key={cls.id} className="flex items-center gap-3 p-2 bg-school-paper rounded-xl">
-                <span className="text-lg">{classIcon(cls.name)}</span>
+                <span>{classIcon(cls.name)}</span>
                 <span className="flex-1 text-sm font-medium">{cls.name}</span>
                 <div className="flex gap-1">
                   <button
@@ -113,7 +109,7 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
             ))}
           </ul>
 
-          <p className="text-[11px] text-school-muted mt-3">▲▼ to reorder · Changes saved automatically</p>
+          <p className="text-[11px] text-school-muted mt-3 flex items-center gap-0.5"><ChevronUp size={12} /><ChevronDown size={12} /> to reorder · Changes saved automatically</p>
         </div>
       </div>
       <DeleteConfirmModal open={!!deleteId} title="Delete Class" message={`Delete "${deleteName}"? This cannot be undone.`} onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />

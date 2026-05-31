@@ -3,6 +3,7 @@ import { useSchoolStore } from '../../store';
 import { toast } from '../../components/Toast';
 import ClassSelect from '../../components/ClassSelect';
 import { tabulationPDF } from '../../lib/tabulationPdf';
+import { ClipboardList, Download } from 'lucide-react';
 
 const API_URL = '/api';
 const TERM_NAMES: Record<string, string> = { '1': '1st Term', '2': '2nd Term', '3': 'Final Exam' };
@@ -27,13 +28,13 @@ export default function TabulationTab() {
       {!cls && <div className="text-center py-12 text-sm text-school-muted">Select a class to download tabulation sheets.</div>}
       {cls && (
         <div className="bg-white rounded-2xl border border-school-border p-6 space-y-4">
-          <h4 className="font-serif text-lg text-school-primary">📋 Tabulation Sheet</h4>
+          <h4 className="font-serif text-lg text-school-primary flex items-center gap-1.5"><ClipboardList size={16} /> Tabulation Sheet</h4>
           <p className="text-sm text-school-muted">Download a marks grid for {cls.name}. "Final Combined" only available after Term 3 is entered.</p>
           <div className="flex gap-3 flex-wrap">
             {['1', '2', '3'].map(t => (
-              <button key={t} onClick={() => tabulationPDF({ clsName: cls.name, subjects, clsStudents, allResults, term: t })} className="px-4 py-2 border border-school-border rounded-xl text-sm font-bold hover:border-school-accent transition-all">⬇ {TERM_NAMES[t]}</button>
+              <button key={t} onClick={() => tabulationPDF({ clsName: cls.name, subjects, clsStudents, allResults, term: t })} className="px-4 py-2 border border-school-border rounded-xl text-sm font-bold hover:border-school-accent transition-all flex items-center gap-1.5"><Download size={14} /> {TERM_NAMES[t]}</button>
             ))}
-            <button onClick={() => tabulationPDF({ clsName: cls.name, subjects, clsStudents, allResults, term: 'final' })} className="px-4 py-2 bg-school-primary text-white rounded-xl text-sm font-bold hover:opacity-90">⬇ Final Combined</button>
+            <button onClick={() => tabulationPDF({ clsName: cls.name, subjects, clsStudents, allResults, term: 'final' })} className="px-4 py-2 bg-school-primary text-white rounded-xl text-sm font-bold hover:opacity-90 flex items-center gap-1.5"><Download size={14} /> Final Combined</button>
           </div>
         </div>
       )}

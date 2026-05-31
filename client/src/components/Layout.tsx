@@ -1,8 +1,8 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuthStore, useUIStore } from '../store';
-import { ChevronLeft, Lock, Users } from 'lucide-react';
+import { useAuthStore, useUIStore, useDarkMode } from '../store';
+import { ChevronLeft, Lock, Users, Sun, Moon } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
 
 const ROLE_DISPLAY: Record<string, string> = {
@@ -22,6 +22,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { logout, user } = useAuthStore();
   const role = user?.role;
   const { activeMode, swipeBack } = useUIStore();
+  const { dark, toggle: toggleDark } = useDarkMode();
+
+  useEffect(() => { document.documentElement.classList.toggle('dark', dark); }, [dark]);
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
@@ -61,7 +64,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <ChevronLeft size={24} />
             </button>
           )}
-          <img src={SCHOOL_LOGO} alt="Logo" className="w-9 h-9 rounded-full object-cover" id="school-logo" />
+          <img src={SCHOOL_LOGO} alt="Logo" className="w-9 h-9 rounded-full object-cover ring-2 ring-white/20 shadow-sm" id="school-logo" />
           <div>
             <h1 className="font-serif text-xl leading-tight">AL RAWA</h1>
             <p className="text-[10px] uppercase tracking-widest opacity-70">English School</p>
@@ -82,6 +85,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <span className="text-[10px] font-bold uppercase tracking-tighter opacity-50">Logged in as</span>
             <span className="text-xs font-semibold">{ROLE_DISPLAY[role || ''] || role}</span>
           </div>
+          <button
+            onClick={toggleDark}
+            className="p-2 hover:bg-white/10 rounded-full transition-colors group"
+            title={dark ? 'Light Mode' : 'Dark Mode'}
+          >
+            {dark ? <Sun size={20} className="group-hover:scale-110 transition-transform" /> : <Moon size={20} className="group-hover:scale-110 transition-transform" />}
+          </button>
           <button
             onClick={logout}
             className="p-2 hover:bg-white/10 rounded-full transition-colors group"

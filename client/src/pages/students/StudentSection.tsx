@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import ClassManagerModal from '../../components/ClassManagerModal';
 import CameraModal from '../../components/CameraModal';
 import { CardSkeleton } from '../../components/Skeleton';
-import { Settings, RefreshCw, Download, Camera } from 'lucide-react';
+import { Settings, RefreshCw, Download, Camera, Pencil, Trash2, Check, User, GraduationCap, Play, Sprout, Palette, BookOpen } from 'lucide-react';
 import { contactLinks } from '../../lib/contacts';
 import DeleteConfirmModal from '../../components/DeleteConfirmModal';
 import jsPDF from 'jspdf';
@@ -20,6 +20,16 @@ export default function StudentSection() {
   const [showClassManager, setShowClassManager] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchTimer = useRef<any>(null);
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setDebouncedSearch(value), 200);
+  };
+
+  useEffect(() => { return () => clearTimeout(searchTimer.current); }, []);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddNew, setShowAddNew] = useState(false);
 
@@ -31,7 +41,7 @@ export default function StudentSection() {
   const sorted = [...classes].sort((a, b) => a.order - b.order);
   const classStudents = students.filter((s) => activeClass && s.class === activeClass);
   const filtered = classStudents.filter((s) =>
-    !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.roll?.includes(search)
+    !debouncedSearch || s.name.toLowerCase().includes(debouncedSearch.toLowerCase()) || s.roll?.includes(debouncedSearch)
   );
 
   const resetForm = () => {
@@ -70,16 +80,18 @@ export default function StudentSection() {
 
     try {
       if (editingId) {
-        await fetch(`${API_URL}/students/${editingId}`, {
+        const res = await fetch(`${API_URL}/students/${editingId}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify(body),
         });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Update failed'); }
         toast('Student updated ✓', 'success');
       } else {
-        await fetch(`${API_URL}/students`, {
+        const res = await fetch(`${API_URL}/students`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify(body),
         });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Create failed'); }
         toast('Student added ✓', 'success');
       }
       resetForm();
@@ -95,8 +107,11 @@ export default function StudentSection() {
   const confirmDelete = async () => {
     if (!deleteId) return;
     setDeleteLoading(true);
-    await fetch(`${API_URL}/students/${deleteId}`, { method: 'DELETE', credentials: 'include' });
-    toast('Student deleted');
+    try {
+      const res = await fetch(`${API_URL}/students/${deleteId}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Delete failed'); }
+      toast('Student deleted');
+    } catch (e: any) { toast(e.message || 'Error', 'error'); }
     setDeleteId(null);
     setDeleteLoading(false);
     fetchStudents();
@@ -109,9 +124,9 @@ export default function StudentSection() {
         <div className="flex justify-center mb-3">
           <button onClick={() => setShowCamera(true)} className="relative group">
             {photo ? (
-              <img src={photo.startsWith('data:') ? photo : photo} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-white shadow-md" />
+              <img src={photo} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-white shadow-md" />
             ) : (
-              <div className="w-20 h-20 rounded-full bg-school-primary text-white flex items-center justify-center text-3xl">👤</div>
+              <div className="w-20 h-20 rounded-full bg-school-primary text-white flex items-center justify-center"><User size={32} className="text-white" /></div>
             )}
             <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
               <Camera size={20} className="text-white" />
@@ -150,8 +165,8 @@ export default function StudentSection() {
           <input type="tel" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder="01XXXXXXXXX" className={inputCls} />
         </div>
         <div className="flex gap-2 mt-3">
-          <button onClick={handleSubmit} className={`flex-1 py-2 text-white rounded-xl text-sm font-bold hover:opacity-90 ${isNew ? 'bg-violet-600' : 'bg-blue-600'}`}>
-            {isNew ? '+ Add Student' : '✓ Save'}
+          <button onClick={handleSubmit} className={`flex-1 py-2 text-white rounded-xl text-sm font-bold hover:opacity-90 flex items-center justify-center gap-1.5 ${isNew ? 'bg-violet-600' : 'bg-blue-600'}`}>
+            {isNew ? '+ Add Student' : <><Check size={14} /> Save</>}
           </button>
           <button onClick={resetForm} className="px-4 py-2 border border-school-border rounded-xl text-sm hover:bg-white">Cancel</button>
         </div>
@@ -160,27 +175,27 @@ export default function StudentSection() {
   };
 
   const renderViewCard = (s: any) => (
-    <div className="bg-white p-4 rounded-2xl border border-school-border hover:shadow-md transition-shadow">
-      <div className="flex items-start gap-3">
+    <div className="bg-white p-4 rounded-2xl border border-school-border card-shadow text-center">
+      <div className="flex flex-col items-center gap-2">
         {s.hasPhoto ? (
-          <img src={`${API_URL}/students/${s.id}/photo`} alt="" className="w-12 h-12 rounded-full object-cover border border-school-border flex-shrink-0" />
+          <img src={`${API_URL}/students/${s.id}/photo`} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-school-border shadow-sm" />
         ) : (
-          <div className="w-12 h-12 rounded-full bg-school-primary text-white flex items-center justify-center text-lg flex-shrink-0">👤</div>
+          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white flex items-center justify-center shadow-sm"><User size={24} className="text-white" /></div>
         )}
-        <div className="flex-1 min-w-0">
-          <div className="font-bold text-sm text-school-primary truncate">{s.name}</div>
+        <div>
+          <div className="font-bold text-sm text-school-primary">{s.name}</div>
           <div className="text-xs text-school-muted">{s.roll ? `Roll: ${s.roll}` : activeClass}</div>
         </div>
       </div>
-      <div className="mt-2 space-y-1">
+      <div className="mt-2 space-y-0.5">
         {s.fatherName && <div className="text-xs text-school-muted">Father: {s.fatherName}</div>}
         {s.motherName && <div className="text-xs text-school-muted">Mother: {s.motherName}</div>}
         {s.contact && <div className="text-xs text-school-muted">Contact: <span className="text-school-primary">{contactLinks(s.contact)}</span></div>}
       </div>
       {isAdmin && (
         <div className="flex gap-2 mt-3 pt-3 border-t border-school-border">
-          <button onClick={() => handleEdit(s)} className="flex-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100">✏️ Edit</button>
-          <button onClick={() => setDeleteId(s.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100">🗑 Delete</button>
+          <button onClick={() => handleEdit(s)} className="flex-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 flex items-center justify-center gap-1"><Pencil size={14} /> Edit</button>
+          <button onClick={() => setDeleteId(s.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center justify-center gap-1"><Trash2 size={14} /> Delete</button>
         </div>
       )}
     </div>
@@ -192,7 +207,7 @@ export default function StudentSection() {
       <CameraModal open={showCamera} onClose={() => setShowCamera(false)} onCapture={(d) => { setPhoto(d); setShowCamera(false); }} />
 
       {/* Panel Header */}
-      <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="font-serif text-lg text-school-primary">Students</h3>
           <span className="bg-school-primary text-white text-xs font-bold px-2 py-0.5 rounded-full">{filtered.length}</span>
@@ -200,7 +215,7 @@ export default function StudentSection() {
         <div className="flex gap-2">
           <button
             onClick={async () => {
-              const list = filtered.length > 0 ? filtered : classStudents;
+              const list = activeClass ? (filtered.length > 0 ? filtered : classStudents) : students;
               const photoCache: Record<string, string> = {};
               await Promise.all(list.filter((s: any) => s.hasPhoto).map(async (s: any) => {
                 try { const r = await fetch(`${API_URL}/students/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
@@ -247,14 +262,24 @@ export default function StudentSection() {
             )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {sorted.map((cls) => (
-              <button key={cls.id} onClick={() => { setActiveClass(cls.name); setForm({ ...form, className: cls.name }); }}
-                className="bg-white p-4 rounded-2xl border border-school-border text-center hover:border-school-accent hover:shadow-md transition-all">
-                <div className="text-2xl mb-1">{cls.name === 'Play' ? '🧸' : cls.name === 'Nursery' ? '🌱' : cls.name === 'KG' ? '🎨' : '📖'}</div>
-                <div className="font-bold text-sm text-school-primary">{cls.name}</div>
-                <div className="text-[11px] text-school-muted mt-1">{cls.studentCount} student{cls.studentCount !== 1 ? 's' : ''}</div>
-              </button>
-            ))}
+            {sorted.map((cls) => {
+              const iconMap: Record<string, { icon: React.ReactNode; bg: string }> = {
+                Play: { icon: <Play size={28} className="mx-auto" />, bg: 'from-green-400 to-emerald-600' },
+                Nursery: { icon: <Sprout size={28} className="mx-auto" />, bg: 'from-amber-400 to-orange-600' },
+                KG: { icon: <Palette size={28} className="mx-auto" />, bg: 'from-pink-400 to-rose-600' },
+              };
+              const ic = iconMap[cls.name] || { icon: <BookOpen size={28} className="mx-auto" />, bg: 'from-blue-400 to-indigo-600' };
+              return (
+                <button key={cls.id} onClick={() => { setActiveClass(cls.name); setForm({ ...form, className: cls.name }); }}
+                  className="bg-white p-5 rounded-2xl border border-school-border text-center hover:border-school-accent card-shadow transition-all">
+                  <div className={`w-14 h-14 bg-gradient-to-br ${ic.bg} text-white rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-md`}>
+                    {ic.icon}
+                  </div>
+                  <div className="font-bold text-sm text-school-primary">{cls.name}</div>
+                  <div className="text-[11px] text-school-muted mt-1">{cls.studentCount} student{cls.studentCount !== 1 ? 's' : ''}</div>
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -264,7 +289,7 @@ export default function StudentSection() {
             <span className="font-serif text-sm text-school-primary">{activeClass}</span>
           </div>
 
-          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or roll..."
+                          <input type="text" value={search} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Search by name or roll..."
             className="w-full px-3 py-2 border border-school-border rounded-xl text-sm mb-3 focus:outline-none focus:border-school-accent" />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -294,7 +319,7 @@ export default function StudentSection() {
 
           {filtered.length === 0 && !showAddNew && (
             <div className="text-center py-12 text-school-muted">
-              <div className="text-4xl mb-2">🎓</div>
+              <div className="text-4xl mb-2"><GraduationCap size={48} className="text-school-muted mx-auto mb-2" /></div>
               <p className="text-sm">No students in {activeClass} yet.</p>
             </div>
           )}

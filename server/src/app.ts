@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
 import rateLimit from "express-rate-limit";
 import "dotenv/config";
 
@@ -14,17 +15,34 @@ import * as results from "./controllers/result.controller.js";
 import * as users from "./controllers/user.controller.js";
 import { authenticate, authorizePermission } from "./middleware/auth.middleware.js";
 
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(",").map(s => s.trim())
+  : ["http://localhost:5173", "http://localhost:3000"];
+
 const app = express();
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'", ...corsOrigins],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+    },
+  },
 }));
+
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://localhost:3000"],
+    origin: corsOrigins,
     credentials: true,
   })
 );
+app.use(compression());
 app.use(express.json({ limit: "2mb" }));
 
 const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 500, standardHeaders: true, legacyHeaders: false });
@@ -97,6 +115,12 @@ app.post("/api/finance/transactions/:id/cancel", authenticate, authorizePermissi
 app.get("/api/finance/fee-assignments", authenticate, authorizePermission("finance:read"), finance.getFeeAssignments);
 app.post("/api/finance/fee-assignments/toggle", authenticate, authorizePermission("finance:write"), finance.toggleFeeAssignment);
 app.put("/api/finance/fee-assignments/:id", authenticate, authorizePermission("finance:write"), finance.updateFeeAssignmentAmount);
+
+// ── Opening Balances ──
+app.get("/api/finance/opening-balances", authenticate, authorizePermission("finance:read"), finance.getOpeningBalances);
+app.put("/api/finance/opening-balances", authenticate, authorizePermission("finance:write"), finance.setOpeningBalances);
+app.get("/api/finance/opening-balances/history", authenticate, authorizePermission("finance:read"), finance.getOpeningBalanceHistory);
+app.post("/api/finance/opening-balances/revert/:id", authenticate, authorizePermission("finance:write"), finance.revertOpeningBalance);
 
 // ── Defaulter Report ──
 app.get("/api/finance/defaulter", authenticate, authorizePermission("finance:read"), finance.getDefaulterReport);

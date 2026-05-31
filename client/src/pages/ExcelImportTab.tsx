@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { toast } from '../components/Toast';
-import { Upload, Trash2, Edit2, Check, X } from 'lucide-react';
+import { Upload, Trash2, Edit2, Check, X, Download, Loader } from 'lucide-react';
 import { useSchoolStore } from '../store';
 
 const API_URL = '/api';
@@ -290,7 +290,7 @@ export default function ExcelImportTab() {
     <div className="space-y-4">
       {/* Upload */}
       <div className="bg-white rounded-2xl border border-school-border p-6">
-        <h4 className="font-serif text-lg text-school-primary mb-3">📥 Import Transactions from Excel</h4>
+        <h4 className="font-serif text-lg text-school-primary mb-3 flex items-center gap-1.5"><Download size={16} /> Import Transactions from Excel</h4>
         <p className="text-sm text-school-muted mb-2">
           Required columns: <strong>Date, Category, Income/Expense, Amount, Class, Roll</strong>
         </p>
@@ -322,7 +322,7 @@ export default function ExcelImportTab() {
               disabled={importing || validCount === 0}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50"
             >
-              {importing ? '⏳ Importing...' : `📥 Import ${validCount} Rows`}
+              {importing ? <><Loader size={14} className="animate-spin" /> Importing...</> : <><Download size={14} /> Import {validCount} Rows</>}
             </button>
           </div>
 
