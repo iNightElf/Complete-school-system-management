@@ -133,6 +133,28 @@
 - Added `RotateCw` flip button to toggle between front (`user`) and back (`environment`) camera
 - Replaced `alert()` with toast for camera errors
 
+### 19. Zod Validation (All Controllers)
+- Added `createTeacherSchema`, `createStaffSchema`, `createBookSchema` to `validate.ts`
+- Applied validation to **6 endpoints**: student create/update, teacher create/update, staff create/update, book create/update
+- All return 400 with descriptive error messages on invalid input
+
+### 20. Browser Back Button / Deep Linking
+- Dashboard now syncs `activeMode` with URL search params (`?mode=finance`, `?mode=result`, etc.)
+- Layout back button and swipe-back also update URL params
+- Browser back/forward now works correctly
+- Deep linking supported: `/?mode=finance`, `/?mode=result`, etc.
+
+### 21. Loading Skeletons
+- Created `Skeleton.tsx` with reusable components: `Skeleton`, `CardSkeleton`, `TableSkeleton`, `BalanceCardSkeleton`
+- Added `loading` state to `SchoolStore` (tracks loading for classes, students, teachers, staff, books, finance, transactions)
+- Each `fetch*` function now sets loading true/false with try/finally
+- StudentSection, TeacherSection, StaffSection show 6 skeleton cards while data loads
+
+### 22. Server-Side Filtering
+- `fetchTransactions` now accepts optional `params` object
+- FinanceReports can pass `dateFrom`, `dateTo`, `type` to filter server-side
+- No more loading ALL transactions when only a date range is needed
+
 ---
 
 ## Fixes Applied
@@ -173,6 +195,9 @@
 
 ## Git History (This Session)
 ```
+e56c7c4 feat: loading skeletons + store loading states + server-side filtering params
+0bde5ee fix: Zod validation on all controllers + browser back button deep linking
+6217145 docs: update SESSION-NOTES.md with all work from this session
 c785e4c feat: inline card editing, swipe-back navigation, camera flip
 9c547a0 feat: AGM report — Balance Sheet, Receipts/Payments, all income/expense heads
 8c203d9 feat: add swipe-right-to-go-back gesture on mobile
@@ -184,9 +209,11 @@ fa2bb28 fix: WHAT-TO-IMPROVE items — 14 fixes (critical + serious + code quali
 ```
 
 ## Known Issues (Remaining)
-- Zod validation not yet added to all controllers (student, teacher, staff)
 - `node_modules/` not tracked in git
 - Photos kept as BYTEA in PostgreSQL (~13MB for 500 photos)
-- Browser back button still broken (deep linking not implemented)
-- No loading skeleton for data fetches
-- Finance reports use client-side filtering (large datasets may be slow)
+
+### ~~Fixed This Session~~
+- ~~Zod validation not yet added to all controllers~~ ✅ Added to student, teacher, staff, book controllers
+- ~~Browser back button still broken~~ ✅ Deep linking via URL search params (?mode=finance)
+- ~~No loading skeleton for data fetches~~ ✅ Created Skeleton.tsx with CardSkeleton, TableSkeleton, BalanceCardSkeleton
+- ~~Finance reports use client-side filtering~~ ✅ fetchTransactions now accepts server-side params (dateFrom, dateTo, type)
