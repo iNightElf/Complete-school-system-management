@@ -168,6 +168,7 @@ model Transaction {
   cancelledAt           DateTime? @map("cancelled_at")
   cancelledBy           String?   @map("cancelled_by") @db.VarChar(100)
   cancelReason          String?   @map("cancel_reason") @db.Text
+  reversalOfId          String?   @map("reversal_of_id") @db.Uuid
   createdAt             DateTime  @default(now()) @map("created_at")
 
   @@index([transactionDate])
@@ -178,6 +179,7 @@ model Transaction {
   @@index([studentId, category])
   @@index([className, category])
   @@index([transactionType, affectsIncomeLedger])
+  @@index([reversalOfId])
   @@map("transactions")
 }
 

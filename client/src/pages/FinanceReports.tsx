@@ -84,12 +84,14 @@ const FinanceReports: React.FC = () => {
   useEffect(() => { fetchTransactions(); fetchStudents(); }, []);
 
   const filtered = transactions.filter((t: any) => {
+    if (t.isCancelled) return false;
     const d = new Date(t.transactionDate);
     const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     return ym >= dateFrom && ym <= dateTo;
   });
 
   const yearFiltered = transactions.filter((t: any) => {
+    if (t.isCancelled) return false;
     const d = new Date(t.transactionDate);
     const month = d.getMonth(); // 0-indexed
     const year = d.getFullYear();

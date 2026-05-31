@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useSchoolStore, useAuthStore } from '../store';
+import { useSchoolStore, useAuthStore, useUserManagementStore } from '../store';
 import axios from 'axios';
 import { ArrowUpCircle, ArrowDownCircle, ArrowRightLeft, Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from '../components/Toast';
@@ -24,7 +24,7 @@ type TxTab = 'income' | 'expense' | 'transfer';
 
 const PAGE_SIZE = 25;
 
-function Ledger({ transactions, students, fmt, fetchTransactions }: { transactions: any[]; students: any[]; fmt: (n: number) => string; fetchTransactions: () => void }) {
+function Ledger({ transactions, students, fmt, fetchTransactions, fetchFinance, userMap }: { transactions: any[]; students: any[]; fmt: (n: number) => string; fetchTransactions: () => void; fetchFinance: () => void; userMap: Record<string, string> }) {
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
   const [dateFrom, setDateFrom] = useState('');
@@ -37,7 +37,6 @@ function Ledger({ transactions, students, fmt, fetchTransactions }: { transactio
 
   const filtered = useMemo(() => {
     return transactions.filter((tx: any) => {
-      if (tx.isCancelled) return false;
       const d = new Date(tx.transactionDate).toISOString().split('T')[0];
       if (dateFrom && d < dateFrom) return false;
       if (dateTo && d > dateTo) return false;
@@ -60,6 +59,7 @@ function Ledger({ transactions, students, fmt, fetchTransactions }: { transactio
       setCancelId(null);
       setCancelReason('');
       fetchTransactions();
+      fetchFinance();
     } catch {
       toast('Failed to cancel', 'error');
     } finally {
@@ -74,7 +74,7 @@ function Ledger({ transactions, students, fmt, fetchTransactions }: { transactio
       <div className="px-5 py-4 border-b border-school-border flex items-center gap-2">
         <Clock size={18} className="text-school-muted" />
         <h4 className="font-serif text-sm text-school-primary">Ledger</h4>
-        <span className="text-[10px] text-school-muted">({filtered.length} active{cancelled.length ? `, ${cancelled.length} cancelled` : ''})</span>
+        <span className="text-[10px] text-school-muted">({filtered.length} rows{cancelled.length ? `, ${cancelled.length} cancelled` : ''})</span>
       </div>
 
       {/* Filters */}
@@ -117,32 +117,56 @@ function Ledger({ transactions, students, fmt, fetchTransactions }: { transactio
             </tr>
           </thead>
           <tbody className="divide-y divide-school-border/50">
-            {paged.length > 0 ? paged.map((tx: any) => (
-              <tr key={tx.id} className="hover:bg-school-paper/30 transition-colors">
-                <td className="px-4 py-3 whitespace-nowrap text-xs font-mono font-bold">{new Date(tx.transactionDate).toLocaleDateString()}</td>
-                <td className="px-4 py-3 font-bold text-xs">{tx.category || 'Uncategorized'}</td>
+            {paged.length > 0 ? paged.map((tx: any) => {
+              const isCancelled = tx.isCancelled;
+              const isReversal = !!tx.reversalOfId;
+              return (
+              <tr key={tx.id} className={`border-t border-school-border/50 transition-colors ${isCancelled ? 'bg-gray-50 line-through opacity-60' : isReversal ? 'bg-violet-50/50 border-l-2 border-l-violet-400' : 'hover:bg-school-paper/30'}`}>
+                <td className="px-4 py-3 whitespace-nowrap text-xs font-mono font-bold">
+                  {new Date(tx.transactionDate).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-3 font-bold text-xs">
+                  {tx.category || 'Uncategorized'}
+                  {isCancelled && <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-red-100 text-red-600 line-through-none">CANCELLED</span>}
+                  {isReversal && <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-violet-100 text-violet-700">REVERSAL</span>}
+                </td>
                 <td className="px-4 py-3 text-xs">{tx.student?.class || tx.className || '—'}</td>
                 <td className="px-4 py-3 text-xs">{tx.student?.name || '—'}</td>
                 <td className="px-4 py-3 text-[10px] text-school-muted">
                   {tx.sourceAccount ? tx.sourceAccount.replace(/_/g, ' ') : 'External'} → {tx.destinationAccount ? tx.destinationAccount.replace(/_/g, ' ') : 'External'}
                 </td>
-                <td className={`px-4 py-3 text-right font-bold ${tx.transactionType === 'EXPENSE' ? 'text-rose-600' : tx.transactionType === 'INCOME' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                <td className={`px-4 py-3 text-right font-bold ${isCancelled ? 'text-gray-400' : isReversal ? 'text-violet-600' : tx.transactionType === 'EXPENSE' ? 'text-rose-600' : tx.transactionType === 'INCOME' ? 'text-emerald-600' : 'text-blue-600'}`}>
                   {tx.transactionType === 'EXPENSE' ? '−' : '+'} ৳{fmt(Number(tx.amount))}
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <span className={`text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded ${tx.transactionType === 'INCOME' ? 'bg-emerald-50 text-emerald-700' : tx.transactionType === 'EXPENSE' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
-                    {tx.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : tx.transactionType}
-                  </span>
+                  {isReversal ? (
+                    <span className="text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded bg-violet-50 text-violet-700">
+                      Reversal
+                    </span>
+                  ) : (
+                    <span className={`text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded ${tx.transactionType === 'INCOME' ? 'bg-emerald-50 text-emerald-700' : tx.transactionType === 'EXPENSE' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
+                      {tx.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : tx.transactionType}
+                    </span>
+                  )}
                 </td>
                 {canWrite && (
                   <td className="px-4 py-3 text-center">
-                    <button onClick={() => setCancelId(tx.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1" title="Cancel transaction">
-                      <Ban size={14} />
-                    </button>
+                    {isCancelled ? (
+                      <span className="text-[9px] text-school-muted" title={`Cancelled by ${userMap[tx.cancelledBy] || tx.cancelledBy} on ${tx.cancelledAt ? new Date(tx.cancelledAt).toLocaleDateString() : ''}: ${tx.cancelReason || 'No reason'}`}>
+                        {userMap[tx.cancelledBy] || tx.cancelledBy || 'system'}
+                      </span>
+                    ) : isReversal ? (
+                      <span className="text-[9px] text-violet-500">auto</span>
+                    ) : (
+                      <button onClick={() => setCancelId(tx.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1" title="Cancel transaction">
+                        <Ban size={14} />
+                      </button>
+                    )}
                   </td>
                 )}
               </tr>
-            )) : (
+              );
+            }) : (
               <tr><td colSpan={canWrite ? 8 : 7} className="px-4 py-12 text-center text-sm text-school-muted italic">
                 {transactions.length ? 'No transactions match filters.' : 'No transactions yet.'}
               </td></tr>
@@ -169,48 +193,20 @@ function Ledger({ transactions, students, fmt, fetchTransactions }: { transactio
         </div>
       )}
 
-      {/* Cancelled Transactions Audit Trail */}
-      {cancelled.length > 0 && (
-        <div className="border-t border-school-border">
-          <details className="group">
-            <summary className="px-5 py-3 cursor-pointer text-xs font-bold text-school-muted hover:text-school-primary flex items-center gap-2">
-              <Ban size={12} /> Cancelled Transactions ({cancelled.length})
-            </summary>
-            <div className="px-5 pb-3">
-              <table className="w-full text-xs">
-                <thead className="text-[10px] uppercase text-school-muted">
-                  <tr><th className="px-2 py-1 text-left">Date</th><th className="px-2 py-1 text-left">Category</th><th className="px-2 py-1 text-right">Amount</th><th className="px-2 py-1 text-left">Cancelled By</th><th className="px-2 py-1 text-left">Reason</th></tr>
-                </thead>
-                <tbody className="divide-y divide-school-border/50">
-                  {cancelled.map((tx: any) => (
-                    <tr key={tx.id} className="text-school-muted line-through">
-                      <td className="px-2 py-1.5 font-mono">{new Date(tx.transactionDate).toLocaleDateString()}</td>
-                      <td className="px-2 py-1.5">{tx.category || '—'}</td>
-                      <td className="px-2 py-1.5 text-right">৳{fmt(Number(tx.amount))}</td>
-                      <td className="px-2 py-1.5">{tx.cancelledBy || '—'} {tx.cancelledAt ? `on ${new Date(tx.cancelledAt).toLocaleDateString()}` : ''}</td>
-                      <td className="px-2 py-1.5 text-school-accent">{tx.cancelReason || 'No reason'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        </div>
-      )}
-
       {/* Cancel Modal */}
       {cancelId && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setCancelId(null)}>
           <div className="bg-white rounded-2xl border border-school-border p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
             <h4 className="font-serif text-sm text-school-primary">Cancel Transaction</h4>
-            <p className="text-xs text-school-muted">This will mark the transaction as cancelled. It will still appear in the audit trail.</p>
+            <p className="text-xs text-school-muted">This will cancel the transaction and return the money to the original account. The cancelled row will remain in the ledger with a strikethrough.</p>
             <div>
-              <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Reason (optional)</label>
-              <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={3} placeholder="Why is this being cancelled?" className="w-full border border-school-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-school-accent resize-none" />
+              <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Reason (required)</label>
+              <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={3} required placeholder="Why is this being cancelled?" className="w-full border border-school-border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-school-accent resize-none" />
+              {!cancelReason.trim() && <p className="text-[10px] text-red-500 mt-1">Reason is required to cancel a transaction</p>}
             </div>
             <div className="flex gap-2 justify-end">
               <button onClick={() => { setCancelId(null); setCancelReason(''); }} className="px-4 py-2 border border-school-border rounded-xl text-xs hover:bg-school-paper">Keep</button>
-              <button onClick={handleCancel} disabled={cancelling} className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:opacity-90 disabled:opacity-50">
+              <button onClick={handleCancel} disabled={cancelling || !cancelReason.trim()} className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:opacity-90 disabled:opacity-50">
                 {cancelling ? 'Cancelling...' : 'Cancel Transaction'}
               </button>
             </div>
@@ -223,8 +219,15 @@ function Ledger({ transactions, students, fmt, fetchTransactions }: { transactio
 
 const FinanceSection: React.FC = () => {
   const { balances, transactions, fetchFinance, fetchTransactions, classes, students, fetchClasses, fetchStudents } = useSchoolStore();
+  const { users, fetchUsers } = useUserManagementStore();
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
+
+  const userMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    users.forEach((u: any) => { map[u.id] = u.name; });
+    return map;
+  }, [users]);
 
   const [mainTab, setMainTab] = useState<MainTab>('transactions');
   const [activeTab, setActiveTab] = useState<TxTab>('income');
@@ -242,14 +245,16 @@ const FinanceSection: React.FC = () => {
   const [selectedStudent, setSelectedStudent] = useState('');
   const [feeMonth, setFeeMonth] = useState('');
 
-  useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); }, []);
+  useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); fetchUsers(); }, []);
 
-  // Compute totals from transactions
-  const totalIncome = transactions
+  // Compute totals from transactions (exclude cancelled)
+  const activeTransactions = transactions.filter((t: any) => !t.isCancelled);
+
+  const totalIncome = activeTransactions
     .filter((t: any) => t.transactionType === 'INCOME' && t.destinationAccount === 'CASH_IN_HAND')
     .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
 
-  const totalDepositedToBank = transactions
+  const totalDepositedToBank = activeTransactions
     .filter((t: any) => t.sourceAccount === 'CASH_IN_HAND' && t.destinationAccount === 'AL_RAWA_BANK')
     .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
 
@@ -499,7 +504,7 @@ const FinanceSection: React.FC = () => {
           </form>
 
       {/* Ledger */}
-      <Ledger transactions={transactions} students={students} fmt={fmt} fetchTransactions={fetchTransactions} />
+      <Ledger transactions={transactions} students={students} fmt={fmt} fetchTransactions={fetchTransactions} fetchFinance={fetchFinance} userMap={userMap} />
       </div>)}
 
     </div>

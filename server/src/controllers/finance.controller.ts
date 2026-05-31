@@ -68,6 +68,7 @@ export const getBalances = async (req: Request, res: Response) => {
     let cashInHand = 0;
 
     transactions.forEach((t) => {
+      if (t.isCancelled) return; // cancelled transactions don't affect balances
       const amt = Number(t.amount);
       const src = t.sourceAccount;
       const dst = t.destinationAccount;
@@ -107,24 +108,55 @@ export const getTransactions = async (req: Request, res: Response) => {
 
 export const cancelTransaction = async (req: AuthRequest, res: Response) => {
   try {
-    const id = param(req, "id");
+    const id = req.params.id;
     const { reason } = req.body;
+    if (!reason || !reason.trim()) return res.status(400).json({ error: "Reason is required to cancel a transaction" });
 
-    const tx = await prisma.transaction.findUnique({ where: { id } });
+    const tx = await prisma.transaction.findUnique({ where: { id }, include: { student: { select: { id: true, name: true, class: true, roll: true } } } });
     if (!tx) return res.status(404).json({ error: "Transaction not found" });
     if (tx.isCancelled) return res.status(400).json({ error: "Transaction already cancelled" });
 
-    const updated = await prisma.transaction.update({
-      where: { id },
-      data: {
-        isCancelled: true,
-        cancelledAt: new Date(),
-        cancelledBy: req.session?.user?.id || "system",
-        cancelReason: reason || null,
-      },
-    });
+    const userId = req.session?.user?.id || "system";
+    const studentName = tx.student?.name || null;
+    const studentClass = tx.className || tx.student?.class || null;
 
-    res.json(updated);
+    // Classify the reversal with swapped accounts
+    const { transactionType, affectsIncomeLedger, affectsExpenseLedger } =
+      classifyTransaction(tx.destinationAccount || undefined, tx.sourceAccount || undefined);
+
+    const [cancelled, reversal] = await prisma.$transaction([
+      // Mark original as cancelled
+      prisma.transaction.update({
+        where: { id },
+        data: {
+          isCancelled: true,
+          cancelledAt: new Date(),
+          cancelledBy: userId,
+          cancelReason: reason || null,
+        },
+      }),
+      // Create reversal entry with swapped accounts
+      prisma.transaction.create({
+        data: {
+          transactionDate: new Date(),
+          amount: tx.amount,
+          transactionType,
+          sourceAccount: tx.destinationAccount || null,
+          destinationAccount: tx.sourceAccount || null,
+          category: `Reversal - ${tx.category || "Uncategorized"}`,
+          description: `Cancelled: ${tx.description || tx.category || "Transaction"}${studentName ? ` (${studentClass || ''} - ${studentName})` : ""}${reason ? `. Reason: ${reason}` : ""}`,
+          studentId: tx.studentId,
+          className: studentClass,
+          feeMonth: tx.feeMonth,
+          affectsIncomeLedger,
+          affectsExpenseLedger,
+          reversalOfId: tx.id,
+          createdBy: userId,
+        },
+      }),
+    ]);
+
+    res.json({ cancelled, reversal });
   } catch (error: any) {
     res.status(400).json({ error: sanitizeError(error) });
   }
@@ -213,7 +245,7 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
 
     const studentIds = students.map(s => s.id);
     const allIncomeTx = await prisma.transaction.findMany({
-      where: { transactionType: 'INCOME', affectsIncomeLedger: true },
+      where: { transactionType: 'INCOME', affectsIncomeLedger: true, isCancelled: false },
       orderBy: { transactionDate: 'desc' },
     });
 
