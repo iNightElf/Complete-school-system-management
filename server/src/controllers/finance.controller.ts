@@ -25,7 +25,7 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
     } = validation.data;
 
     const { transactionType, affectsIncomeLedger, affectsExpenseLedger } =
-      classifyTransaction(sourceAccount, destinationAccount);
+      classifyTransaction(sourceAccount ?? undefined, destinationAccount ?? undefined);
 
     const STUDENT_FEE_CATEGORIES = ['Tuition Fee', 'Hifz Tuition Fee', 'Admission Fee', 'Hifz Admission Fee', 'Books Fee', 'Copy Fee', 'Stationary Fee', 'Accessories Fee'];
     if (studentId && feeMonth && category && STUDENT_FEE_CATEGORIES.includes(category)) {
@@ -167,7 +167,7 @@ export const getOpeningBalanceHistory = async (req: Request, res: Response) => {
 
 export const revertOpeningBalance = async (req: AuthRequest, res: Response) => {
   try {
-    const historyId = req.params.id;
+    const historyId = req.params.id as string;
     const entry = await prisma.openingBalanceHistory.findUnique({ where: { id: historyId } });
     if (!entry) return res.status(404).json({ error: 'History entry not found' });
 
@@ -218,7 +218,7 @@ export const getTransactions = async (req: Request, res: Response) => {
 
 export const cancelTransaction = async (req: AuthRequest, res: Response) => {
   try {
-    const id = req.params.id;
+    const id = req.params.id as string;
     const { reason } = req.body;
     if (!reason || !reason.trim()) return res.status(400).json({ error: "Reason is required to cancel a transaction" });
 
@@ -227,8 +227,8 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
     if (tx.isCancelled) return res.status(400).json({ error: "Transaction already cancelled" });
 
     const userId = req.session?.user?.id || "system";
-    const studentName = tx.student?.name || null;
-    const studentClass = tx.className || tx.student?.class || null;
+    const studentName = (tx as any).student?.name || null;
+    const studentClass = (tx as any).className || (tx as any).student?.class || null;
 
     // Classify the reversal with swapped accounts
     const { transactionType, affectsIncomeLedger, affectsExpenseLedger } =
@@ -313,7 +313,7 @@ export const toggleFeeAssignment = async (req: AuthRequest, res: Response) => {
 
 export const updateFeeAssignmentAmount = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { amount } = req.body;
     const updated = await prisma.feeAssignment.update({ where: { id }, data: { amount: Number(amount) } });
     res.json(updated);

@@ -25,7 +25,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
 
 export const updateUserRole = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { role } = req.body;
 
     if (!role || !ALL_ROLES.includes(role as Role)) {
@@ -64,7 +64,7 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
 
 export const deleteUser = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     if (id === req.session?.user.id) {
       return res.status(400).json({ error: "Cannot delete your own account" });

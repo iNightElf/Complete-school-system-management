@@ -34,14 +34,14 @@ export const authenticate = async (
 ) => {
   try {
     const session = await auth.api.getSession({
-      headers: req.headers,
+      headers: req.headers as HeadersInit,
     });
 
     if (!session) {
       return res.status(401).json({ error: "Access denied" });
     }
 
-    req.session = session;
+    req.session = session as AuthRequest["session"];
     next();
   } catch {
     res.status(401).json({ error: "Invalid session" });

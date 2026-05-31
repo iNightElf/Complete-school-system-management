@@ -182,8 +182,8 @@ export default function StaffSection() {
                   try { doc.addImage(photoCache[s.id], 'JPEG', 15, y, 22, 22); } catch (_e) {}
                   lines.forEach((l, li) => doc.text(l!, 42, y + 5 + li * 5)); y += 28;
                 } else { lines.forEach(l => { doc.text(l!, 15, y); y += 5; }); }
-                doc.setDrawColor(200); doc.setLineWidth(0.3); doc.setLineDash([4, 4]);
-                doc.line(15, y + 2, 195, y + 2); doc.setLineDash([]); y += 8;
+                doc.setDrawColor(200); doc.setLineWidth(0.3); doc.setLineDashPattern([4, 4], 0);
+                doc.line(15, y + 2, 195, y + 2); doc.setLineDashPattern([], 0); y += 8;
               });
               doc.save('Staff_List.pdf');
             }}

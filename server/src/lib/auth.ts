@@ -55,8 +55,10 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24,     // 1 day
   },
   advanced: {
-    generateId: () => {
-      return crypto.randomUUID();
+    database: {
+      generateId: () => {
+        return crypto.randomUUID();
+      },
     },
   },
 });
