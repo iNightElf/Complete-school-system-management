@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
+import { validate, createStudentSchema } from "../lib/validate.js";
 
 function parsePhoto(body: any): Buffer | null {
   if (!body.photo) return null;
@@ -37,7 +38,9 @@ export const getAllStudents = async (req: Request, res: Response) => {
 
 export const createStudent = async (req: Request, res: Response) => {
   try {
-    const { class: className, roll, name, fatherName, motherName, contact } = req.body;
+    const v = validate(createStudentSchema, req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { class: className, roll, name, fatherName, motherName, contact } = v.data;
     const photoBuffer = parsePhoto(req.body);
 
     const student = await prisma.student.create({
@@ -61,7 +64,9 @@ export const createStudent = async (req: Request, res: Response) => {
 export const updateStudent = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const { class: className, roll, name, fatherName, motherName, contact } = req.body;
+    const v = validate(createStudentSchema.partial(), req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { class: className, roll, name, fatherName, motherName, contact } = v.data;
     const photoBuffer = parsePhoto(req.body);
 
     const data: any = {};

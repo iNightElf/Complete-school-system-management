@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useUIStore, useSchoolStore } from '../store';
 import Layout from '../components/Layout';
 import Toast from '../components/Toast';
@@ -8,8 +9,11 @@ import ResultSection from './ResultSection';
 import FinanceSection from './FinanceSection';
 import { CreditCard, BookOpen, BarChart3, Wallet } from 'lucide-react';
 
+type ModeParam = 'idcard' | 'accessories' | 'result' | 'finance';
+
 const Dashboard: React.FC = () => {
   const { activeMode, setMode } = useUIStore();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { fetchClasses, fetchStudents, fetchTeachers, fetchStaff, fetchBooks, fetchFinance } = useSchoolStore();
 
   useEffect(() => {
@@ -20,6 +24,24 @@ const Dashboard: React.FC = () => {
     fetchBooks();
     fetchFinance();
   }, []);
+
+  // Sync URL param → store on mount
+  useEffect(() => {
+    const urlMode = searchParams.get('mode') as ModeParam | null;
+    if (urlMode && urlMode !== activeMode) {
+      setMode(urlMode);
+    }
+  }, []); // only on mount
+
+  // Sync store → URL when mode changes
+  const handleSetMode = (mode: ModeParam | null) => {
+    setMode(mode);
+    if (mode) {
+      setSearchParams({ mode }, { replace: false });
+    } else {
+      setSearchParams({}, { replace: false });
+    }
+  };
 
   return (
     <Layout>
@@ -35,7 +57,7 @@ const Dashboard: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-4 max-w-lg mx-auto">
             <button
-              onClick={() => setMode('idcard')}
+              onClick={() => handleSetMode('idcard')}
               className="group bg-white p-6 rounded-2xl border border-school-border text-center hover:border-blue-500 hover:shadow-lg transition-all duration-300"
             >
               <div className="w-14 h-14 bg-blue-500 text-white rounded-2xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
@@ -46,7 +68,7 @@ const Dashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setMode('accessories')}
+              onClick={() => handleSetMode('accessories')}
               className="group bg-white p-6 rounded-2xl border border-school-border text-center hover:border-amber-500 hover:shadow-lg transition-all duration-300"
             >
               <div className="w-14 h-14 bg-amber-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
@@ -57,7 +79,7 @@ const Dashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setMode('result')}
+              onClick={() => handleSetMode('result')}
               className="group bg-white p-6 rounded-2xl border border-school-border text-center hover:border-green-500 hover:shadow-lg transition-all duration-300"
             >
               <div className="w-14 h-14 bg-green-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
@@ -68,7 +90,7 @@ const Dashboard: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setMode('finance')}
+              onClick={() => handleSetMode('finance')}
               className="group bg-white p-6 rounded-2xl border border-school-border text-center hover:border-rose-500 hover:shadow-lg transition-all duration-300"
             >
               <div className="w-14 h-14 bg-rose-500 text-white rounded-2xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">

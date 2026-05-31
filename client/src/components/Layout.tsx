@@ -1,5 +1,5 @@
 import React, { useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore } from '../store';
 import { ChevronLeft, Lock, Users } from 'lucide-react';
@@ -18,11 +18,21 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { logout, user } = useAuthStore();
   const role = user?.role;
   const { activeMode, swipeBack } = useUIStore();
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
+
+  const handleBack = useCallback(() => {
+    swipeBack();
+    // If swipeBack went to null mode, clear URL param
+    const { activeMode: currentMode } = useUIStore.getState();
+    if (!currentMode) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [swipeBack, setSearchParams]);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -34,9 +44,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const dy = e.changedTouches[0].clientY - touchStartY.current;
     if (Math.abs(dy) > Math.abs(dx)) return;
     if (dx > 80 && activeMode) {
-      swipeBack();
+      handleBack();
     }
-  }, [activeMode, swipeBack]);
+  }, [activeMode, handleBack]);
 
   return (
     <div className="min-h-screen bg-school-paper flex flex-col selection:bg-school-accent selection:text-white">
@@ -45,7 +55,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="flex items-center gap-3">
           {activeMode && (
             <button
-              onClick={() => swipeBack()}
+              onClick={handleBack}
               className="p-1 hover:bg-white/10 rounded-full transition-colors"
             >
               <ChevronLeft size={24} />

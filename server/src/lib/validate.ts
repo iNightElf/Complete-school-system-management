@@ -31,6 +31,29 @@ export const createStudentSchema = z.object({
   contact: z.string().max(20).optional().nullable(),
 });
 
+export const createTeacherSchema = z.object({
+  designation: z.string().min(1, "Designation is required").max(100),
+  name: z.string().min(1, "Name is required").max(200),
+  email: z.string().email("Invalid email").max(200).optional().nullable(),
+  contact: z.string().max(20).optional().nullable(),
+});
+
+export const createStaffSchema = z.object({
+  role: z.string().min(1, "Role is required").max(100),
+  name: z.string().min(1, "Name is required").max(200),
+  email: z.string().email("Invalid email").max(200).optional().nullable(),
+  contact: z.string().max(20).optional().nullable(),
+});
+
+export const createBookSchema = z.object({
+  name: z.string().min(1, "Name is required").max(200),
+  publication: z.string().max(200).optional().nullable(),
+  mrp: z.number().min(0).optional(),
+  discounted: z.number().min(0).optional(),
+  sell: z.number().min(0).optional(),
+  classId: z.string().uuid("Invalid class ID"),
+});
+
 export const toggleFeeAssignmentSchema = z.object({
   studentId: z.string().uuid("Invalid student ID"),
   feeType: z.enum(["hifz_tuition", "hifz_admission", "transport"]),

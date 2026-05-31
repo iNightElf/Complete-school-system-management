@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
+import { validate, createTeacherSchema, createStaffSchema, createBookSchema } from "../lib/validate.js";
 
 function parsePhoto(body: any): Buffer | null {
   if (!body.photo) return null;
@@ -33,7 +34,9 @@ export const getAllTeachers = async (req: Request, res: Response) => {
 
 export const createTeacher = async (req: Request, res: Response) => {
   try {
-    const { designation, name, email, contact } = req.body;
+    const v = validate(createTeacherSchema, req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { designation, name, email, contact } = v.data;
     const photoBuffer = parsePhoto(req.body);
 
     const teacher = await prisma.teacher.create({
@@ -55,7 +58,9 @@ export const createTeacher = async (req: Request, res: Response) => {
 export const updateTeacher = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const { designation, name, email, contact } = req.body;
+    const v = validate(createTeacherSchema.partial(), req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { designation, name, email, contact } = v.data;
     const photoBuffer = parsePhoto(req.body);
 
     const data: any = {
@@ -118,7 +123,9 @@ export const getAllStaff = async (req: Request, res: Response) => {
 
 export const createStaff = async (req: Request, res: Response) => {
   try {
-    const { role, name, email, contact } = req.body;
+    const v = validate(createStaffSchema, req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { role, name, email, contact } = v.data;
     const photoBuffer = parsePhoto(req.body);
 
     const staff = await prisma.staff.create({
@@ -140,7 +147,9 @@ export const createStaff = async (req: Request, res: Response) => {
 export const updateStaff = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const { role, name, email, contact } = req.body;
+    const v = validate(createStaffSchema.partial(), req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { role, name, email, contact } = v.data;
     const photoBuffer = parsePhoto(req.body);
 
     const data: any = {
@@ -197,7 +206,9 @@ export const getAllBooks = async (req: Request, res: Response) => {
 
 export const createBook = async (req: Request, res: Response) => {
   try {
-    const { name, publication, mrp, discounted, sell, classId } = req.body;
+    const v = validate(createBookSchema, req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { name, publication, mrp, discounted, sell, classId } = v.data;
 
     const cls = await prisma.schoolClass.findUnique({ where: { id: classId } });
     if (!cls) return res.status(400).json({ error: "Invalid classId" });
@@ -223,7 +234,9 @@ export const createBook = async (req: Request, res: Response) => {
 export const updateBook = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const { name, publication, mrp, discounted, sell, classId } = req.body;
+    const v = validate(createBookSchema.partial(), req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { name, publication, mrp, discounted, sell, classId } = v.data;
 
     const data: any = {};
     if (name !== undefined) data.name = name;
