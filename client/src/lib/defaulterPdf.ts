@@ -71,7 +71,7 @@ export function defaulterPDF(params: {
         doc.text(`${row.class}${row.roll ? `-${row.roll}` : ''}`, M + nameW + 2, y + 4);
       }
 
-      const badgeColor = fee.type === 'special' ? [245, 158, 11] :
+      const badgeColor: [number, number, number] = fee.type === 'special' ? [245, 158, 11] :
                          fee.type === 'global' ? [168, 85, 247] :
                          fee.type === 'recurring' ? [59, 130, 246] : [107, 114, 128];
       doc.setFillColor(...badgeColor);

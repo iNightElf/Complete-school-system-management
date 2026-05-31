@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import ClassSelect from '../../components/ClassSelect';
@@ -50,12 +50,12 @@ export default function EnterBySubject() {
 
   const saveBulkMarks = async () => {
     if (!selectedSubj) return;
-    toast('Saving…', '');
+    toast('Saving…');
     for (const s of clsStudents) {
       const v = bulkMarks[s.id];
       const marksData: Record<string, number> = {};
       const existing = allResults.find((x: any) => x.studentId === s.id && x.term === bulkTerm);
-      if (existing?.marks) Object.entries(existing.marks).forEach(([k, val]) => { marksData[k] = +val; });
+      if (existing?.marks) Object.entries(existing.marks).forEach(([k, val]) => { marksData[k] = +(val as number); });
       if (v !== '' && v !== undefined && !isNaN(+v)) marksData[bulkSubject] = Math.min(+v, selectedSubj.fullMarks);
       else delete marksData[bulkSubject];
       await saveStudentResult(s.id, bulkTerm, marksData, existing?.attendance || undefined);
@@ -65,7 +65,7 @@ export default function EnterBySubject() {
   };
 
   const saveBulkAttendance = async () => {
-    toast('Saving…', '');
+    toast('Saving…');
     for (const s of clsStudents) {
       const att = bulkAtt[s.id] || { days: '', present: '' };
       const existing = allResults.find((x: any) => x.studentId === s.id && x.term === bulkTerm);
@@ -79,7 +79,7 @@ export default function EnterBySubject() {
   };
 
   const saveBulkComments = async () => {
-    toast('Saving…', '');
+    toast('Saving…');
     for (const s of clsStudents) {
       const existing = allResults.find((x: any) => x.studentId === s.id && x.term === '3');
       await saveStudentResult(s.id, '3', existing?.marks || {}, existing?.attendance || undefined, bulkComment[s.id] || '');

@@ -3,13 +3,13 @@ import { X } from 'lucide-react';
 
 interface ToastState {
   message: string;
-  type: 'success' | 'error' | '';
+  type: 'success' | 'error' | 'info' | '';
   visible: boolean;
 }
 
-let toastFn: ((msg: string, type?: 'success' | 'error') => void) | null = null;
+let toastFn: ((msg: string, type?: 'success' | 'error' | 'info' | '') => void) | null = null;
 
-export const toast = (msg: string, type: 'success' | 'error' = '') => {
+export const toast = (msg: string, type: 'success' | 'error' | 'info' | '' = '') => {
   toastFn?.(msg, type);
 };
 
@@ -38,6 +38,7 @@ const Toast: React.FC = () => {
       } ${
         state.type === 'success' ? 'bg-green-600 text-white' :
         state.type === 'error' ? 'bg-red-500 text-white' :
+        state.type === 'info' ? 'bg-blue-600 text-white' :
         'bg-school-primary text-white'
       }`}
     >

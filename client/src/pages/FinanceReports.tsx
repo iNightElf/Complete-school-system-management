@@ -6,7 +6,7 @@ import { getMonthName, fmt, headwise, pdfHeadwiseIncome, pdfHeadwiseExpense, pdf
 import { FISCAL_YEAR_START_MONTH, FISCAL_START_LABEL, FISCAL_END_LABEL } from '../lib/config';
 import * as XLSX from 'xlsx';
 
-const API_URL = '/api';
+
 
 type ReportTab = 'headwise-income' | 'headwise-expense' | 'monthly-income' | 'monthly-expense' | 'audit' | 'yearly-agm';
 
@@ -137,30 +137,9 @@ const FinanceReports: React.FC = () => {
 
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  function monthlyBreakdown(data: any[]) {
-    const map: Record<string, Record<string, number>> = {};
-    data.forEach(t => {
-      const d = new Date(t.transactionDate);
-      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const cat = t.category || 'Uncategorized';
-      if (!map[cat]) map[cat] = {};
-      map[cat][ym] = (map[cat][ym] || 0) + Number(t.amount);
-    });
-    return map;
-  }
 
-  function getMonthRange(from: string, to: string) {
-    const months: string[] = [];
-    let [fy, fm] = from.split('-').map(Number);
-    const [ty, tm] = to.split('-').map(Number);
-    while (fy < ty || (fy === ty && fm <= tm)) {
-      months.push(`${fy}-${String(fm).padStart(2, '0')}`);
-      fm++; if (fm > 12) { fm = 1; fy++; }
-    }
-    return months;
-  }
 
-  const monthRange = getMonthRange(dateFrom, dateTo);
+
 
   const handleCsv = () => {
     if (tab === 'headwise-income') {
@@ -395,20 +374,8 @@ const FinanceReports: React.FC = () => {
             const openingCash = Number(openingBalances.CASH_IN_HAND) || 0;
             const openTotal = openingAL + openingGF + openingCash;
             // Validate: closing ≈ opening + netChange
-            function accountNetChange(account: string) {
-              return yearFiltered.reduce((sum: number, t: any) => {
-                if (t.transactionType === 'INCOME' && t.destinationAccount === account) return sum + Number(t.amount);
-                if (t.transactionType === 'EXPENSE' && t.sourceAccount === account) return sum - Number(t.amount);
-                if (t.transactionType === 'INTERNAL_TRANSFER') {
-                  if (t.destinationAccount === account) return sum + Number(t.amount);
-                  if (t.sourceAccount === account) return sum - Number(t.amount);
-                }
-                return sum;
-              }, 0);
-            }
-            const netAL = accountNetChange('AL_RAWA_BANK');
-            const netGF = accountNetChange('GLOBAL_FORUM_BANK');
-            const netCash = accountNetChange('CASH_IN_HAND');
+
+
             const totalTransfers = allTransfers.reduce((s: number, t: any) => s + Number(t.amount), 0);
             return (
             <div className="space-y-6">
@@ -487,7 +454,7 @@ const FinanceReports: React.FC = () => {
               {/* Signatures */}
               <div className="border-t border-school-border pt-4 mt-6">
                 <div className="flex justify-between">
-                  {[['Finance Director', 12], ['Managing Director', 82], ['Chairman', 144]].map(([lbl, ml]) => (
+                  {([['Finance Director', 12], ['Managing Director', 82], ['Chairman', 144]] as const).map(([lbl, ml]) => (
                     <div key={lbl} className="text-center" style={{ marginLeft: `${ml / 16}rem` }}>
                       <div className="w-40 border-b border-gray-400 mb-1"></div>
                       <span className="text-[10px] text-school-muted font-bold uppercase">{lbl}</span>

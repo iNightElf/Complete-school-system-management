@@ -1,4 +1,4 @@
-import React from 'react';
+
 
 export function getGrade(pct: number) {
   if (pct >= 80) return { grade: 'A+', gpa: 5.00 };

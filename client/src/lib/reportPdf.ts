@@ -12,11 +12,11 @@ export function _pdfGradeChip(doc: jsPDF, cx: number, cy: number, grade: string)
     'C+': [[254, 249, 195], [133, 77, 14]], 'C': [[254, 252, 232], [161, 98, 7]],
     'D': [[255, 237, 213], [194, 65, 12]], 'F': [[254, 226, 226], [185, 28, 28]],
   };
-  const [bg, fg] = map[grade] || [[243, 244, 246], [107, 114, 128]];
-  doc.setFillColor(...bg);
+  const [bg, fg] = (map[grade] || [[243, 244, 246], [107, 114, 128]]) as unknown as [number[], number[]];
+  doc.setFillColor(...(bg as [number, number, number]));
   doc.roundedRect(cx - 9, cy - 3, 18, 6, 3, 3, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
-  doc.setTextColor(...fg);
+  doc.setTextColor(...(fg as [number, number, number]));
   doc.text(grade, cx, cy + 0.8, { align: 'center' });
   doc.setTextColor(26, 26, 46); doc.setFont('helvetica', 'normal');
 }
@@ -32,7 +32,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
   }
 
   const W = 210, M = 12, CW = W - M * 2;
-  const NAVY = [26, 26, 46], GREEN = [45, 106, 79], RED = [200, 75, 49], WHITE = [255, 255, 255], MUTED = [130, 124, 114], ROW1 = [255, 253, 247], ROW2 = [244, 239, 230];
+  const NAVY = [26, 26, 46] as const, GREEN = [45, 106, 79] as const, RED = [200, 75, 49] as const, WHITE = [255, 255, 255] as const, MUTED = [130, 124, 114] as const, ROW1 = [255, 253, 247] as const, ROW2 = [244, 239, 230] as const;
   const isFinal = term === 'final';
   const label = isFinal ? 'Annual Result' : TERM_NAMES[term];
   const clsStudents = (await import('../store')).useSchoolStore.getState().students.filter((s: any) => s.class === clsName);
@@ -103,9 +103,9 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
       const m = tm[subj.name];
       const obt = (m !== undefined && m !== null) ? +m : null;
       const g = obt !== null ? gradeFromMarks(obt, subj.fullMarks) : null;
-      if (g) { gpas.push(g.gpa); if (g.grade === 'F') hasF = true; totObt += obt; totFull += subj.fullMarks; }
+      if (g) { gpas.push(g.gpa); if (g.grade === 'F') hasF = true; totObt += obt!; totFull += subj.fullMarks; }
 
-      doc.setFillColor(...(ri % 2 === 0 ? ROW1 : ROW2)); doc.rect(M, y, TW, RH, 'F');
+      doc.setFillColor(...((ri % 2 === 0 ? ROW1 : ROW2) as [number, number, number])); doc.rect(M, y, TW, RH, 'F');
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...NAVY);
       let nm = subj.name;
       while (doc.getTextWidth(nm) > C.s.w - 6 && nm.length > 2) nm = nm.slice(0, -1);
@@ -177,8 +177,8 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
     doc.setFillColor(36, 84, 62);
     [C.gr, C.gp].forEach(col => doc.rect(col.x, y, col.w, H2, 'F'));
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...WHITE);
-    [['1st Term', C.t1], ['2nd Term', C.t2], ['Final Exam', C.t3], ['Average', C.avg], ['Grade', C.gr], ['GPA', C.gp]].forEach(([lbl, col]) => {
-      doc.text(lbl, col.x + col.w / 2, y + H2 / 2 + 0.8, { align: 'center' });
+    ([['1st Term', C.t1], ['2nd Term', C.t2], ['Final Exam', C.t3], ['Average', C.avg], ['Grade', C.gr], ['GPA', C.gp]] as const).forEach(([lbl, col]) => {
+      doc.text(lbl, (col as any).x + (col as any).w / 2, y + H2 / 2 + 0.8, { align: 'center' });
     });
     y += H2;
 
@@ -191,7 +191,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
       const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
       const gAvg = avg !== null ? gradeFromMarks(avg, subj.fullMarks) : null;
 
-      doc.setFillColor(...(ri % 2 === 0 ? ROW1 : ROW2)); doc.rect(M, y, TW, RH, 'F');
+      doc.setFillColor(...((ri % 2 === 0 ? ROW1 : ROW2) as [number, number, number])); doc.rect(M, y, TW, RH, 'F');
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...NAVY);
       let nm = subj.name;
       while (doc.getTextWidth(nm) > C.s.w - 5 && nm.length > 2) nm = nm.slice(0, -1);
@@ -200,7 +200,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
       doc.text(`(${subj.fullMarks})`, C.s.x + 3, y + 7.2);
 
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...NAVY);
-      [[m1, C.t1], [m2, C.t2], [m3, C.t3]].forEach(([m, col]) => {
+      ([[m1, C.t1], [m2, C.t2], [m3, C.t3]] as const).forEach(([m, col]) => {
         if (m !== null) doc.text(String(m), col.x + col.w / 2, y + 5.5, { align: 'center' });
         else { doc.setTextColor(...MUTED); doc.text('—', col.x + col.w / 2, y + 5.5, { align: 'center' }); doc.setTextColor(...NAVY); }
       });
@@ -234,8 +234,6 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
   const GAP = 8;
   const COLW = (CW - GAP) / 2;
   const attX = M, cmtX = M + COLW + GAP;
-  const topY = y;
-
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...NAVY);
   doc.text(isFinal ? 'ATTENDANCE SUMMARY' : `ATTENDANCE — ${label.toUpperCase()}`, attX, y + 4.5);
   doc.text("TEACHER'S COMMENT", cmtX, y + 4.5);
@@ -266,7 +264,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
       const att = allResults.find((x: any) => x.studentId === student.id && x.term === t)?.attendance;
       const vals = [TERM_NAMES[t], att?.days || '—', att?.present || '—', calcAttendPct(att)];
       ax = attX;
-      doc.setFillColor(...(ri % 2 === 0 ? ROW1 : ROW2)); aC.forEach(w => { doc.rect(ax, y, w, AH, 'F'); ax += w; });
+      doc.setFillColor(...((ri % 2 === 0 ? ROW1 : ROW2) as [number, number, number])); aC.forEach(w => { doc.rect(ax, y, w, AH, 'F'); ax += w; });
       ax = attX;
       vals.forEach((v, i) => {
         doc.setTextColor(26, 26, 46);

@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useSchoolStore } from '../../store';
-import { toast } from '../../components/Toast';
 import ClassSelect from '../../components/ClassSelect';
 import { tabulationPDF } from '../../lib/tabulationPdf';
 import { ClipboardList, Download } from 'lucide-react';

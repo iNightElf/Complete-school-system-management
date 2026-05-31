@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { useSchoolStore } from '../store';
 
 export default function ClassSelect({ value, onChange }: { value: string; onChange: (cls: any) => void }) {

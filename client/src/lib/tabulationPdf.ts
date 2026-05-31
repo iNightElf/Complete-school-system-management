@@ -10,8 +10,8 @@ export function tabulationPDF({ clsName, subjects, clsStudents, allResults, term
 
   const isFinal = term === 'final';
   const tLabel = isFinal ? 'Annual Combined' : TERM_NAMES[term];
-  const NAVY = [26, 26, 46], GREEN = [45, 106, 79], WHITE = [255, 255, 255], MUTED = [140, 134, 124];
-  const ROW1 = [255, 253, 247], ROW2 = [244, 239, 230];
+  const NAVY = [26, 26, 46] as const, GREEN = [45, 106, 79] as const, WHITE = [255, 255, 255] as const, MUTED = [140, 134, 124] as const;
+  const ROW1 = [255, 253, 247] as const, ROW2 = [244, 239, 230] as const;
   const NAME_W = 40;
   const SUM_COLS: [string, number][] = [['Total', 16], ['GPA', 14], ['Grade', 14], ['Rank', 12]];
   const SUM_W = 56;
@@ -29,7 +29,7 @@ export function tabulationPDF({ clsName, subjects, clsStudents, allResults, term
     doc.setFillColor(...NAVY); doc.rect(M, y, NAME_W, HH, 'F');
     let ax = M + NAME_W;
     subjects.forEach(() => { doc.setFillColor(...NAVY); doc.rect(ax, y, SW, HH, 'F'); ax += SW; });
-    SUM_COLS.forEach(([, w]) => { doc.setFillColor(...(isFinal ? GREEN : NAVY)); doc.rect(ax, y, w, HH, 'F'); ax += w; });
+    SUM_COLS.forEach(([, w]) => { doc.setFillColor(...((isFinal ? GREEN : NAVY) as [number, number, number])); doc.rect(ax, y, w, HH, 'F'); ax += w; });
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...WHITE);
     doc.text('Student Name', M + 3, y + HH / 2 + 1);
     ax = M + NAME_W;
@@ -52,7 +52,7 @@ export function tabulationPDF({ clsName, subjects, clsStudents, allResults, term
     const studentResults = allResults.filter((x: any) => x.studentId === s.id);
     const bg = ri % 2 === 0 ? ROW1 : ROW2;
     let ax = M;
-    doc.setFillColor(...bg);
+    doc.setFillColor(...(bg as unknown as [number, number, number]));
     doc.rect(ax, y, NAME_W, RH, 'F'); ax += NAME_W;
     subjects.forEach(() => { doc.rect(ax, y, SW, RH, 'F'); ax += SW; });
     SUM_COLS.forEach(([, w]) => { doc.rect(ax, y, w, RH, 'F'); ax += w; });

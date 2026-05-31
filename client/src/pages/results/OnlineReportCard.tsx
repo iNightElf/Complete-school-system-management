@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { useSchoolStore } from '../../store';
 import { Download, User, CalendarDays, MessageSquare } from 'lucide-react';
 import { gradeFromMarks, gradeChip, gpaToGrade, calcTermRanks, calcYearRanks, calcYearSummary, calcAttendPct } from '../../lib/grading';
@@ -13,7 +13,7 @@ export default function OnlineReportCard({ student, cls, subjects, allResults, t
   const label = isFinal ? 'Annual Result' : TERM_NAMES[term];
   const clsStudents = useSchoolStore((s) => s.students).filter((s: any) => s.class === cls.name);
   const ranks = isFinal ? calcYearRanks(clsStudents, subjects, allResults) : calcTermRanks(clsStudents, term, subjects, allResults);
-  const rank = ranks[student.id] || '—';
+
 
   const res = allResults.find((r: any) => r.studentId === student.id && r.term === (isFinal ? '3' : term));
 

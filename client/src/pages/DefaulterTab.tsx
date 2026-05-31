@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSchoolStore } from '../store';
 import axios from 'axios';
 import { toast } from '../components/Toast';
 import { AlertTriangle, Download, Printer, Check, X } from 'lucide-react';
-import { getMonthNameShort } from '../lib/financeReportPdf';
 import { defaulterPDF } from '../lib/defaulterPdf';
 
 const API_URL = '/api';

@@ -21,9 +21,10 @@ const PhotoUpload: React.FC<Props> = ({ photo, onPhotoChange, onOpenCamera, size
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // @ts-expect-error — TS 6 DOM type quirk, Image() constructor
     const img = new Image();
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = (ev: any) => {
       img.onload = () => {
         const MAX = 400;
         let w = img.width;

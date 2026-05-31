@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSchoolStore, useAuthStore, useUserManagementStore, useUIStore } from '../store';
 import axios from 'axios';
-import { ArrowUpCircle, ArrowDownCircle, ArrowRightLeft, Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw } from 'lucide-react';
+import { Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw } from 'lucide-react';
 import { toast } from '../components/Toast';
 import FinanceReports from './FinanceReports';
 import DefaulterTab from './DefaulterTab';
@@ -24,7 +24,7 @@ type TxTab = 'income' | 'expense' | 'transfer';
 
 const PAGE_SIZE = 25;
 
-function Ledger({ transactions, students, fmt, fetchTransactions, fetchFinance, userMap }: { transactions: any[]; students: any[]; fmt: (n: number) => string; fetchTransactions: () => void; fetchFinance: () => void; userMap: Record<string, string> }) {
+function Ledger({ transactions, students: _students, fmt, fetchTransactions, fetchFinance, userMap }: { transactions: any[]; students: any[]; fmt: (n: number) => string; fetchTransactions: () => void; fetchFinance: () => void; userMap: Record<string, string> }) {
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
   const [dateFrom, setDateFrom] = useState('');
@@ -314,11 +314,7 @@ const FinanceSection: React.FC = () => {
     }
   };
 
-  const getTxIcon = (type: string) => {
-    if (type === 'INCOME') return <ArrowUpCircle className="text-emerald-500" size={18} />;
-    if (type === 'EXPENSE') return <ArrowDownCircle className="text-rose-500" size={18} />;
-    return <ArrowRightLeft className="text-blue-500" size={18} />;
-  };
+
 
   const fmt = (n: number) => n.toLocaleString('en-BD', { minimumFractionDigits: 0 });
 
@@ -394,7 +390,7 @@ const FinanceSection: React.FC = () => {
               { k: 'expense', lbl: <><TrendingDown size={14} /> Expense</>, cls: 'text-rose-700 bg-rose-50 border-rose-200' },
               { k: 'transfer', lbl: <><RefreshCw size={14} /> Transfer</>, cls: 'text-blue-700 bg-blue-50 border-blue-200' },
             ].map(({ k, lbl, cls }) => (
-              <button key={k} onClick={() => { setActiveTab(k); resetForm(); }}
+              <button key={k} onClick={() => { setActiveTab(k as TxTab); resetForm(); }}
                 className={`px-4 py-2.5 rounded-xl text-sm font-bold border transition-all flex items-center gap-1.5 ${activeTab === k ? cls + ' shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
                 {lbl}
               </button>

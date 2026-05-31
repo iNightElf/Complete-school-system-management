@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import CameraModal from '../../components/CameraModal';

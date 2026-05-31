@@ -249,7 +249,7 @@ export function pdfAudit(yearIncome: any[], yearExpense: any[], yearFilter: stri
   doc.text(lines, 12, y); y += lines.length * 5 + 10;
 
   const sigW = 60;
-  [['Prepared By', 12], ['Finance Officer', 82], ['Principal', 152]].forEach(([lbl, sx]) => {
+  ([['Prepared By', 12], ['Finance Officer', 82], ['Principal', 152]] as const).forEach(([lbl, sx]) => {
     doc.setDrawColor(150, 150, 150); doc.setLineWidth(0.3);
     doc.line(sx, y, sx + sigW, y);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(130, 124, 114);
@@ -279,7 +279,7 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(26, 26, 46);
   doc.text('Income', 12, y); y += 5;
   const hwInc = headwise(yearIncome);
-  hwInc.forEach(([cat, amt], i) => {
+  hwInc.forEach(([cat, amt], _i) => {
     if (y > 270) { doc.addPage(); y = 14; }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(26, 26, 46);
     doc.text(cat, 14, y + 4); doc.text(fmt(amt) + ' /-', 196, y + 4, { align: 'right' });
@@ -294,7 +294,7 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(26, 26, 46);
   doc.text('Expenditure', 12, y); y += 5;
   const hwExp = headwise(yearExpense);
-  hwExp.forEach(([cat, amt], i) => {
+  hwExp.forEach(([cat, amt], _i) => {
     if (y > 270) { doc.addPage(); y = 14; }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(26, 26, 46);
     doc.text(cat, 14, y + 4); doc.text(fmt(amt) + ' /-', 196, y + 4, { align: 'right' });
@@ -429,7 +429,7 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   // ── SIGNATURES ──
   if (y > 240) { doc.addPage(); y = 14; }
   const sigW = 55;
-  [['Finance Director', 12], ['Managing Director', 82], ['Chairman', 144]].forEach(([lbl, sx]) => {
+  ([['Finance Director', 12], ['Managing Director', 82], ['Chairman', 144]] as const).forEach(([lbl, sx]) => {
     doc.setDrawColor(150, 150, 150); doc.setLineWidth(0.3);
     doc.line(sx, y, sx + sigW, y);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(130, 124, 114);

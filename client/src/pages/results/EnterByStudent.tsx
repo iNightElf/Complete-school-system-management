@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import ClassSelect from '../../components/ClassSelect';
-import { gradeFromMarks, gradeChip, gpaToGrade, calcTermSummary, calcTermRanks, calcAttendPct } from '../../lib/grading';
+import { gradeFromMarks, gradeChip, gpaToGrade, calcTermSummary, calcTermRanks } from '../../lib/grading';
 import OnlineReportCard from './OnlineReportCard';
 import { FileText, Save, CalendarDays, MessageSquare, PenLine, Award, User } from 'lucide-react';
 

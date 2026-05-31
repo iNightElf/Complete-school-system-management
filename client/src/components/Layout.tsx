@@ -18,7 +18,7 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [, setSearchParams] = useSearchParams();
   const { logout, user } = useAuthStore();
   const role = user?.role;
   const { activeMode, swipeBack } = useUIStore();

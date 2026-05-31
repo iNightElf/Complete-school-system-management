@@ -75,7 +75,7 @@ export default function ExcelImportTab() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<ImportRow>>({});
   const [importing, setImporting] = useState(false);
-  const [duplicateIds, setDuplicateIds] = useState<Set<number>>(new Set());
+
 
   useEffect(() => { fetchStudents(); }, []);
 

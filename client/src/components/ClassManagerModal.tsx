@@ -4,7 +4,7 @@ import { toast } from './Toast';
 import { X, ArrowUp, ArrowDown, Trash2, Settings, GraduationCap, ChevronUp, ChevronDown } from 'lucide-react';
 import DeleteConfirmModal from './DeleteConfirmModal';
 
-const classIcon = (cls: string) => <GraduationCap size={20} />;
+const classIcon = () => <GraduationCap size={20} />;
 
 interface Props {
   open: boolean;
@@ -81,7 +81,7 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
           <ul className="space-y-2 max-h-64 overflow-y-auto">
             {sorted.map((cls, i) => (
               <li key={cls.id} className="flex items-center gap-3 p-2 bg-school-paper rounded-xl">
-                <span>{classIcon(cls.name)}</span>
+                <span>{classIcon()}</span>
                 <span className="flex-1 text-sm font-medium">{cls.name}</span>
                 <div className="flex gap-1">
                   <button

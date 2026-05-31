@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore, useUserManagementStore } from '../store';
-import { Users, Shield, Trash2, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Users, Trash2, ChevronDown, AlertTriangle } from 'lucide-react';
 
 const ROLE_BADGES: Record<string, string> = {
   admin: 'bg-purple-100 text-purple-700 border-purple-200',
