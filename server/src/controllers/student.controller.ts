@@ -4,6 +4,12 @@ import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
 import { sanitizeError } from "../lib/errors.js";
 import { validate, createStudentSchema } from "../lib/validate.js";
+import { logAudit } from "../lib/audit.js";
+
+async function resolveClassId(className: string): Promise<string | null> {
+  const cls = await prisma.schoolClass.findUnique({ where: { name: className } });
+  return cls?.id || null;
+}
 
 function parsePhoto(body: any): Buffer | null {
   if (!body.photo) return null;
@@ -53,9 +59,11 @@ export const createStudent = async (req: Request, res: Response) => {
     const { class: className, roll, name, fatherName, motherName, contact } = v.data;
     const photoBuffer = parsePhoto(req.body);
 
+    const classId = await resolveClassId(className);
     const student = await prisma.student.create({
       data: {
         class: className,
+        classId,
         roll: roll || null,
         name,
         fatherName: fatherName || null,
@@ -65,6 +73,7 @@ export const createStudent = async (req: Request, res: Response) => {
       },
     });
 
+    logAudit({ action: "CREATE", entityType: "Student", entityId: student.id, details: JSON.stringify({ name, class: className }) });
     res.status(201).json({ ...student, photo: null });
   } catch (error: any) {
     res.status(400).json({ error: sanitizeError(error) });
@@ -80,7 +89,10 @@ export const updateStudent = async (req: Request, res: Response) => {
     const photoBuffer = parsePhoto(req.body);
 
     const data: any = {};
-    if (className !== undefined) data.class = className;
+    if (className !== undefined) {
+      data.class = className;
+      data.classId = await resolveClassId(className);
+    }
     if (roll !== undefined) data.roll = roll || null;
     if (name !== undefined) data.name = name;
     if (fatherName !== undefined) data.fatherName = fatherName || null;
@@ -94,6 +106,7 @@ export const updateStudent = async (req: Request, res: Response) => {
       include: { results: true },
     });
 
+    logAudit({ action: "UPDATE", entityType: "Student", entityId: id, details: JSON.stringify({ changes: Object.keys(data) }) });
     res.json({
       ...student,
       photo: undefined,

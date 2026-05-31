@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSchoolStore, useAuthStore, useUserManagementStore, useUIStore } from '../store';
 import axios from 'axios';
-import { Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw } from 'lucide-react';
+import { Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw, BookOpen } from 'lucide-react';
 import { toast } from '../components/Toast';
 import FinanceReports from './FinanceReports';
 import DefaulterTab from './DefaulterTab';
 import FeeAssignmentTab from './FeeAssignmentTab';
 import ExcelImportTab from './ExcelImportTab';
+import FeeScheduleTab from './FeeScheduleTab';
 
 const API_URL = '/api';
 
@@ -19,7 +20,7 @@ const ACCOUNTS = [
 const INCOME_CATEGORIES = ['Tuition Fee', 'Admission Fee', 'Hifz Tuition Fee', 'Hifz Admission Fee', 'Books Fee', 'Copy Fee', 'Stationary Fee', 'Accessories Fee', 'Transfer from Global Forum', 'Donation', 'Other Income'];
 const EXPENSE_CATEGORIES = ['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense'];
 
-type MainTab = 'transactions' | 'reports' | 'fee-assignment' | 'defaulter' | 'import';
+type MainTab = 'transactions' | 'reports' | 'fee-assignment' | 'defaulter' | 'import' | 'fee-schedule';
 type TxTab = 'income' | 'expense' | 'transfer';
 
 const PAGE_SIZE = 25;
@@ -375,12 +376,16 @@ const FinanceSection: React.FC = () => {
         {canWrite && <button onClick={() => setMainTab('import')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'import' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
           <Upload size={14} /> Import Excel
         </button>}
+        <button onClick={() => setMainTab('fee-schedule')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'fee-schedule' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
+          <BookOpen size={14} /> Fee Schedules
+        </button>
       </div>
 
       {mainTab === 'reports' ? <FinanceReports /> : null}
       {mainTab === 'defaulter' ? <DefaulterTab /> : null}
       {mainTab === 'fee-assignment' ? <FeeAssignmentTab /> : null}
       {mainTab === 'import' ? <ExcelImportTab /> : null}
+      {mainTab === 'fee-schedule' ? <FeeScheduleTab /> : null}
 
       {mainTab === 'transactions' && (<div className="space-y-4">
           {/* Tab Bar */}

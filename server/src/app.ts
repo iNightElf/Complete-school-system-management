@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import "dotenv/config";
 
 import { auth } from "./lib/auth.js";
+import { prisma } from "./lib/prisma.js";
 import { toNodeHandler } from "better-auth/node";
 import * as students from "./controllers/student.controller.js";
 import * as finance from "./controllers/finance.controller.js";
@@ -13,6 +14,7 @@ import * as ops from "./controllers/ops.controller.js";
 import * as classes from "./controllers/class.controller.js";
 import * as results from "./controllers/result.controller.js";
 import * as users from "./controllers/user.controller.js";
+import * as feeSchedule from "./controllers/feeSchedule.controller.js";
 import { authenticate, authorizePermission } from "./middleware/auth.middleware.js";
 
 const corsOrigins = process.env.CORS_ORIGINS
@@ -104,6 +106,18 @@ app.get("/api/students/:id/results", authenticate, authorizePermission("results:
 app.post("/api/students/:id/results", authenticate, authorizePermission("results:write"), results.saveStudentResult);
 app.get("/api/classes/:classId/results", authenticate, authorizePermission("results:read"), results.getClassResults);
 app.delete("/api/classes/:classId/results", authenticate, authorizePermission("results:write"), results.deleteClassResults);
+
+// ── Academic Years ──
+app.get("/api/academic-years", authenticate, async (_req, res) => {
+  const years = await prisma.academicYear.findMany({ orderBy: { startDate: "desc" } });
+  res.json(years);
+});
+
+// ── Fee Schedules ──
+app.get("/api/finance/fee-schedules", authenticate, authorizePermission("finance:read"), feeSchedule.getFeeSchedules);
+app.post("/api/finance/fee-schedules", authenticate, authorizePermission("finance:write"), feeSchedule.createFeeSchedule);
+app.put("/api/finance/fee-schedules/:id", authenticate, authorizePermission("finance:write"), feeSchedule.updateFeeSchedule);
+app.delete("/api/finance/fee-schedules/:id", authenticate, authorizePermission("finance:write"), feeSchedule.deleteFeeSchedule);
 
 // ── Finance ──
 app.get("/api/finance/balances", authenticate, authorizePermission("finance:read"), finance.getBalances);

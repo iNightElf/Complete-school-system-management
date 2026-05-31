@@ -4,6 +4,7 @@ import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
 import { sanitizeError } from "../lib/errors.js";
 import { validate, createTransactionSchema } from "../lib/validate.js";
+import { logAudit } from "../lib/audit.js";
 
 export const createTransaction = async (req: AuthRequest, res: Response) => {
   try {
@@ -72,6 +73,19 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
         createdBy: req.session?.user?.id || "system",
       },
     });
+
+    logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "Transaction", entityId: transaction.id, details: JSON.stringify({ amount: finalAmount, transactionType, category, studentId }) });
+
+    if (studentId) {
+      await prisma.paymentAllocation.create({
+        data: {
+          transactionId: transaction.id,
+          studentId,
+          period: feeMonth || undefined,
+          amount: finalAmount,
+        },
+      }).catch(() => {});
+    }
 
     res.status(201).json(transaction);
   } catch (error: any) {
@@ -282,6 +296,7 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
       }),
     ]);
 
+    logAudit({ userId, action: "CANCEL", entityType: "Transaction", entityId: id, details: JSON.stringify({ reason, reversalId: reversal.id }) });
     res.json({ cancelled, reversal });
   } catch (error: any) {
     res.status(400).json({ error: sanitizeError(error) });
