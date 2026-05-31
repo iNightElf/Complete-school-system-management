@@ -3,6 +3,7 @@ import { useSchoolStore, useAuthStore } from '../store';
 import { toast } from '../components/Toast';
 import ClassManagerModal from '../components/ClassManagerModal';
 import { Settings, RefreshCw } from 'lucide-react';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 
 const API_URL = '/api';
 
@@ -72,10 +73,16 @@ const AccessoriesSection: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this book?')) return;
-    await fetch(`${API_URL}/books/${id}`, { method: 'DELETE', credentials: 'include' });
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const confirmDelete = async () => {
+    if (!deleteId) return;
+    setDeleteLoading(true);
+    await fetch(`${API_URL}/books/${deleteId}`, { method: 'DELETE', credentials: 'include' });
     toast('Book deleted');
+    setDeleteId(null);
+    setDeleteLoading(false);
     fetchBooks();
   };
 
@@ -207,7 +214,7 @@ const AccessoriesSection: React.FC = () => {
                           <td className="px-4 py-3 text-center">
                             <div className="flex gap-1 justify-center">
                               <button onClick={() => handleEdit(b)} className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs hover:bg-blue-100">Edit</button>
-                              <button onClick={() => handleDelete(b.id)} className="px-2 py-1 bg-red-50 text-red-500 rounded text-xs hover:bg-red-100">Delete</button>
+                               <button onClick={() => setDeleteId(b.id)} className="px-2 py-1 bg-red-50 text-red-500 rounded text-xs hover:bg-red-100">Delete</button>
                             </div>
                           </td>
                         )}
@@ -227,6 +234,7 @@ const AccessoriesSection: React.FC = () => {
           )}
         </div>
       )}
+      <DeleteConfirmModal open={!!deleteId} title="Delete Book" message="This will permanently delete this book." onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} loading={deleteLoading} />
     </div>
   );
 };

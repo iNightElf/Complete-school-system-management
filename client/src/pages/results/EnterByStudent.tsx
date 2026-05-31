@@ -53,7 +53,10 @@ export default function EnterByStudent() {
   const save = async (m: Record<string, string>, att: { days: string; present: string }, cmt: string) => {
     const marksData: Record<string, number> = {};
     subjects.forEach((sub: any) => { const v = m[sub.name]; if (v !== '' && v !== undefined && !isNaN(+v)) marksData[sub.name] = Math.min(+v, sub.fullMarks); });
-    await saveStudentResult(activeStudent.id, activeTerm, marksData, { days: parseInt(att.days) || 0, present: parseInt(att.present) || 0 }, cmt);
+    const days = parseInt(att.days) || 0;
+    const present = parseInt(att.present) || 0;
+    const attendanceData = days > 0 ? { days, present } : undefined;
+    await saveStudentResult(activeStudent.id, activeTerm, marksData, attendanceData, cmt);
   };
 
   const handleMarksChange = (subjName: string, value: string, fullMarks: number) => {

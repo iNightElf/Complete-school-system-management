@@ -57,7 +57,7 @@ export default function EnterBySubject() {
       if (existing?.marks) Object.entries(existing.marks).forEach(([k, val]) => { marksData[k] = +val; });
       if (v !== '' && v !== undefined && !isNaN(+v)) marksData[bulkSubject] = Math.min(+v, selectedSubj.fullMarks);
       else delete marksData[bulkSubject];
-      await saveStudentResult(s.id, bulkTerm, marksData, existing?.attendance || { days: 0, present: 0 });
+      await saveStudentResult(s.id, bulkTerm, marksData, existing?.attendance || undefined);
     }
     toast(`Marks saved for ${clsStudents.length} students ✓`, 'success');
     loadResults(cls.id);
@@ -68,7 +68,10 @@ export default function EnterBySubject() {
     for (const s of clsStudents) {
       const att = bulkAtt[s.id] || { days: '', present: '' };
       const existing = allResults.find((x: any) => x.studentId === s.id && x.term === bulkTerm);
-      await saveStudentResult(s.id, bulkTerm, existing?.marks || {}, { days: parseInt(att.days) || 0, present: parseInt(att.present) || 0 });
+      const days = parseInt(att.days) || 0;
+      const present = parseInt(att.present) || 0;
+      const attendanceData = days > 0 ? { days, present } : undefined;
+      await saveStudentResult(s.id, bulkTerm, existing?.marks || {}, attendanceData);
     }
     toast(`Attendance saved ✓`, 'success');
     loadResults(cls.id);
@@ -78,7 +81,7 @@ export default function EnterBySubject() {
     toast('Saving…', '');
     for (const s of clsStudents) {
       const existing = allResults.find((x: any) => x.studentId === s.id && x.term === '3');
-      await saveStudentResult(s.id, '3', existing?.marks || {}, existing?.attendance || { days: 0, present: 0 }, bulkComment[s.id] || '');
+      await saveStudentResult(s.id, '3', existing?.marks || {}, existing?.attendance || undefined, bulkComment[s.id] || '');
     }
     toast(`Comments saved ✓`, 'success');
     loadResults(cls.id);

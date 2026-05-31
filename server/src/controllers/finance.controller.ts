@@ -3,9 +3,12 @@ import { classifyTransaction } from "../lib/finance-rules.js";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
 import { sanitizeError } from "../lib/errors.js";
+import { validate, createTransactionSchema } from "../lib/validate.js";
 
 export const createTransaction = async (req: AuthRequest, res: Response) => {
   try {
+    const validation = validate(createTransactionSchema, req.body);
+    if (!validation.success) return res.status(400).json({ error: validation.error });
     const {
       date,
       amount,
@@ -19,10 +22,20 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       studentId,
       className,
       feeMonth,
-    } = req.body;
+    } = validation.data;
 
     const { transactionType, affectsIncomeLedger, affectsExpenseLedger } =
       classifyTransaction(sourceAccount, destinationAccount);
+
+    const STUDENT_FEE_CATEGORIES = ['Tuition Fee', 'Hifz Tuition Fee', 'Admission Fee', 'Hifz Admission Fee', 'Books Fee', 'Copy Fee', 'Stationary Fee', 'Accessories Fee'];
+    if (studentId && feeMonth && category && STUDENT_FEE_CATEGORIES.includes(category)) {
+      const existing = await prisma.transaction.findFirst({
+        where: { studentId, category, feeMonth, isCancelled: false },
+      });
+      if (existing) {
+        return res.status(409).json({ error: `${category} for ${feeMonth} is already recorded for this student` });
+      }
+    }
 
     let finalAmount = Number(amount);
     let note = description || "";
@@ -61,33 +74,21 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
 
 export const getBalances = async (req: Request, res: Response) => {
   try {
-    const transactions = await prisma.transaction.findMany();
-
-    let alRawaBank = 0;
-    let globalForumBank = 0;
-    let cashInHand = 0;
-
-    transactions.forEach((t) => {
-      if (t.isCancelled) return; // cancelled transactions don't affect balances
-      const amt = Number(t.amount);
-      const src = t.sourceAccount;
-      const dst = t.destinationAccount;
-
-      // Money into account
-      if (dst === "AL_RAWA_BANK") alRawaBank += amt;
-      if (dst === "GLOBAL_FORUM_BANK") globalForumBank += amt;
-      if (dst === "CASH_IN_HAND") cashInHand += amt;
-
-      // Money out of account
-      if (src === "AL_RAWA_BANK") alRawaBank -= amt;
-      if (src === "GLOBAL_FORUM_BANK") globalForumBank -= amt;
-      if (src === "CASH_IN_HAND") cashInHand -= amt;
-    });
-
+    const rows = await prisma.$queryRaw<[{ al_rawa: string | null; global_forum: string | null; cash: string | null }]>`
+      SELECT
+        COALESCE(SUM(CASE WHEN destination_account = 'AL_RAWA_BANK' THEN amount
+                         WHEN source_account = 'AL_RAWA_BANK' THEN -amount ELSE 0 END), 0) AS al_rawa,
+        COALESCE(SUM(CASE WHEN destination_account = 'GLOBAL_FORUM_BANK' THEN amount
+                         WHEN source_account = 'GLOBAL_FORUM_BANK' THEN -amount ELSE 0 END), 0) AS global_forum,
+        COALESCE(SUM(CASE WHEN destination_account = 'CASH_IN_HAND' THEN amount
+                         WHEN source_account = 'CASH_IN_HAND' THEN -amount ELSE 0 END), 0) AS cash
+      FROM transactions WHERE is_cancelled = false
+    `;
+    const r = rows[0];
     res.json({
-      AL_RAWA_BANK: alRawaBank,
-      GLOBAL_FORUM_BANK: globalForumBank,
-      CASH_IN_HAND: cashInHand,
+      AL_RAWA_BANK: Number(r.al_rawa),
+      GLOBAL_FORUM_BANK: Number(r.global_forum),
+      CASH_IN_HAND: Number(r.cash),
     });
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
@@ -96,7 +97,16 @@ export const getBalances = async (req: Request, res: Response) => {
 
 export const getTransactions = async (req: Request, res: Response) => {
   try {
+    const { dateFrom, dateTo, type } = req.query;
+    const where: any = {};
+    if (dateFrom || dateTo) {
+      where.transactionDate = {};
+      if (dateFrom) where.transactionDate.gte = new Date(String(dateFrom));
+      if (dateTo) where.transactionDate.lte = new Date(String(dateTo) + 'T23:59:59Z');
+    }
+    if (type && type !== 'all') where.transactionType = String(type);
     const transactions = await prisma.transaction.findMany({
+      where,
       orderBy: { transactionDate: "desc" },
       include: { student: { select: { id: true, name: true, class: true, roll: true } } },
     });
@@ -290,6 +300,7 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
         RECURRING_CATEGORIES.forEach(cat => {
           if (feeCategory && feeCategory !== cat) return;
           const defaultAmt = getStudentDefault(student.id, cat) || getClassDefault(student.class, cat) || 0;
+          if (defaultAmt <= 0) return;
           const paidMonths = new Set(
             studentTx
               .filter(t => t.studentId === student.id && t.category === cat)
@@ -342,6 +353,7 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
         ONETIME_CATEGORIES.forEach(cat => {
           if (feeCategory && feeCategory !== cat) return;
           let defaultAmt = getStudentDefault(student.id, cat) || getClassDefault(student.class, cat) || 0;
+          if (defaultAmt <= 0) return;
           const paid = studentTx.some(t => t.studentId === student.id && t.category === cat && new Date(t.transactionDate).getFullYear() === Number(year));
           fees.push({
             name: cat, type: 'onetime', amount: defaultAmt,
@@ -356,6 +368,7 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
         GLOBAL_CATEGORIES.forEach(cat => {
           if (feeCategory && feeCategory !== cat) return;
           const defaultAmt = globalFeeAmounts[cat] || 0;
+          if (defaultAmt <= 0) return;
           const paid = studentTx.some(t => t.studentId === student.id && t.category === cat && new Date(t.transactionDate).getFullYear() === Number(year));
           fees.push({
             name: cat, type: 'global', amount: defaultAmt,

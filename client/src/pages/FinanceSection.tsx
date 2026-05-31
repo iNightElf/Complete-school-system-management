@@ -241,6 +241,7 @@ const FinanceSection: React.FC = () => {
   const [desc, setDesc] = useState('');
   const [sourceAccount, setSourceAccount] = useState('AL_RAWA_BANK');
   const [transferTo, setTransferTo] = useState('AL_RAWA_BANK');
+  const [depositTo, setDepositTo] = useState('CASH_IN_HAND');
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');
   const [feeMonth, setFeeMonth] = useState('');
@@ -264,6 +265,7 @@ const FinanceSection: React.FC = () => {
     setAmount(''); setCategory(''); setCustomCategory(''); setDesc('');
     setDate(new Date().toISOString().split('T')[0]);
     setSelectedClass(''); setSelectedStudent(''); setFeeMonth('');
+    setDepositTo('CASH_IN_HAND');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -276,7 +278,7 @@ const FinanceSection: React.FC = () => {
 
       if (activeTab === 'income') {
         source = undefined; // external
-        destination = 'CASH_IN_HAND';
+        destination = depositTo;
       } else if (activeTab === 'expense') {
         source = sourceAccount;
         destination = undefined; // external
@@ -301,8 +303,9 @@ const FinanceSection: React.FC = () => {
       resetForm();
       fetchFinance();
       fetchTransactions();
-    } catch {
-      toast('Failed to save transaction', 'error');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error;
+      toast(msg || 'Failed to save transaction', 'error');
     } finally {
       setLoading(false);
     }
@@ -318,11 +321,15 @@ const FinanceSection: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      {/* Balance Cards — 2 accounts only */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* Balance Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white p-5 shadow-md">
           <p className="text-[10px] uppercase font-bold tracking-widest opacity-70 mb-1">AL RAWA Bank</p>
           <h3 className="text-2xl font-serif">৳ {fmt(balances.AL_RAWA_BANK || 0)}</h3>
+        </div>
+        <div className="rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white p-5 shadow-md">
+          <p className="text-[10px] uppercase font-bold tracking-widest opacity-70 mb-1">Global Forum</p>
+          <h3 className="text-2xl font-serif">৳ {fmt(balances.GLOBAL_FORUM_BANK || 0)}</h3>
         </div>
         <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-5 shadow-md">
           <p className="text-[10px] uppercase font-bold tracking-widest opacity-70 mb-1">Cash in Hand</p>
@@ -413,6 +420,16 @@ const FinanceSection: React.FC = () => {
                       {INCOME_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Deposit To</label>
+                    <select value={depositTo} onChange={e => setDepositTo(e.target.value)}
+                      className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
+                      <option value="CASH_IN_HAND">Cash in Hand</option>
+                      <option value="AL_RAWA_BANK">AL RAWA Bank</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Class (optional)</label>
                     <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedStudent(''); }}

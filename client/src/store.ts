@@ -113,7 +113,7 @@ interface SchoolState {
   updateSubject: (id: string, data: Partial<Subject>) => Promise<void>;
   deleteSubject: (id: string) => Promise<void>;
 
-  saveStudentResult: (studentId: string, term: string, marks: any, attendance?: any) => Promise<void>;
+  saveStudentResult: (studentId: string, term: string, marks: any, attendance?: any, comment?: string) => Promise<void>;
   getStudentResults: (studentId: string) => Promise<any[]>;
 }
 

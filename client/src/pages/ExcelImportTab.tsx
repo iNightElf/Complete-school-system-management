@@ -75,6 +75,7 @@ export default function ExcelImportTab() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<ImportRow>>({});
   const [importing, setImporting] = useState(false);
+  const [duplicateIds, setDuplicateIds] = useState<Set<number>>(new Set());
 
   useEffect(() => { fetchStudents(); }, []);
 
@@ -124,11 +125,11 @@ export default function ExcelImportTab() {
     const file = e.target.files?.[0];
     if (!file) return;
     // Ensure students are loaded
-    if (!students.length) await fetchStudents();
-    // Build a local map from the latest store state
-    const storeStudents = useSchoolStore.getState().students;
+    await fetchStudents();
+    // Read latest students from store (students from hook is stale in async callback)
+    const latestStudents = useSchoolStore.getState().students;
     const localMap: Record<string, any> = {};
-    storeStudents.forEach((s: any) => {
+    latestStudents.forEach((s: any) => {
       const key = `${(s.class || '').trim().toLowerCase()}|${(s.roll || '').trim().toLowerCase()}`;
       localMap[key] = s;
       const rollKey = (s.roll || '').trim().toLowerCase();
@@ -236,7 +237,7 @@ export default function ExcelImportTab() {
     if (!selected.length) { toast('No valid rows selected', 'error'); return; }
 
     setImporting(true);
-    let success = 0, failed = 0;
+    let success = 0, failed = 0, duplicates = 0;
 
     for (const row of selected) {
       try {
@@ -260,7 +261,13 @@ export default function ExcelImportTab() {
             className: row.className || undefined,
           }),
         });
-        if (res.ok) success++; else failed++;
+        if (res.ok) {
+          success++;
+        } else if (res.status === 409) {
+          duplicates++;
+        } else {
+          failed++;
+        }
       } catch {
         failed++;
       }
@@ -269,8 +276,11 @@ export default function ExcelImportTab() {
     setImporting(false);
     fetchTransactions();
     fetchFinance();
-    toast(`Imported: ${success} succeeded, ${failed} failed`, success > 0 ? 'success' : 'error');
-    if (failed === 0) setRows([]);
+    const parts = [`${success} succeeded`];
+    if (duplicates) parts.push(`${duplicates} duplicates skipped`);
+    if (failed) parts.push(`${failed} failed`);
+    toast(parts.join(', '), success > 0 ? 'success' : 'error');
+    if (failed === 0 && duplicates === 0) setRows([]);
   };
 
   const selectedCount = rows.filter(r => r._selected).length;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useSchoolStore } from '../store';
 import { X, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
+import DeleteConfirmModal from './DeleteConfirmModal';
 
 const CLASS_ICONS: Record<string, string> = {
   Play: '🧸', Nursery: '🌱', KG: '🎨',
@@ -19,6 +20,9 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteName, setDeleteName] = useState('');
+
   if (!open) return null;
 
   const handleAdd = async () => {
@@ -35,9 +39,10 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
     setLoading(false);
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete "${name}"?`)) return;
-    await deleteClass(id);
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    await deleteClass(deleteId);
+    setDeleteId(null);
   };
 
   const handleMove = async (index: number, dir: -1 | 1) => {
@@ -98,7 +103,7 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
                     <ArrowDown size={14} />
                   </button>
                   <button
-                    onClick={() => handleDelete(cls.id, cls.name)}
+                    onClick={() => { setDeleteId(cls.id); setDeleteName(cls.name); }}
                     className="p-1 hover:bg-red-100 text-red-500 rounded"
                   >
                     <Trash2 size={14} />
@@ -111,6 +116,7 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
           <p className="text-[11px] text-school-muted mt-3">▲▼ to reorder · Changes saved automatically</p>
         </div>
       </div>
+      <DeleteConfirmModal open={!!deleteId} title="Delete Class" message={`Delete "${deleteName}"? This cannot be undone.`} onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />
     </div>
   );
 };

@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
+import { validate, saveStudentResultSchema } from "../lib/validate.js";
 
 export const getSubjectsByClass = async (req: Request, res: Response) => {
   try {
@@ -95,31 +96,35 @@ export const saveStudentResult = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Term and marks are required" });
     }
 
-    const existing = await prisma.result.findFirst({
-      where: { studentId: id, term: String(term) },
-    });
+    const validation = validate(saveStudentResultSchema, req.body);
+    if (!validation.success) return res.status(400).json({ error: validation.error });
 
-    let result;
-    if (existing) {
-      const mergedMarks = { ...(existing.marks as Record<string, number>), ...marks };
-      const mergedAttendance = attendance
-        ? { ...((existing.attendance as Record<string, number>) || {}), ...attendance }
-        : existing.attendance;
-      result = await prisma.result.update({
-        where: { id: existing.id },
-        data: { marks: mergedMarks, attendance: mergedAttendance, ...(comment !== undefined && { comment }) },
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.result.findFirst({
+        where: { studentId: id, term: String(term) },
       });
-    } else {
-      result = await prisma.result.create({
-        data: {
-          studentId: id,
-          term: String(term),
-          marks,
-          attendance,
-          comment: comment || null,
-        },
-      });
-    }
+
+      if (existing) {
+        const mergedMarks = { ...(existing.marks as Record<string, number>), ...marks };
+        const mergedAttendance = attendance
+          ? { ...((existing.attendance as Record<string, number>) || {}), ...attendance }
+          : existing.attendance;
+        return tx.result.update({
+          where: { id: existing.id },
+          data: { marks: mergedMarks, attendance: mergedAttendance, ...(comment !== undefined && { comment }) },
+        });
+      } else {
+        return tx.result.create({
+          data: {
+            studentId: id,
+            term: String(term),
+            marks,
+            attendance: attendance || null,
+            comment: comment || null,
+          },
+        });
+      }
+    });
 
     res.json(result);
   } catch (error: any) {

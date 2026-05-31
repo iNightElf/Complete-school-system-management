@@ -5,6 +5,7 @@ import CameraModal from '../../components/CameraModal';
 import PhotoUpload from '../../components/PhotoUpload';
 import { RefreshCw, Mail, Download } from 'lucide-react';
 import { contactLinks } from '../../lib/contacts';
+import DeleteConfirmModal from '../../components/DeleteConfirmModal';
 import jsPDF from 'jspdf';
 
 const API_URL = '/api';
@@ -68,10 +69,16 @@ export default function TeacherSection() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this teacher?')) return;
-    await fetch(`${API_URL}/teachers/${id}`, { method: 'DELETE', credentials: 'include' });
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const confirmDelete = async () => {
+    if (!deleteId) return;
+    setDeleteLoading(true);
+    await fetch(`${API_URL}/teachers/${deleteId}`, { method: 'DELETE', credentials: 'include' });
     toast('Teacher deleted');
+    setDeleteId(null);
+    setDeleteLoading(false);
     fetchTeachers();
   };
 
@@ -225,13 +232,14 @@ export default function TeacherSection() {
               {isAdmin && (
                 <div className="flex gap-2 mt-3 pt-3 border-t border-school-border">
                   <button onClick={() => handleEdit(t)} className="flex-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100">✏️ Edit</button>
-                  <button onClick={() => handleDelete(t.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100">🗑 Delete</button>
+                   <button onClick={() => setDeleteId(t.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100">🗑 Delete</button>
                 </div>
               )}
             </div>
           ))}
         </div>
       )}
+      <DeleteConfirmModal open={!!deleteId} title="Delete Teacher" message="This will permanently delete this teacher." onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} loading={deleteLoading} />
     </div>
   );
 }
