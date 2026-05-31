@@ -193,8 +193,55 @@
 
 ---
 
-## Git History (This Session)
+## Latest Session (Bug Audit + Modernization)
+
+### ROADMAP Features
+- Opening balances with history table + revert endpoint
+- Server-side pagination (skip/take) on getAllStudents, getAllTeachers, getAllStaff, getAllBooks
+- Configurable fiscal year in client/src/lib/config.ts
+- CORS from env var
+- CSV export on all 6 finance report tabs
+- Photo caching (Cache-Control + ETag + 304)
+- Prisma upsert for saveStudentResult
+- Gzip compression
+- Google Fonts via `<link>` (not @import)
+- Fixed N+1 in getAllClasses
+- Loading skeletons (BookSkeleton, defaulter rows)
+- Dashboard redesign (gradient banner, stat cards, module tiles)
+- React.lazy code splitting + Vite manual chunks
+- PWA (manifest.json, service worker)
+- Dark mode (Tailwind dark variant + localStorage)
+- Mobile card layout (CSS: stacked cards at <640px)
+- Emoji → lucide-react icons (~20 files)
+- Login/Register page redesign
+- Student/Teacher/Staff vertical centered cards
+- Icon-text alignment fix across 11 files
+- Card warm shadows (.card-shadow)
+- Gradient icons on photo-less avatars
+- Color-coded class picker icons
+- FinanceSection Ledger sort (DESC by transactionDate, createdAt tiebreaker)
+
+### Bug Audit Fixes
+- **fetch() without HTTP check** — 3 sections, 6 endpoints now check `res.ok`
+- **EnterByStudent stale closure** — Auto-save uses refs to prevent data loss
+- **EnterByStudent unhandled rejection** — Save button try/catch
+- **Login/Register `<a>` → `<Link>`** — No more full page reloads
+- **ClassManagerModal `alert()` → `toast()`** — Consistent UX
+- **CameraModal `err.message`** — Fallback for undefined
+- **OnlineReportCard `getState()`** → hook subscription
+- **Dead code removal** — No-op ternaries in 3 files
+- **SW console warning** — Message handler added
+- **validate.ts Zod v4** — `errors`→`issues`, `z.record` fix
+- **parsePhoto crash** — try/catch on malformed base64
+- **Error leakage** — 4 controllers switched to `sanitizeError()`
+- **Meta tag deprecation** — `apple-mobile-web-app-capable` → `mobile-web-app-capable`
+
+### Service Worker
+- Added `message` event handler to suppress Chrome warning
+
+## Git History (All Sessions)
 ```
+f7f338c ROADMAP: pagination, opening balances, fiscal year, PWA, dark mode, mobile cards, ...
 e56c7c4 feat: loading skeletons + store loading states + server-side filtering params
 0bde5ee fix: Zod validation on all controllers + browser back button deep linking
 6217145 docs: update SESSION-NOTES.md with all work from this session
@@ -210,9 +257,19 @@ fa2bb28 fix: WHAT-TO-IMPROVE items — 14 fixes (critical + serious + code quali
 
 ## Known Issues (Remaining)
 - Photos kept as BYTEA in PostgreSQL (~13MB for 500 photos)
+- Ledger sort: server uses `orderBy: [transactionDate ASC, createdAt ASC]`, client also sorts with `createdAt` tiebreaker, but user reported "still not sorted" — may need hard refresh or wrong tab/view
 
-### ~~Fixed This Session~~
+### Fixed This Session
 - ~~Zod validation not yet added to all controllers~~ ✅ Added to student, teacher, staff, book controllers
 - ~~Browser back button still broken~~ ✅ Deep linking via URL search params (?mode=finance)
 - ~~No loading skeleton for data fetches~~ ✅ Created Skeleton.tsx with CardSkeleton, TableSkeleton, BalanceCardSkeleton
 - ~~Finance reports use client-side filtering~~ ✅ fetchTransactions now accepts server-side params (dateFrom, dateTo, type)
+- ~~Ledger sort not working~~ ✅ Changed to numeric timestamps + createdAt tiebreaker, DESC order
+- ~~fetch() success without checking HTTP status~~ ✅ All CRUD endpoints now check res.ok
+- ~~EnterByStudent stale closure / data loss~~ ✅ Auto-save uses refs
+- ~~validate.ts Zod v4 runtime crash~~ ✅ errors→issues, z.record fix
+- ~~parsePhoto crash on malformed data~~ ✅ try/catch
+- ~~Error messages leaked to client~~ ✅ sanitizeError throughout
+- ~~Login/Register full page reloads~~ ✅ Link instead of a
+- ~~alert() instead of toast()~~ ✅ ClassManagerModal uses toast
+- ~~Console SW warning~~ ✅ message handler added

@@ -122,3 +122,21 @@ Browser `confirm()` dialogs are blocked in many contexts (iframes, some mobile b
 - **CSV Export:** Download buttons added to all report tabs with UTF-8 BOM for Excel.
 - **Photo Caching:** `Cache-Control: public, max-age=86400` + ETag with `304 Not Modified` on all photo endpoints.
 - **Prisma Upsert:** `saveStudentResult` uses `result.upsert()` instead of `findFirst`+`update/create`.
+
+## ✅ Bug Audit (Same Session)
+
+### Client
+- **fetch() HTTP error checking** — Student/Teacher/Staff sections now check `res.ok` before showing success toast
+- **EnterByStudent stale closure** — Auto-save uses refs to avoid capturing stale state in debounce timeout
+- **EnterByStudent unhandled rejection** — Save button wrapped in try/catch
+- **Login/Register `<a>` → `<Link>`** — Full page reloads replaced with client-side navigation
+- **ClassManagerModal `alert()` → `toast()`** — Removed blocking dialogs
+- **CameraModal `err.message`** — Fallback for undefined error messages
+- **OnlineReportCard `getState()`** — Now subscribes via hook for reactivity
+- **Dead code** — Removed no-op `photo.startsWith('data:') ? photo : photo` ternaries (3 files)
+- **SW warning** — Added message handler to prevent console warning
+
+### Server
+- **validate.ts Zod v4 crash** — `errors` → `issues`, `z.record(z.number())` → `z.record(z.string(), z.number())`
+- **parsePhoto crash** — Malformed base64 no longer throws (try/catch)
+- **Error message leakage** — All 4 controllers now use `sanitizeError()` instead of leaking `error.message`

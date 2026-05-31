@@ -1,50 +1,90 @@
 # ROADMAP — All Items Complete
 
-All items identified during the full codebase audit on May 31, 2026 have been fixed.
+All items identified during the full codebase audit have been fixed.
 
 ---
 
 ## ✅ Completed (May 31, 2026)
 
-### 1. AGM Opening Balance Calculation — COMPLETE
+### Opening Balance Calculation
 - Stored opening balances per fiscal year per account (`OpeningBalance` model)
 - User-settable via UI (defaults to 0 for new schools)
-- AGM report uses stored balances instead of flawed `closing - income + expense` formula
-- Full change history with undo/revert for backtracking (`OpeningBalanceHistory` model)
+- AGM report uses stored balances instead of flawed formula
+- Full change history with undo/revert (`OpeningBalanceHistory` model)
 
-### 2. Server-side Pagination — COMPLETE
-- `getAllStudents`, `getAllTeachers`, `getAllStaff`, `getAllBooks` accept `skip`/`take` query params
-- Response includes `{ data, total, skip, take }` structure
-- Client store handles paginated responses with backward compatibility
+### Server-side Pagination
+- `getAllStudents`, `getAllTeachers`, `getAllStaff`, `getAllBooks` accept `skip`/`take`
+- Response includes `{ data, total, skip, take }`
 
-### 3. Hardcoded Fiscal Year — COMPLETE
-- Centralized config in `client/src/lib/config.ts` (`FISCAL_YEAR_START_MONTH = 8`)
-- All AGM report labels use dynamic month names
-- Server fiscal year also configurable
+### Configurable Fiscal Year
+- Centralized `FISCAL_YEAR_START_MONTH` in `client/src/lib/config.ts`
+- All labels and filter logic use the config value
 
-### 4. .env.example — COMPLETE
-- Created `server/.env.example` with all required env vars and documentation
+### .env.example
+- Created with all required env vars and documentation
 
-### 5. Online Report Card Rank Staleness — ALREADY CORRECT
-- `getState()` used at render time with fresh data; no stale issue
+### CORS from Env Var
+- Origins read from `CORS_ORIGINS` env var, fallback to localhost
 
-### 6. Hardcoded CORS Origins — COMPLETE
-- CORS origins read from `CORS_ORIGINS` env var (comma-separated)
-- Falls back to `localhost:5173,localhost:3000`
+### CSV Export
+- Download buttons on all 6 report tabs with UTF-8 BOM for Excel
 
-### 7. CSV Export — COMPLETE
-- CSV download buttons added alongside PDF/Print for all report tabs
-- UTF-8 BOM for Excel compatibility
+### Photo Caching
+- `Cache-Control: public, max-age=86400` + ETag with `304 Not Modified`
 
-### 8. Photo Caching Headers — COMPLETE
-- `Cache-Control: public, max-age=86400` on all photo endpoints
-- ETag headers with `304 Not Modified` support
-- Applied to student, teacher, and staff photos
+### Prisma Upsert
+- `saveStudentResult` uses `result.upsert()` instead of find+update/create
 
-### 9. Defaulter Fee Month — ALREADY CORRECT
-- Logic prefers `feeMonth` over transaction date; correct behavior
+### Compression
+- Gzip middleware on all API responses
 
-### Additional Fixes
-- **Prisma upsert**: Replaced `findFirst+update/create` with `result.upsert()` in `saveStudentResult`
-- **Opening Balance UI**: Full modal with edit/save/revert/history in Finance Reports
-- **Backtrack/Undo**: Change history for opening balances with one-click revert
+### Google Fonts
+- Moved from `@import` to `<link>` with preconnect
+
+### N+1 Query Fix
+- `getAllClasses` uses single `groupBy` instead of per-class COUNT
+
+### Loading Skeletons
+- Book list skeleton, defaulter report skeleton rows
+
+### Dashboard Redesign
+- Gradient welcome banner, time-based greeting, stat cards, module tiles with hover arrows
+
+### Route Code Splitting
+- `React.lazy` + `Suspense` on all 5 routes
+- Vite manualChunks for vendor libs (react, jspdf, xlsx, framer-motion)
+
+### PWA
+- `manifest.json`, service worker with install + cache, SW registration in `main.tsx`
+- SVG favicon (no PNG generator needed)
+
+### Dark Mode
+- Tailwind `@custom-variant dark`, CSS overrides, `useDarkMode` store with localStorage
+
+### Mobile Card Layout
+- `.mobile-card-table` CSS collapses tables to stacked cards on screens < 640px
+
+### Icon Polish
+- Emoji → lucide-react icons across ~20 files
+- Login/Register pages redesigned with gradient backgrounds, school logo, blur circles
+- Student/Teacher/Staff cards changed to vertical centered layout
+
+--- 
+
+## ✅ Bug Audit (Same Session)
+
+### Client-Side Fixes
+- **fetch() HTTP error checking** — Student/Teacher/Staff sections now check `res.ok` before showing success toast
+- **EnterByStudent stale closure** — Auto-save no longer captures stale marks/attendance/comment in debounce timeout (uses refs)
+- **EnterByStudent unhandled rejection** — Save button wrapped in try/catch
+- **Login/Register `<a>` → `<Link>`** — Full page reloads replaced with client-side navigation
+- **ClassManagerModal `alert()` → `toast()`** — Inconsistent blocking dialogs removed
+- **CameraModal `err.message`** — Fallback for `undefined` error messages
+- **OnlineReportCard `getState()`** — Now uses Zustand hook subscription for reactivity
+- **Dead code** — Removed no-op ternary `photo.startsWith('data:') ? photo : photo` in 3 files
+- **Service worker warning** — Added `message` handler to prevent Chrome "listener returned true" error
+
+### Server-Side Fixes
+- **validate.ts Zod v4 crash** — Fixed `errors` → `issues` and `z.record(z.number())` → `z.record(z.string(), z.number())`
+- **parsePhoto crash** — Malformed base64 data URIs no longer throw (try/catch + null return)
+- **Error message leakage** — All 4 controllers (student, ops, result, class) now use `sanitizeError()` instead of leaking `error.message`
