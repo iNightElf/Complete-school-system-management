@@ -14,24 +14,21 @@
 
 ### 2. Finance System
 - 3 accounts: AL RAWA Bank, Global Forum, Cash in Hand
-- Income always goes to **Cash in Hand** (no deposit destination option)
 - Classification rules implemented per spec:
   - AL_RAWA → Global Forum = **EXPENSE**
   - Global Forum → AL_RAWA = **INCOME**
   - AL_RAWA ↔ Cash = **Internal Transfer** (no income/expense effect)
-- Global Forum removed from Expense "Pay From" options (only used for loans)
 - **Deposit Remaining** tracking: shows how much cash needs to be deposited to bank
 - Finance Reports tab with 6 sub-reports (Headwise Income/Expense, Monthly Income/Expense, Audit, Yearly AGM)
 - PDF generation and print support for all reports
 - **Accessories Fee** added as global fee (one entry = default for all students)
 - **Defaulter tab** with month-by-month grid for recurring fees, yearly for one-time fees
 - **Fee Assignment tab** for special fees (Hifz Tuition, Hifz Admission, Transport) with toggle per student
-- **Transaction Cancellation** — admin/accountant can cancel transactions with reason; cancelled transactions show in audit trail
-- **Class + Student fields** on transactions — optional class/student/fee month on income transactions
-- **Ledger** — paginated transaction list (25/page) with date range and type filters
-- **Monthly reports** now show individual transaction rows (Date, Class/Student, Category, Amount, Running Total) grouped by category
-- **Audit Report** — full financial year summary with audit certificate + 3 signature lines
-- **Yearly AGM** — annual general meeting report with financial overview, top 5 income/expense heads, internal transfers summary, recommendations
+- **Transaction Cancellation** — admin/accountant can cancel transactions with reason; creates a reversal entry
+- **Duplicate fee prevention** — server rejects creating same student + category + feeMonth twice (409)
+- **Income "Deposit To" dropdown** — can now deposit to Cash in Hand (default) or AL RAWA Bank
+- **Global Forum balance** now visible in finance UI (3 account cards)
+- **Server-side date filtering** on getTransactions endpoint
 
 ### 3. User Management
 - Admin panel for managing user roles (admin, teacher, accountant, viewer)
@@ -42,218 +39,154 @@
 - Complete rewrite with proper class key mapping (`classToKey()`)
 - Handles all data: classes, subjects, students, results, teachers, staff, books
 - Dry-run mode: `npx tsx server/src/scripts/migrate.ts --dry-run`
-- Properly maps Firebase `contactNumber` → Prisma `contact`, `discountedPrice` → `discounted`
-- Sets subject order from Firebase array index
 
 ### 5. School Logo
 - Logo added to app header, online report card, and PDF report cards
 - Stored as base64 constant in `client/src/lib/logo.ts`
 
----
-
-## New Additions (Latest Session)
-
 ### 6. Modular File Extraction
-- **IdCardSection** and **ResultSection** were monolithic files — split into dedicated sub-components for maintainability
-- `IdCardSection.tsx` reduced to a **thin routing shell** (~41 lines) that renders sub-components based on tab selection
-- `ResultSection.tsx` reduced to a **thin routing shell** (~38 lines) that delegates to 4 sub-components
-
-#### Student Management (`client/src/pages/students/StudentSection.tsx`)
-- Extracted from `IdCardSection.tsx` into its own dedicated file
-- Class picker grid — view students by class with student counts
-- Student CRUD — create, edit, delete students with collapsible form
-- Photo upload via `PhotoUpload` + `CameraModal` components
-- Search by name or roll number
-- PDF export of student list with photos (fetches photos on-demand)
-- Edit/delete buttons — admin-only role gate via `useAuthStore`
-
-#### Teacher Management (`client/src/pages/teachers/TeacherSection.tsx`)
-- Extracted from `IdCardSection.tsx` into its own dedicated file
-- Teacher CRUD — create, edit, delete teachers
-- Designation filter — pill-based filter by unique designations
-- Search by name or designation
-- Photo upload + on-demand photo fetching
-- PDF export of teacher list with photos
-- Contact links — phone + WhatsApp via shared utility
-
-#### Staff Management (`client/src/pages/staff/StaffSection.tsx`)
-- Extracted from `IdCardSection.tsx` into its own dedicated file
-- Staff CRUD — create, edit, delete staff (role/designation based)
-- Search by name or role
-- Photo upload + on-demand photo fetching
-- PDF export of staff list with photos
-- Contact links — phone + WhatsApp via shared utility
+- **IdCardSection** and **ResultSection** split into dedicated sub-components
+- `IdCardSection.tsx` reduced to a **thin routing shell** (~41 lines)
+- `ResultSection.tsx` reduced to a **thin routing shell** (~38 lines)
 
 ### 7. Results Sub-Components (`client/src/pages/results/`)
-
-#### Enter by Subject (`EnterBySubject.tsx`)
-- Bulk marks entry view: Select class → subject → term
-- Spreadsheet-like table with marks/grade/GPA per student
-- Bulk attendance entry (days + present) per term
-- Bulk teacher's comment entry (always for term 3)
-- Auto-grade chips via `gradeFromMarks()`
-- Admin-only save buttons
-- Marks merge on save (doesn't overwrite other subjects)
-
-#### Enter by Student (`EnterByStudent.tsx`)
-- Per-student marks entry view: Select class → student → term
-- Full marks entry form with auto-save (500ms debounce)
-- Live GPA/grade/rank calculation
-- Attendance section per term
-- Teacher's comment section
-- **Online Report Card** button → preview before PDF download
-- Photo display for each student
-- Term rank calculation via `calcTermRanks()`
-
-#### Tabulation Tab (`TabulationTab.tsx`)
-- Generates landscape A4 PDF tabulation sheets
-- Student name → all subjects → total/GPA/grade/rank columns
-- Supports per-term or "Final Combined" (averages across 3 terms)
-- Auto page breaks when rows exceed page height
-- Dynamic column widths based on subject count
-
-#### All Report Cards Tab (`AllReportCardsTab.tsx`)
-- Batch PDF generation: Select class → download 1st Term, 2nd Term, or Annual Result for ALL students
-- Creates a single multi-page PDF with all students
-- Uses `downloadReportCardPDF()` with shared jsPDF document
-
-#### Online Report Card (`OnlineReportCard.tsx`)
-- In-browser preview of report cards (term or annual)
-- Student info, photo, marks table with grades/GPAs
-- Summary bar (GPA, Grade, Rank)
-- Attendance table (multi-term for annual)
-- Teacher's comment section
-- 3 signature lines (Class Teacher, Co-ordinator, Principal)
-- PDF download button
+- **Enter by Subject** — bulk marks entry, attendance, comments
+- **Enter by Student** — per-student marks with auto-save (500ms debounce), live GPA/grade/rank
+- **Tabulation Tab** — landscape A4 PDF tabulation sheets
+- **All Report Cards** — batch PDF generation for all students
+- **Online Report Card** — in-browser preview before PDF download
 
 ### 8. Grading Library (`client/src/lib/grading.tsx`)
-- Shared grading logic extracted for reuse across all result components
-- `getGrade(pct)` — percentage → grade + GPA (A+ to F scale)
-- `gradeFromMarks(obtained, fullMarks)` — marks-based grading
-- `gpaToGrade(gpa)` — GPA → grade letter
-- `gradeColor(g)` / `gradeChip(g)` — Tailwind color classes for grades
-- `calcTermSummary()` — per-student term GPA, total marks
-- `calcTermRanks()` — class ranking by GPA then total marks
-- `calcYearSummary()` — annual GPA from 3-term averages
-- `calcYearRanks()` — annual class ranking
-- `calcAttendPct()` — attendance percentage
+- Shared grading logic: `getGrade`, `gradeFromMarks`, `gpaToGrade`, `calcTermRanks`, `calcYearRanks`, `calcAttendPct`
 
 ### 9. Report Card PDF (`client/src/lib/reportPdf.ts`)
-- Professional PDF generation for individual report cards
-- Fetches student photo on-demand via `/api/students/:id/photo`
-- School logo + header with badge
-- Student info section (name, class, roll, parents)
-- **Term mode**: single-term marks table → grade chips → GPA → rank
-- **Annual mode**: 3-term marks + average → grade → GPA → year rank
-- Side-by-side attendance + teacher's comment
-- 3 signature lines
-- `_pdfGradeChip()` helper for colored grade badges
-- Supports `sharedDoc` for multi-student batch PDFs
+- Professional PDF with photo, grade chips, signatures
+- Term and Annual modes, supports shared doc for batch generation
 
 ### 10. Shared Components & Utilities
+- **ClassSelect** — reusable class dropdown
+- **Contact Links** — Bangladeshi phone formatting + WhatsApp links
 
-#### ClassSelect (`client/src/components/ClassSelect.tsx`)
-- Reusable dropdown component for selecting a class
-- Fetches classes from store on mount, sorted by `order` field
-- Returns full class object on selection
-
-#### Contact Links (`client/src/lib/contacts.tsx`)
-- `formatBDPhone()` — normalizes Bangladeshi phone numbers to +880 format
-- `contactLinks()` — renders clickable phone link + WhatsApp link
-
-### 11. Excel Import for Finance (`client/src/pages/ExcelImportTab.tsx`, 417 lines)
-- **Full-featured Excel import** for bulk financial transactions
-- Parses `.xlsx/.xls/.csv` via `xlsx` npm package
-- **Flexible column parsing** — accepts multiple aliases per field:
-  - Class: `Class`, `class`, `ClassName`
-  - Roll: `Roll`, `roll`, `Roll No`, `rollNo`, `RollNo`, `roll_no`
-  - Category: `Category`, `category`, `Cat`
-  - Token: `Token`, `token`, `Ref`, `ref`
-  - Fee Month: `Fee Month`, `feeMonth`, `fee_month`, `Month`
-- **Excel date parsing** — handles numeric serial dates (e.g. `45678` → `2025-01-15`) and string dates
-- **Type normalization** — accepts `income`, `inc`, `i`, `1` as income; everything else defaults to expense
-- **Smart student resolution** — resolves by class+roll first, falls back to roll alone (roll is globally unique)
-- **Auto re-resolve** — when students store updates, unresolved rows automatically re-attempt resolution
-- **Upload summary toast** — shows row count, resolved student count, and column names detected
-- **Category-aware validation** — student fee categories (Tuition, Admission, Books, etc.) require roll and resolved student
-- **Preview table** with:
-  - Select/deselect all or individual rows
-  - Row count + selected count + valid count in toolbar
-  - Inline editing: date picker, category dropdown (income/expense split), type toggle, amount, class, roll, fee month
-  - Delete individual rows
-  - Color-coded rows: red background for errors, green/red badges for income/expense
-  - Resolved student name shown for student fee rows; "not found" shown for unresolved rolls
-- **Error panel** — lists all rows with validation errors (first 10 + overflow count), skipped during import
-- **Batch import** — imports all valid selected rows sequentially via `POST /api/finance/transactions`
-- **Auto-clear** — clears table on full success; keeps rows if any failures for retry
+### 11. Excel Import for Finance (`client/src/pages/ExcelImportTab.tsx`)
+- Full-featured Excel import with flexible column parsing
+- Smart student resolution (class+roll, roll-only fallback)
+- Duplicate fee detection (409 handling)
+- Preview table with inline editing, select/deselect, error panel
 
 ### 12. Defaulter Report (Server)
 - Comprehensive per-student fee tracking via `GET /api/finance/defaulter`
-- Recurring fees (monthly): Tuition, Hifz Tuition, Transport
-- Special recurring fees: from `FeeAssignment` model
-- One-time fees (yearly): Admission, Hifz Admission, Books, Copy, Stationary
-- Global fees: Accessories Fee (same amount for all students)
-- Month-by-month paid/unpaid tracking
-- Class-level default amounts (last paid by any student in class)
+- Skips fees with 0 default amount (no ghost rows)
 
 ### 13. Fee Assignment System
-- **Server**: `GET /api/finance/fee-assignments`, `POST /api/finance/fee-assignments/toggle`, `PUT /api/finance/fee-assignments/:id`
-- Toggle special fees (Hifz Tuition, Hifz Admission, Transport) per student
-- `FeeAssignment` model: unique constraint on `[studentId, feeType]`, cascade delete with Student
+- Toggle special fees per student (Hifz Tuition, Hifz Admission, Transport)
+
+---
+
+## Latest Session Additions
+
+### 14. WHAT-TO-IMPROVE Fixes (14 Items)
+
+#### Critical Fixes
+- **#1 Balance calc** — Replaced `findMany()` + JS loop with `$queryRaw` SQL aggregate (single query)
+- **#2 Income destination** — Added "Deposit To" dropdown (default Cash, optional AL RAWA Bank)
+- **#3 saveStudentResult** — Wrapped in `prisma.$transaction` for atomicity
+- **#4 Defaulter ghost rows** — Skips fees with `defaultAmt <= 0`
+- **#5 Attendance** — Don't save `{days:0, present:0}`, treat as not-entered
+
+#### Serious Fixes
+- **#6 Zod validation** — Added `validate.ts` with schemas for createTransaction, saveStudentResult
+- **#7 Store type** — Added missing `comment` parameter to `saveStudentResult` type
+- **#9 Server-side filtering** — `getTransactions` now accepts `dateFrom`, `dateTo`, `type` query params
+- **#10 Global Forum balance** — Added third balance card to finance UI
+- **#15 Duplicate fee prevention** — Server checks studentId+category+feeMonth before create (409)
+
+#### Code Quality
+- **#12-13 PDF extraction** — Created `financeReportPdf.ts`, `defaulterPdf.ts`, `tabulationPdf.ts`
+- **#16 Excel duplicate check** — Handles 409 errors gracefully, shows "duplicates skipped"
+- **#17 getState() fix** — Removed `useSchoolStore.getState()` bypass in ExcelImportTab
+- **#18 confirm() replacement** — Created `DeleteConfirmModal` component, updated 5 files
+
+### 15. AGM Report Policy Compliance
+- **Income & Expenditure Statement** — all income/expense categories listed (not just top 5)
+- **Balance Sheet** — AL RAWA Bank, Global Forum, Cash in Hand balances
+- **Receipts & Payments Statement** — opening/closing balances, total received/paid
+- **Signatures** — Finance Director, Managing Director, Chairman (policy-compliant)
+
+### 16. Inline Card Editing (Student/Teacher/Staff)
+- Replaced top collapsible form with **inline card editing**
+- **Add New** card appears first in grid (violet border, always in edit mode)
+- **Edit** card expands inline with **blue border + blue tint**
+- **View** card shows info normally with Edit/Delete buttons
+- Click photo → opens CameraModal to change image
+- Save/Cancel buttons inside the card
+- No more scrolling to separate form at top of page
+
+### 17. Swipe-Back Navigation
+- **Swipe right** (80px+ threshold) on mobile goes back one step
+- Added `swipeBack` + `registerSwipeBack` to UI store
+- **Finance**: swipe from Reports → Transactions (first tab)
+- **Result**: swipe from Tabulation → Enter by Subject (first tab)
+- **ID Card**: swipe from Teachers/Staff → Students (first sub-tab)
+- Swipe from any first tab → Dashboard
+
+### 18. CameraModal — Front/Back Camera Flip
+- Added `RotateCw` flip button to toggle between front (`user`) and back (`environment`) camera
+- Replaced `alert()` with toast for camera errors
 
 ---
 
 ## Fixes Applied
 
 ### Finance Reports
-- **Fixed Monthly Income/Expense PDF crash** — `setTextColor` was passing arrays `[22, 101, 52]` instead of individual args `22, 101, 52`. jsPDF threw `Invalid argument passed to f3`
-- **Removed taka sign (৳) from all reports** — replaced with `/-` suffix across all PDFs and HTML tables
-- **Rewrote Monthly PDF** — portrait A4 with individual transaction rows (Date, Class/Student, Category, Amount, Running total) instead of the old month matrix
-- **Monthly live tables** now show Date, Category, Description, Amount per transaction (was category×month matrix)
-- **Defaulter PDF + Print** — landscape PDF with colored fee badges, ✓/✗ boxes for paid/unpaid months, grand totals
-- **Defaulter shows all students** even with no payments (all fees marked as unpaid/due)
-- **Deposit Remaining fix** — Global Forum → AL RAWA transfers no longer inflate deposit remaining (bank-to-bank doesn't count as cash needing deposit)
+- **Fixed Monthly Income/Expense PDF** — flat date-sorted list with running total (no category grouping)
+- **Fixed academic year filter** — was inverted, now correctly shows Sep year-1 to Aug year
+- **Cancelled transactions excluded from reports** — both `isCancelled` and `reversalOfId` filtered
+- **Removed taka sign (৳)** — replaced with `/-` suffix across all PDFs and HTML tables
+
+### Report Cards
+- **Fixed missing `calcAttendPct` import** — was causing crash in reportPdf.ts
+- **Fixed logo in report cards** — base64 data URI now stripped correctly for jsPDF
+- **Fixed OnlineReportCard logo** — was using missing `/logo.png`, now uses `SCHOOL_LOGO` constant
+
+### Transaction Cancellation
+- **Fixed cancel 400 error** — `param()` function didn't exist, replaced with `req.params.id`
+- **Cancellation now creates reversal entry** — swapped accounts, atomic via `$transaction`
+- **Cancelled rows show in ledger** — strikethrough + CANCELLED badge + cancel reason
+- **Reversal rows show in ledger** — purple REVERSAL badge, purple tint, auto-generated
+- **getBalances excludes cancelled** — `is_cancelled = false` in SQL query
+- **Mandatory reason** — both client (button disabled) and server (400 if empty)
+- **CancelledBy shows user name** — resolved via userMap lookup from user management store
 
 ### Database Schema
-- Added `studentId` and `className` to `Transaction` model
-- Added `FeeAssignment` model for special fees (hifz_tuition, hifz_admission, transport)
-- **Added 8 indexes on Transaction**: studentId, category, className, transactionDate, transactionType, and composite indexes for common query patterns
-- **Added indexes on**: Student.class, Subject.classId, Book.classId, Result.studentId, FeeAssignment.[active, studentId]
-- **Added FK relations**: Transaction → Student (onDelete: SetNull), FeeAssignment → Student (onDelete: Cascade)
-- **Added cascade rules**: Subject → SchoolClass, Book → SchoolClass, Result → Student (all onDelete: Cascade)
-- Removed redundant manual `deleteMany` calls in deleteClass and deleteStudent (cascade handles it)
+- Added `reversalOfId` field + index to Transaction model
+- Added `FeeAssignment` model for special fees
+- Added 8 performance indexes on Transaction
+- Added cascade rules on Subject, Book, Result
 
 ### Server Security
-- **Added auth middleware** to 3 photo endpoints (students, teachers, staff) — were publicly accessible
-- **Fixed `req.user?.userId`** → `req.session?.user?.id` in finance controller (audit trail was broken)
-- **Added rate limiting** — 500 req/15min global, 20 req/15min for auth endpoints
-- **Reduced JSON body limit** from 10MB → 2MB
-- **Single shared PrismaClient** — was creating 7 separate instances (wasted DB connections)
-- **Sanitized error messages** — no more Prisma schema leaks to clients (new `lib/errors.ts` helper)
-- **Removed duplicate code block** in defaulter report (one-time fees were processed twice, causing double-counting)
-
-### Client
-- **ErrorBoundary** — wraps entire app, prevents blank screen on runtime crashes
-- **Store error handling** — all 8 `fetch*` functions now have try/catch (no unhandled promise rejections)
-- **Removed unused imports** — `useCallback` and `FileText` from IdCardSection, `useNavigate` from Register
-- **useEffect cleanup** — Toast setTimeout cleared on unmount, DefaulterTab uses AbortController for stale fetches, ResultSection saves timer cleared on unmount
-- **Photos loaded on-demand** — list APIs return `hasPhoto: true/false` instead of base64 (was ~10MB response, now ~50KB). Photos fetched via `/api/:type/:id/photo` endpoint when needed
-- **PDF generation** fetches photos on-demand via photo API before generating
-- **`xlsx` dependency** added to client for Excel import parsing
+- Rate limiting: 500 req/15min global, 20 req/15min auth
+- Auth middleware on photo endpoints
+- Sanitized error messages
+- JSON body limit reduced to 2MB
 
 ---
 
-## Known Issues
+## Git History (This Session)
+```
+c785e4c feat: inline card editing, swipe-back navigation, camera flip
+9c547a0 feat: AGM report — Balance Sheet, Receipts/Payments, all income/expense heads
+8c203d9 feat: add swipe-right-to-go-back gesture on mobile
+6da79a4 fix: report card PDF — missing calcAttendPct import, logo base64, toast type
+cc6c313 fix: online report card logo — use SCHOOL_LOGO constant
+fa2bb28 fix: WHAT-TO-IMPROVE items — 14 fixes (critical + serious + code quality)
+638077b docs: expand Excel Import documentation
+3f7816f feat: modular architecture, grading library, report PDF, Excel import
+```
 
-### ~~Concurrent Marks Entry — DATA LOSS~~ ✅ FIXED
-- **Server**: `saveStudentResult` now merges marks (`{ ...existing.marks, ...newMarks }`) instead of replacing the entire JSON column
-- **Client**: Removed `allResults` from useEffect dependency — changed to `allResults.length` so form only re-populates when result count changes (new student result), not on every auto-save refetch
-- **Client**: Auto-save no longer calls `loadResults()` after save. Manual "Save Marks" button still refetches to confirm
-- **Note**: EnterBySubject tab already used `allResults.length` and manual saves only, so no change needed
-
-### Other Notes
-- Subject order fix script (`fix-subject-order.ts`) was created, run, then deleted — order should persist in DB
-- The old Firebase app's `js/results.js` and other legacy files are kept for reference only
-- `node_modules/` is not tracked in git
-- **Zod input validation** not yet implemented on server controllers (zod is installed but unused)
-- Photos kept as BYTEA in PostgreSQL (~13MB for 500 photos, well within Neon free tier)
+## Known Issues (Remaining)
+- Zod validation not yet added to all controllers (student, teacher, staff)
+- `node_modules/` not tracked in git
+- Photos kept as BYTEA in PostgreSQL (~13MB for 500 photos)
+- Browser back button still broken (deep linking not implemented)
+- No loading skeleton for data fetches
+- Finance reports use client-side filtering (large datasets may be slow)
