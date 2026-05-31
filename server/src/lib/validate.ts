@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+const INTERNAL_ACCOUNTS = ["AL_RAWA_BANK", "GLOBAL_FORUM_BANK", "CASH_IN_HAND"] as const;
+
+function isValidAccount(acc: string | null | undefined): boolean {
+  if (!acc) return true;
+  if ((INTERNAL_ACCOUNTS as readonly string[]).includes(acc)) return true;
+  return false;
+}
+
 export const createTransactionSchema = z.object({
   date: z.string().min(1, "Date is required"),
   amount: z.number().positive("Amount must be greater than 0"),
@@ -13,7 +21,18 @@ export const createTransactionSchema = z.object({
   feeMonth: z.string().max(20).optional().nullable(),
   totalIncomeCollected: z.number().optional().nullable(),
   directExpenseBeforeDeposit: z.number().optional().nullable(),
-});
+}).refine(data => {
+  if (!isValidAccount(data.sourceAccount)) return false;
+  if (!isValidAccount(data.destinationAccount)) return false;
+  return true;
+}, { message: "Invalid account name. Must be one of: AL_RAWA_BANK, GLOBAL_FORUM_BANK, CASH_IN_HAND" }).refine(data => {
+  const src = data.sourceAccount;
+  const dst = data.destinationAccount;
+  if (src && dst && src === dst && (INTERNAL_ACCOUNTS as readonly string[]).includes(src)) {
+    return false;
+  }
+  return true;
+}, { message: "Source and destination accounts must be different" });
 
 export const saveStudentResultSchema = z.object({
   term: z.string().min(1, "Term is required"),

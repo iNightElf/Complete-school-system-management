@@ -122,7 +122,8 @@ app.put("/api/finance/opening-balances", authenticate, authorizePermission("fina
 app.get("/api/finance/opening-balances/history", authenticate, authorizePermission("finance:read"), finance.getOpeningBalanceHistory);
 app.post("/api/finance/opening-balances/revert/:id", authenticate, authorizePermission("finance:write"), finance.revertOpeningBalance);
 
-// ── Defaulter Report ──
+// ── Reports ──
+app.get("/api/finance/reports/agm", authenticate, authorizePermission("finance:read"), finance.getAGMReport);
 app.get("/api/finance/defaulter", authenticate, authorizePermission("finance:read"), finance.getDefaulterReport);
 
 // Health Check

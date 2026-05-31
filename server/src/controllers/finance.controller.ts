@@ -37,6 +37,13 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    if (referenceId) {
+      const existing = await prisma.transaction.findFirst({ where: { referenceId } });
+      if (existing) {
+        return res.status(409).json({ error: `Transaction with referenceId "${referenceId}" already exists`, existing });
+      }
+    }
+
     let finalAmount = Number(amount);
     let note = description || "";
 
@@ -74,6 +81,9 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
 
 export const getBalances = async (req: Request, res: Response) => {
   try {
+    const { year } = req.query;
+    const fiscalYear = year ? String(year) : String(new Date().getFullYear());
+
     const rows = await prisma.$queryRaw<[{ al_rawa: string | null; global_forum: string | null; cash: string | null }]>`
       SELECT
         COALESCE(SUM(CASE WHEN destination_account = 'AL_RAWA_BANK' THEN amount
@@ -82,13 +92,19 @@ export const getBalances = async (req: Request, res: Response) => {
                          WHEN source_account = 'GLOBAL_FORUM_BANK' THEN -amount ELSE 0 END), 0) AS global_forum,
         COALESCE(SUM(CASE WHEN destination_account = 'CASH_IN_HAND' THEN amount
                          WHEN source_account = 'CASH_IN_HAND' THEN -amount ELSE 0 END), 0) AS cash
-      FROM transactions WHERE is_cancelled = false
+      FROM transactions WHERE is_cancelled = false AND reversal_of_id IS NULL
     `;
     const r = rows[0];
+
+    const openingRows = await prisma.openingBalance.findMany({ where: { fiscalYear } });
+    const opening: Record<string, number> = { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 };
+    openingRows.forEach(o => { opening[o.account] = Number(o.amount); });
+
     res.json({
-      AL_RAWA_BANK: Number(r.al_rawa),
-      GLOBAL_FORUM_BANK: Number(r.global_forum),
-      CASH_IN_HAND: Number(r.cash),
+      AL_RAWA_BANK: Number(r.al_rawa) + opening.AL_RAWA_BANK,
+      GLOBAL_FORUM_BANK: Number(r.global_forum) + opening.GLOBAL_FORUM_BANK,
+      CASH_IN_HAND: Number(r.cash) + opening.CASH_IN_HAND,
+      opening,
     });
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
@@ -355,7 +371,7 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
 
     const studentIds = students.map(s => s.id);
     const allIncomeTx = await prisma.transaction.findMany({
-      where: { transactionType: 'INCOME', affectsIncomeLedger: true, isCancelled: false },
+      where: { transactionType: 'INCOME', affectsIncomeLedger: true, isCancelled: false, reversalOfId: null },
       orderBy: { transactionDate: 'desc' },
     });
 
@@ -497,6 +513,91 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
     });
 
     res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: sanitizeError(error) });
+  }
+};
+
+const FISCAL_YEAR_START_MONTH = 8;
+
+function getFiscalYearRange(fiscalYear: number): { start: Date; end: Date } {
+  const start = new Date(fiscalYear - 1, FISCAL_YEAR_START_MONTH, 1);
+  const end = new Date(fiscalYear, FISCAL_YEAR_START_MONTH, 0, 23, 59, 59, 999);
+  return { start, end };
+}
+
+function headwise(tx: any[]): [string, number][] {
+  const map: Record<string, number> = {};
+  tx.forEach(t => {
+    const cat = t.category || 'Uncategorized';
+    map[cat] = (map[cat] || 0) + Number(t.amount);
+  });
+  return Object.entries(map).sort((a, b) => b[1] - a[1]);
+}
+
+// ── AGM Report (server-side, year-bounded) ──
+
+export const getAGMReport = async (req: Request, res: Response) => {
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const { start, end } = getFiscalYearRange(year);
+
+    const tx = await prisma.transaction.findMany({
+      where: {
+        isCancelled: false,
+        reversalOfId: null,
+        transactionDate: { gte: start, lte: end },
+      },
+      orderBy: { transactionDate: 'asc' },
+    });
+
+    const income = tx.filter((t: any) => t.transactionType === 'INCOME' && t.affectsIncomeLedger);
+    const expense = tx.filter((t: any) => t.transactionType === 'EXPENSE' && t.affectsExpenseLedger);
+    const transfers = tx.filter((t: any) => t.transactionType === 'INTERNAL_TRANSFER');
+
+    const totalIncome = income.reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const totalExpense = expense.reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const netSurplus = totalIncome - totalExpense;
+
+    const openingRows = await prisma.openingBalance.findMany({ where: { fiscalYear: String(year) } });
+    const opening: Record<string, number> = { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 };
+    openingRows.forEach(o => { opening[o.account] = Number(o.amount); });
+
+    const balancesRaw = await prisma.$queryRaw<[{ al_rawa: string; global_forum: string; cash: string }]>`
+      SELECT
+        COALESCE(SUM(CASE WHEN destination_account = 'AL_RAWA_BANK' THEN amount
+                         WHEN source_account = 'AL_RAWA_BANK' THEN -amount ELSE 0 END), 0) AS al_rawa,
+        COALESCE(SUM(CASE WHEN destination_account = 'GLOBAL_FORUM_BANK' THEN amount
+                         WHEN source_account = 'GLOBAL_FORUM_BANK' THEN -amount ELSE 0 END), 0) AS global_forum,
+        COALESCE(SUM(CASE WHEN destination_account = 'CASH_IN_HAND' THEN amount
+                         WHEN source_account = 'CASH_IN_HAND' THEN -amount ELSE 0 END), 0) AS cash
+      FROM transactions
+      WHERE is_cancelled = false AND reversal_of_id IS NULL
+        AND transaction_date >= $1 AND transaction_date <= $2
+    `;
+    const b = balancesRaw[0];
+    const closing = {
+      AL_RAWA_BANK: Number(b.al_rawa) + opening.AL_RAWA_BANK,
+      GLOBAL_FORUM_BANK: Number(b.global_forum) + opening.GLOBAL_FORUM_BANK,
+      CASH_IN_HAND: Number(b.cash) + opening.CASH_IN_HAND,
+    };
+    const totalAssets = closing.AL_RAWA_BANK + closing.GLOBAL_FORUM_BANK + closing.CASH_IN_HAND;
+    const totalTransfers = transfers.reduce((s: number, t: any) => s + Number(t.amount), 0);
+
+    res.json({
+      fiscalYear: year,
+      period: { start, end },
+      income: headwise(income),
+      expense: headwise(expense),
+      totalIncome,
+      totalExpense,
+      netSurplus,
+      opening,
+      closing,
+      totalAssets,
+      totalTransfers,
+      transactionCount: tx.length,
+    });
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
   }
