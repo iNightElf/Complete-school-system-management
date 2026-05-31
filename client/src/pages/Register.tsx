@@ -19,7 +19,7 @@ const Register: React.FC = () => {
 
   useEffect(() => {
     axios.get(`${API_URL}/setup/status`)
-      .then(res => setSetupMode(!res.data.adminExists))
+      .then(res => setSetupMode(!res.data.adminExists && res.data.setupTokenRequired))
       .catch(() => setSetupMode(false));
   }, []);
 
@@ -159,7 +159,7 @@ const Register: React.FC = () => {
                   <label className="text-[10px] font-bold uppercase text-school-muted ml-1 flex items-center gap-1">
                     <KeyRound size={12} /> Setup Token
                   </label>
-                  <input type="text" required value={setupToken} onChange={(e) => setSetupToken(e.target.value)}
+                  <input type="text" value={setupToken} onChange={(e) => setSetupToken(e.target.value)}
                     className="w-full bg-white border border-school-border p-3 rounded-xl focus:ring-2 focus:ring-school-accent focus:border-transparent outline-none transition-all text-sm font-mono"
                     placeholder="Enter the setup token from your server admin" />
                 </div>
