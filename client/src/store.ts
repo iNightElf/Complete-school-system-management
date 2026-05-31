@@ -36,7 +36,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       const res = await api.get('/auth/get-session');
       set({ user: res.data?.user ?? null, loading: false });
     } catch {
-      console.error('[Auth] fetchSession failed:');
       set({ user: null, loading: false });
     }
   },
@@ -166,8 +165,8 @@ interface SchoolState {
   updateSubject: (id: string, data: Partial<Subject>) => Promise<void>;
   deleteSubject: (id: string) => Promise<void>;
 
-  saveStudentResult: (studentId: string, term: string, marks: any, attendance?: any, comment?: string) => Promise<void>;
-  getStudentResults: (studentId: string) => Promise<any[]>;
+  saveStudentResult: (studentId: string, term: string, marks: any, attendance?: any, comment?: string, session?: string) => Promise<void>;
+  getStudentResults: (studentId: string, session?: string) => Promise<any[]>;
 }
 
 export const useSchoolStore = create<SchoolState>((set, get) => ({
@@ -269,11 +268,12 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     await api.delete(`/subjects/${id}`);
   },
 
-  saveStudentResult: async (studentId: string, term: string, marks: any, attendance?: any, comment?: string) => {
-    await api.post(`/students/${studentId}/results`, { term, marks, attendance, ...(comment !== undefined && { comment }) });
+  saveStudentResult: async (studentId: string, term: string, marks: any, attendance?: any, comment?: string, session?: string) => {
+    await api.post(`/students/${studentId}/results`, { term, marks, attendance, session, ...(comment !== undefined && { comment }) });
   },
-  getStudentResults: async (studentId: string) => {
-    const res = await api.get(`/students/${studentId}/results`);
+  getStudentResults: async (studentId: string, session?: string) => {
+    const params = session ? { session } : {};
+    const res = await api.get(`/students/${studentId}/results`, { params });
     return res.data;
   },
 }));

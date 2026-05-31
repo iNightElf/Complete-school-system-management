@@ -259,13 +259,17 @@ export function pdfAudit(yearIncome: any[], yearExpense: any[], yearFilter: stri
   doc.save(`Audit_Report_${yearFilter}.pdf`);
 }
 
-export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered: any[], allTransfers: any[], yearFilter: string, balances: { AL_RAWA_BANK: number; GLOBAL_FORUM_BANK: number; CASH_IN_HAND: number }, openingBalances?: { AL_RAWA_BANK?: number; GLOBAL_FORUM_BANK?: number; CASH_IN_HAND?: number }) {
+export function pdfYearlyAGM(
+  income: any[], expense: any[],
+  totalIncome: number, totalExpense: number, netSurplus: number,
+  opening: { AL_RAWA_BANK?: number; GLOBAL_FORUM_BANK?: number; CASH_IN_HAND?: number },
+  closing: { AL_RAWA_BANK: number; GLOBAL_FORUM_BANK: number; CASH_IN_HAND: number },
+  totalAssets: number, totalTransfers: number, transactionCount: number,
+  yearFilter: string,
+) {
   const doc = new jsPDF({ format: 'a4', unit: 'mm' });
   let y = addHeader(doc, 'ANNUAL GENERAL MEETING REPORT', `Session: ${Number(yearFilter)-1}-${yearFilter} (${FISCAL_START_LABEL} ${Number(yearFilter)-1} – ${FISCAL_END_LABEL} ${yearFilter})`, 10);
 
-  const totalIncome = yearIncome.reduce((s, t) => s + Number(t.amount), 0);
-  const totalExpense = yearExpense.reduce((s, t) => s + Number(t.amount), 0);
-  const netSurplus = totalIncome - totalExpense;
   const fyLabel = `${Number(yearFilter)-1}-${yearFilter}`;
 
   // ── 1. INCOME AND EXPENDITURE STATEMENT ──
@@ -278,8 +282,7 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   // Income heads
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(26, 26, 46);
   doc.text('Income', 12, y); y += 5;
-  const hwInc = headwise(yearIncome);
-  hwInc.forEach(([cat, amt]) => {
+  (income as [string, number][]).forEach(([cat, amt]) => {
     if (y > 270) { doc.addPage(); y = 14; }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(26, 26, 46);
     doc.text(cat, 14, y + 4); doc.text(fmt(amt) + ' /-', 196, y + 4, { align: 'right' });
@@ -293,8 +296,7 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   // Expense heads
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(26, 26, 46);
   doc.text('Expenditure', 12, y); y += 5;
-  const hwExp = headwise(yearExpense);
-  hwExp.forEach(([cat, amt]) => {
+  (expense as [string, number][]).forEach(([cat, amt]) => {
     if (y > 270) { doc.addPage(); y = 14; }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(26, 26, 46);
     doc.text(cat, 14, y + 4); doc.text(fmt(amt) + ' /-', 196, y + 4, { align: 'right' });
@@ -329,11 +331,10 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   doc.text('Account', 14, y + 4); doc.text('Balance', 196, y + 4, { align: 'right' });
   y += 6;
 
-  const totalAssets = balances.AL_RAWA_BANK + balances.GLOBAL_FORUM_BANK + balances.CASH_IN_HAND;
   const assetRows: [string, number][] = [
-    ['AL RAWA Bank', balances.AL_RAWA_BANK],
-    ['Global Forum Bank', balances.GLOBAL_FORUM_BANK],
-    ['Cash in Hand', balances.CASH_IN_HAND],
+    ['AL RAWA Bank', closing.AL_RAWA_BANK],
+    ['Global Forum Bank', closing.GLOBAL_FORUM_BANK],
+    ['Cash in Hand', closing.CASH_IN_HAND],
   ];
   assetRows.forEach(([name, val], i) => {
     if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(12, y, 186, 6, 'F'); }
@@ -361,10 +362,9 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(130, 124, 114);
   doc.text(`For the financial year ${fyLabel}`, 12, y); y += 6;
 
-  // Use stored opening balances (Approach 3: user-settable, default 0)
-  const openingAL = openingBalances?.AL_RAWA_BANK ?? 0;
-  const openingGF = openingBalances?.GLOBAL_FORUM_BANK ?? 0;
-  const openingCash = openingBalances?.CASH_IN_HAND ?? 0;
+  const openingAL = opening.AL_RAWA_BANK ?? 0;
+  const openingGF = opening.GLOBAL_FORUM_BANK ?? 0;
+  const openingCash = opening.CASH_IN_HAND ?? 0;
 
   doc.setFillColor(26, 26, 46); doc.rect(12, y, 186, 6, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
@@ -372,9 +372,9 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   y += 6;
 
   const rpRows: [string, number, number][] = [
-    ['AL RAWA Bank', openingAL, balances.AL_RAWA_BANK],
-    ['Global Forum Bank', openingGF, balances.GLOBAL_FORUM_BANK],
-    ['Cash in Hand', openingCash, balances.CASH_IN_HAND],
+    ['AL RAWA Bank', openingAL, closing.AL_RAWA_BANK],
+    ['Global Forum Bank', openingGF, closing.GLOBAL_FORUM_BANK],
+    ['Cash in Hand', openingCash, closing.CASH_IN_HAND],
   ];
   rpRows.forEach(([name, open, close], i) => {
     if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(12, y, 186, 6, 'F'); }
@@ -403,9 +403,8 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
   if (y > 200) { doc.addPage(); y = 14; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(26, 26, 46);
   doc.text('4. INTERNAL TRANSFERS', 12, y); y += 7;
-  const totalTransfers = allTransfers.reduce((s, t) => s + Number(t.amount), 0);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(26, 26, 46);
-  doc.text(`Total Internal Transfers: ${fmt(totalTransfers)} /- (${allTransfers.length} transactions)`, 14, y); y += 6;
+  doc.text(`Total Internal Transfers: ${fmt(totalTransfers)} /-`, 14, y); y += 6;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(130, 124, 114);
   doc.text('Note: Internal transfers between bank accounts and Cash in Hand do not affect the income/expense ledger.', 14, y); y += 10;
 
@@ -418,7 +417,7 @@ export function pdfYearlyAGM(yearIncome: any[], yearExpense: any[], yearFiltered
     `Net surplus of ${fmt(netSurplus)} /- for FY ${fyLabel}.`,
     totalIncome > 0 ? `Expense-to-income ratio: ${((totalExpense / totalIncome) * 100).toFixed(1)}%.` : 'No income recorded.',
     `Total assets stand at ${fmt(totalAssets)} /- across 3 accounts.`,
-    `${yearFiltered.length} total transactions recorded during the year.`,
+    `${transactionCount} total transactions recorded during the year.`,
     'All financial records are available for detailed audit.',
   ];
   recs.forEach((r, i) => {

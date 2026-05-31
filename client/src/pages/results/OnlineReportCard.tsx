@@ -72,7 +72,8 @@ export default function OnlineReportCard({ student, cls, subjects, allResults, t
           {student.hasPhoto ? <img src={`${API_URL}/students/${student.id}/photo`} alt="" className="w-16 h-16 rounded-full object-cover border border-school-border" /> : <div className="w-16 h-16 rounded-full bg-school-primary text-white flex items-center justify-center"><User size={24} className="text-white" /></div>}
           <div className="space-y-1 text-sm">
             <div><span className="text-school-muted">Student Name:</span> <strong>{student.name}</strong></div>
-            <div><span className="text-school-muted">Class:</span> <strong>{cls.name}{student.roll ? ` · Roll: ${student.roll}` : ''}</strong></div>
+            <div><span className="text-school-muted">Class:</span> <strong>{cls.name}</strong></div>
+            {student.roll && <div><span className="text-school-muted">Roll:</span> <strong>{student.roll}</strong></div>}
             {student.fatherName && <div><span className="text-school-muted">Father:</span> {student.fatherName}</div>}
             {student.motherName && <div><span className="text-school-muted">Mother:</span> {student.motherName}</div>}
           </div>

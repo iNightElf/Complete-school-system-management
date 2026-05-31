@@ -77,8 +77,11 @@ export const deleteSubject = async (req: Request, res: Response) => {
 export const getStudentResults = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
+    const { session } = req.query;
+    const where: any = { studentId: id };
+    if (session) where.session = String(session);
     const results = await prisma.result.findMany({
-      where: { studentId: id },
+      where,
       orderBy: { term: "asc" },
     });
 
@@ -91,7 +94,7 @@ export const getStudentResults = async (req: Request, res: Response) => {
 export const saveStudentResult = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const { term, marks, attendance, comment } = req.body;
+    const { session, term, marks, attendance, comment } = req.body;
 
     if (!term || marks === undefined) {
       return res.status(400).json({ error: "Term and marks are required" });
@@ -100,8 +103,10 @@ export const saveStudentResult = async (req: Request, res: Response) => {
     const validation = validate(saveStudentResultSchema, req.body);
     if (!validation.success) return res.status(400).json({ error: validation.error });
 
+    const sessionVal = session || String(new Date().getFullYear());
+
     const existing = await prisma.result.findUnique({
-      where: { studentId_term: { studentId: id, term: String(term) } },
+      where: { studentId_term_session: { studentId: id, term: String(term), session: sessionVal } },
     });
     const mergedMarks = existing
       ? { ...(existing.marks as Record<string, number>), ...marks }
@@ -111,9 +116,10 @@ export const saveStudentResult = async (req: Request, res: Response) => {
       : (attendance || existing?.attendance);
 
     const result = await prisma.result.upsert({
-      where: { studentId_term: { studentId: id, term: String(term) } },
+      where: { studentId_term_session: { studentId: id, term: String(term), session: sessionVal } },
       create: {
         studentId: id,
+        session: sessionVal,
         term: String(term),
         marks: mergedMarks,
         attendance: mergedAttendance || null,
@@ -135,11 +141,15 @@ export const saveStudentResult = async (req: Request, res: Response) => {
 export const getClassResults = async (req: Request, res: Response) => {
   try {
     const classId = param(req, "classId");
+    const { session } = req.query;
     const cls = await prisma.schoolClass.findUnique({ where: { id: classId } });
     if (!cls) return res.status(404).json({ error: "Class not found" });
 
+    const where: any = { student: { class: cls.name } };
+    if (session) where.session = String(session);
+
     const results = await prisma.result.findMany({
-      where: { student: { class: cls.name } },
+      where,
       orderBy: [{ studentId: "asc" }, { term: "asc" }],
     });
 

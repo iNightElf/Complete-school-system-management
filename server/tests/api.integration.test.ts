@@ -23,6 +23,8 @@ const mockPrisma = vi.hoisted(() => {
     auditLog: { create: vi.fn() },
     academicYear: { findMany: vi.fn() },
     user: { findMany: vi.fn() },
+    periodClose: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), delete: vi.fn() },
+    reconciliation: { findMany: vi.fn(), create: vi.fn() },
     $queryRaw: vi.fn(),
     $queryRawUnsafe: vi.fn(),
   };
@@ -98,6 +100,7 @@ describe("API Integration Tests", () => {
     mockPrisma.student.count.mockResolvedValue(0);
     mockPrisma.academicYear.findMany.mockResolvedValue([]);
     mockPrisma.user.findMany.mockResolvedValue([]);
+    mockPrisma.periodClose.findFirst.mockResolvedValue(null);
     mockPrisma.$queryRaw.mockResolvedValue([{ al_rawa: "0", global_forum: "0", cash: "0" }]);
   });
 

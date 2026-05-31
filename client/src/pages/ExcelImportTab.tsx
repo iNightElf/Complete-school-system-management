@@ -1,18 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { toast } from '../components/Toast';
 import { Upload, Trash2, Edit2, Check, X, Download, Loader } from 'lucide-react';
 import { useSchoolStore } from '../store';
+import axios from 'axios';
 
 const API_URL = '/api';
-
-const STUDENT_CATEGORIES = [
-  'Tuition Fee', 'Admission Fee', 'Hifz Tuition Fee', 'Hifz Admission Fee',
-  'Books Fee', 'Copy Fee', 'Stationary Fee', 'Accessories Fee',
-];
-
-const INCOME_CATEGORIES = [
-  ...STUDENT_CATEGORIES, 'Transfer from Global Forum', 'Donation', 'Other Income',
-];
 
 const EXPENSE_CATEGORIES = ['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense'];
 
@@ -51,16 +43,16 @@ function normalizeType(val: any): 'income' | 'expense' {
   return 'expense';
 }
 
-function isStudentCategory(cat: string): boolean {
-  return STUDENT_CATEGORIES.includes(cat);
+function isStudentCategory(cat: string, feeCats: string[]): boolean {
+  return feeCats.includes(cat) || cat === 'Other Fee';
 }
 
-function validateRow(row: ImportRow): string[] {
+function validateRow(row: ImportRow, feeCats: string[]): string[] {
   const errors: string[] = [];
   if (!row.date) errors.push('Date is required');
   if (!row.amount || isNaN(parseFloat(row.amount)) || parseFloat(row.amount) <= 0) errors.push('Amount must be > 0');
   if (!row.category) errors.push('Category is required');
-  if (isStudentCategory(row.category)) {
+  if (isStudentCategory(row.category, feeCats)) {
     if (!row.roll) errors.push('Roll required for student fees');
     if (row.roll && !row.studentId) errors.push('Student not found for this Roll');
   }
@@ -74,9 +66,16 @@ export default function ExcelImportTab() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<ImportRow>>({});
   const [importing, setImporting] = useState(false);
+  const [feeScheduleCategories, setFeeScheduleCategories] = useState<string[]>([]);
 
+  const incomeCategories = useMemo(() => [...feeScheduleCategories, 'Other Fee'], [feeScheduleCategories]);
 
-  useEffect(() => { fetchStudents(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    axios.get('/api/finance/fee-schedules', { withCredentials: true }).then(res => {
+      const cats = [...new Set(res.data.map((fs: any) => fs.category))] as string[];
+      setFeeScheduleCategories(cats);
+    }).catch(() => {});
+  }, []);
 
   const rollMapRef = React.useRef<Record<string, any>>({});
 
@@ -115,7 +114,7 @@ export default function ExcelImportTab() {
       const { studentId, studentName, resolvedClass } = resolveStudent(row.className, row.roll);
       if (!studentId) return row;
       const updated = { ...row, studentId, studentName, className: resolvedClass || row.className };
-      updated._errors = validateRow(updated);
+      updated._errors = validateRow(updated, feeScheduleCategories);
       return updated;
     }));
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -174,12 +173,12 @@ export default function ExcelImportTab() {
             studentId,
             _errors: [],
           };
-          row._errors = validateRow(row);
+          row._errors = validateRow(row, feeScheduleCategories);
           return row;
         });
 
         setRows(parsed);
-        const studentRows = parsed.filter(r => isStudentCategory(r.category));
+        const studentRows = parsed.filter(r => isStudentCategory(r.category, feeScheduleCategories));
         const resolved = studentRows.filter(r => r.studentId).length;
         const cols = data.length ? Object.keys(data[0] as object).join(', ') : '';
         toast(`Loaded ${parsed.length} rows. ${resolved}/${studentRows.length} students found. Columns: ${cols}`, 'success');
@@ -223,7 +222,7 @@ export default function ExcelImportTab() {
         updated.className = resolved.resolvedClass || cn;
         updated.roll = rl;
       }
-      updated._errors = validateRow(updated);
+      updated._errors = validateRow(updated, feeScheduleCategories);
       return updated;
     }));
     setEditingId(null);
@@ -328,7 +327,7 @@ export default function ExcelImportTab() {
 
           {/* Table */}
           <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm mobile-card-table">
               <thead className="bg-school-primary text-white sticky top-0">
                 <tr className="text-xs uppercase">
                   <th className="px-3 py-2 w-10"></th>
@@ -347,55 +346,55 @@ export default function ExcelImportTab() {
                 {rows.map((row) => {
                   const isEditing = editingId === row._id;
                   const hasError = row._errors.length > 0;
-                  const needsStudent = isStudentCategory(row.category);
+                  const needsStudent = isStudentCategory(row.category, feeScheduleCategories);
                   return (
                     <tr key={row._id} className={`border-t border-school-border/50 ${!row._selected ? 'bg-gray-50 opacity-50' : hasError ? 'bg-red-50' : row._id % 2 ? 'bg-school-paper/30' : ''}`}>
-                      <td className="px-3 py-2 text-center">
+                      <td className="px-3 py-2 text-center" data-label="">
                         <input type="checkbox" checked={row._selected} onChange={() => toggleRow(row._id)} className="rounded" />
                       </td>
 
                       {isEditing ? (
                         <>
-                          <td className="px-2 py-1"><input type="date" value={editData.date || ''} onChange={e => setEditData({ ...editData, date: e.target.value })} className="w-full px-2 py-1 border border-school-border rounded text-xs" /></td>
-                          <td className="px-2 py-1">
+                          <td className="px-2 py-1" data-label="Date"><input type="date" value={editData.date || ''} onChange={e => setEditData({ ...editData, date: e.target.value })} className="w-full px-2 py-1 border border-school-border rounded text-xs" /></td>
+                          <td className="px-2 py-1" data-label="Category">
                             <select value={editData.category || ''} onChange={e => setEditData({ ...editData, category: e.target.value })} className="w-full px-2 py-1 border border-school-border rounded text-xs">
                               <option value="">—</option>
-                              <optgroup label="Income">{INCOME_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
+                              <optgroup label="Income">{incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
                               <optgroup label="Expense">{EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
                             </select>
                           </td>
-                          <td className="px-2 py-1 text-center">
+                          <td className="px-2 py-1 text-center" data-label="Type">
                             <select value={editData.type || 'expense'} onChange={e => setEditData({ ...editData, type: e.target.value as any })} className="px-2 py-1 border border-school-border rounded text-xs">
                               <option value="income">Income</option>
                               <option value="expense">Expense</option>
                             </select>
                           </td>
-                          <td className="px-2 py-1"><input type="number" value={editData.amount || ''} onChange={e => setEditData({ ...editData, amount: e.target.value })} className="w-20 px-2 py-1 border border-school-border rounded text-xs text-right" /></td>
-                          <td className="px-2 py-1"><input value={editData.className || ''} onChange={e => setEditData({ ...editData, className: e.target.value })} className="w-20 px-2 py-1 border border-school-border rounded text-xs" /></td>
-                          <td className="px-2 py-1"><input value={editData.roll || ''} onChange={e => setEditData({ ...editData, roll: e.target.value })} className="w-16 px-2 py-1 border border-school-border rounded text-xs" /></td>
-                          <td className="px-2 py-1"><input type="month" value={editData.feeMonth || ''} onChange={e => setEditData({ ...editData, feeMonth: e.target.value })} className="w-full px-2 py-1 border border-school-border rounded text-xs" /></td>
-                          <td className="px-2 py-1 text-center">
+                          <td className="px-2 py-1" data-label="Amount"><input type="number" value={editData.amount || ''} onChange={e => setEditData({ ...editData, amount: e.target.value })} className="w-20 px-2 py-1 border border-school-border rounded text-xs text-right" /></td>
+                          <td className="px-2 py-1" data-label="Roll"><input value={editData.className || ''} onChange={e => setEditData({ ...editData, className: e.target.value })} className="w-20 px-2 py-1 border border-school-border rounded text-xs" /></td>
+                          <td className="px-2 py-1" data-label="Class"><input value={editData.roll || ''} onChange={e => setEditData({ ...editData, roll: e.target.value })} className="w-16 px-2 py-1 border border-school-border rounded text-xs" /></td>
+                          <td className="px-2 py-1" data-label="Fee Month"><input type="month" value={editData.feeMonth || ''} onChange={e => setEditData({ ...editData, feeMonth: e.target.value })} className="w-full px-2 py-1 border border-school-border rounded text-xs" /></td>
+                          <td className="px-2 py-1 text-center" data-label="Actions">
                             <button onClick={() => saveEdit(row._id)} className="p-1 text-green-600 hover:bg-green-50 rounded" aria-label="Save edit"><Check size={14} /></button>
                             <button onClick={cancelEdit} className="p-1 text-red-500 hover:bg-red-50 rounded" aria-label="Cancel edit"><X size={14} /></button>
                           </td>
                         </>
                       ) : (
                         <>
-                          <td className="px-3 py-2 text-xs">{row.date || <span className="text-red-500">missing</span>}</td>
-                          <td className="px-3 py-2 text-xs">{row.category || <span className="text-red-500">missing</span>}</td>
-                          <td className="px-3 py-2 text-center">
+                          <td className="px-3 py-2 text-xs" data-label="Date">{row.date || <span className="text-red-500">missing</span>}</td>
+                          <td className="px-3 py-2 text-xs" data-label="Category">{row.category || <span className="text-red-500">missing</span>}</td>
+                          <td className="px-3 py-2 text-center" data-label="Type">
                             <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${row.type === 'income' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                               {row.type === 'income' ? 'INCOME' : 'EXPENSE'}
                             </span>
                           </td>
-                          <td className={`px-3 py-2 text-right font-medium text-xs ${row.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                          <td className={`px-3 py-2 text-right font-medium text-xs ${row.type === 'income' ? 'text-green-600' : 'text-red-600'}`} data-label="Amount">
                             {row.amount ? `৳${parseFloat(row.amount).toLocaleString()}` : <span className="text-red-500">0</span>}
                           </td>
-                          <td className="px-3 py-2 text-xs">{row.roll || '—'}</td>
-                          <td className="px-3 py-2 text-xs">{row.type === 'income' ? (row.className || '—') : '—'}</td>
-                          <td className="px-3 py-2 text-xs font-medium">{row.type === 'income' ? (row.studentName || (needsStudent && row.roll ? <span className="text-red-500">not found</span> : '—')) : '—'}</td>
-                          <td className="px-3 py-2 text-xs text-school-muted">{row.feeMonth || '—'}</td>
-                          <td className="px-3 py-2 text-center">
+                          <td className="px-3 py-2 text-xs" data-label="Roll">{row.roll || '—'}</td>
+                          <td className="px-3 py-2 text-xs" data-label="Class">{row.type === 'income' ? (row.className || '—') : '—'}</td>
+                          <td className="px-3 py-2 text-xs font-medium" data-label="Student">{row.type === 'income' ? (row.studentName || (needsStudent && row.roll ? <span className="text-red-500">not found</span> : '—')) : '—'}</td>
+                          <td className="px-3 py-2 text-xs text-school-muted" data-label="Fee Month">{row.feeMonth || '—'}</td>
+                          <td className="px-3 py-2 text-center" data-label="Actions">
                             <button onClick={() => startEdit(row)} className="p-1 text-blue-500 hover:bg-blue-50 rounded" aria-label="Edit row"><Edit2 size={14} /></button>
                             <button onClick={() => deleteRow(row._id)} className="p-1 text-red-500 hover:bg-red-50 rounded" aria-label="Delete row"><Trash2 size={14} /></button>
                           </td>

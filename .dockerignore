@@ -1,0 +1,10 @@
+node_modules
+.git
+.env
+dist
+*.md
+.gitignore
+*.local
+.gitkeep
+**/__pycache__
+**/node_modules

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useSchoolStore } from '../store';
-import { FileText, Download, Printer, Calendar, BarChart3, Scale, Users } from 'lucide-react';
+import { FileText, Calendar, BarChart3, Scale, Users, Loader } from 'lucide-react';
 import { toast } from '../components/Toast';
+import ExportMenu from '../components/ExportMenu';
 import { getMonthName, fmt, headwise, pdfHeadwiseIncome, pdfHeadwiseExpense, pdfMonthly, pdfAudit, pdfYearlyAGM } from '../lib/financeReportPdf';
 import { FISCAL_YEAR_START_MONTH, FISCAL_START_LABEL, FISCAL_END_LABEL } from '../lib/config';
 
@@ -66,7 +68,7 @@ function printDiv(id: string) {
 }
 
 const FinanceReports: React.FC = () => {
-  const { transactions, fetchTransactions, students, fetchStudents, balances, fetchFinance, openingBalances, fetchOpeningBalances, setOpeningBalances, openingBalancesHistory, fetchOpeningBalanceHistory, revertOpeningBalance } = useSchoolStore();
+  const { transactions, fetchTransactions, students, fetchStudents, fetchFinance, fetchOpeningBalances, setOpeningBalances, openingBalancesHistory, fetchOpeningBalanceHistory, revertOpeningBalance } = useSchoolStore();
   const [tab, setTab] = useState<ReportTab>('headwise-income');
   const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
   const [dateTo, setDateTo] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
@@ -75,6 +77,19 @@ const FinanceReports: React.FC = () => {
   const [editOpenBal, setEditOpenBal] = useState<Record<string, string>>({});
   const [savingOpenBal, setSavingOpenBal] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+
+  const [agmData, setAgmData] = useState<any>(null);
+  const [agmLoading, setAgmLoading] = useState(false);
+
+  useEffect(() => {
+    if (tab === 'yearly-agm') {
+      setAgmLoading(true);
+      axios.get('/api/finance/reports/agm', { params: { year: yearFilter } })
+        .then(res => setAgmData(res.data))
+        .catch(() => { setAgmData(null); toast('Failed to load AGM report from server', 'error'); })
+        .finally(() => setAgmLoading(false));
+    }
+  }, [tab, yearFilter]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchTransactions(); fetchStudents(); fetchFinance(); fetchOpeningBalances(); }, []);
@@ -133,8 +148,6 @@ const FinanceReports: React.FC = () => {
   const expenseTx = filtered.filter((t: any) => t.transactionType === 'EXPENSE' && t.affectsExpenseLedger);
   const yearIncome = yearFiltered.filter((t: any) => t.transactionType === 'INCOME' && t.affectsIncomeLedger);
   const yearExpense = yearFiltered.filter((t: any) => t.transactionType === 'EXPENSE' && t.affectsExpenseLedger);
-  const allTransfers = yearFiltered.filter((t: any) => t.transactionType === 'INTERNAL_TRANSFER');
-
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
 
@@ -194,7 +207,10 @@ const FinanceReports: React.FC = () => {
       else if (tab === 'monthly-income') pdfMonthly('income', incomeTx, students, dateFrom, dateTo);
       else if (tab === 'monthly-expense') pdfMonthly('expense', expenseTx, students, dateFrom, dateTo);
       else if (tab === 'audit') pdfAudit(yearIncome, yearExpense, yearFilter);
-      else if (tab === 'yearly-agm') pdfYearlyAGM(yearIncome, yearExpense, yearFiltered, allTransfers, yearFilter, balances, openingBalances);
+      else if (tab === 'yearly-agm' && agmData) {
+        const { income, expense, totalIncome, totalExpense, netSurplus, opening, closing, totalAssets, totalTransfers, transactionCount } = agmData;
+        pdfYearlyAGM(income, expense, totalIncome, totalExpense, netSurplus, opening, closing, totalAssets, totalTransfers, transactionCount, yearFilter);
+      }
       toast('PDF downloaded ✓', 'success');
     } catch { toast('PDF generation failed', 'error'); }
   };
@@ -244,20 +260,7 @@ const FinanceReports: React.FC = () => {
             </button>
           )}
           {(tab === 'headwise-income' || tab === 'headwise-expense' || tab === 'monthly-income' || tab === 'monthly-expense' || tab === 'audit' || tab === 'yearly-agm') && (
-            <>
-              <button onClick={handleCsv} className="flex items-center gap-1.5 px-3 py-2 border border-school-border rounded-xl text-xs font-bold hover:border-school-accent">
-                <Download size={14} /> CSV
-              </button>
-              <button onClick={handleExcel} className="flex items-center gap-1.5 px-3 py-2 border border-green-400 text-green-700 rounded-xl text-xs font-bold hover:bg-green-50">
-                <Download size={14} /> Excel
-              </button>
-              <button onClick={handlePdf} className="flex items-center gap-1.5 px-3 py-2 bg-school-primary text-white rounded-xl text-xs font-bold hover:opacity-90">
-                <Download size={14} /> PDF
-              </button>
-              <button onClick={() => printDiv('print-area')} className="flex items-center gap-1.5 px-3 py-2 border border-school-border rounded-xl text-xs font-bold hover:border-school-accent">
-                <Printer size={14} /> Print
-              </button>
-            </>
+            <ExportMenu onCSV={handleCsv} onExcel={handleExcel} onPDF={handlePdf} onPrint={() => printDiv('print-area')} />
           )}
         </div>
       </div>
@@ -365,18 +368,14 @@ const FinanceReports: React.FC = () => {
 
       {tab === 'yearly-agm' && (
         <div className="bg-white rounded-2xl border border-school-border p-4" id="print-area">
-          {(() => { const ti = yearIncome.reduce((s, t) => s + Number(t.amount), 0); const te = yearExpense.reduce((s, t) => s + Number(t.amount), 0); const ns = ti - te;
-            const totalAssets = (balances.AL_RAWA_BANK || 0) + (balances.GLOBAL_FORUM_BANK || 0) + (balances.CASH_IN_HAND || 0);
+          {agmLoading ? (
+            <div className="flex items-center justify-center py-12 text-school-muted text-sm gap-2"><Loader size={16} className="animate-spin" /> Loading AGM report…</div>
+          ) : !agmData ? (
+            <div className="text-center py-12 text-sm text-school-muted">Failed to load AGM report. Try again.</div>
+          ) : (() => {
+            const { totalIncome, totalExpense, netSurplus, opening, closing, totalAssets, totalTransfers, transactionCount } = agmData;
             const fyLabel = `${Number(yearFilter)-1}-${yearFilter}`;
-            // Use stored opening balances (user-settable, default 0)
-            const openingAL = Number(openingBalances.AL_RAWA_BANK) || 0;
-            const openingGF = Number(openingBalances.GLOBAL_FORUM_BANK) || 0;
-            const openingCash = Number(openingBalances.CASH_IN_HAND) || 0;
-            const openTotal = openingAL + openingGF + openingCash;
-            // Validate: closing ≈ opening + netChange
-
-
-            const totalTransfers = allTransfers.reduce((s: number, t: any) => s + Number(t.amount), 0);
+            const openTotal = (opening.AL_RAWA_BANK || 0) + (opening.GLOBAL_FORUM_BANK || 0) + (opening.CASH_IN_HAND || 0);
             return (
             <div className="space-y-6">
               <h4 className="font-serif text-lg text-school-primary">Annual General Meeting Report — FY {fyLabel}</h4>
@@ -387,15 +386,15 @@ const FinanceReports: React.FC = () => {
                 <h5 className="font-bold text-sm uppercase text-school-primary mb-3 border-b border-school-border pb-1">1. Income & Expenditure Statement</h5>
                 <div className="space-y-1">
                   <div className="text-xs font-bold text-emerald-700 uppercase mb-1">Income</div>
-                  {headwise(yearIncome).map(([cat, amt]) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{cat}</span><span className="font-bold">{fmt(amt)} /-</span></div>)}
-                  <div className="flex justify-between py-2 border-b-2 border-school-primary font-bold text-sm bg-school-paper rounded px-2"><span>Total Income</span><span className="text-emerald-600">{fmt(ti)} /-</span></div>
+                  {agmData.income.map(([cat, amt]: [string, number]) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{cat}</span><span className="font-bold">{fmt(amt)} /-</span></div>)}
+                  <div className="flex justify-between py-2 border-b-2 border-school-primary font-bold text-sm bg-school-paper rounded px-2"><span>Total Income</span><span className="text-emerald-600">{fmt(totalIncome)} /-</span></div>
                 </div>
                 <div className="space-y-1 mt-3">
                   <div className="text-xs font-bold text-rose-700 uppercase mb-1">Expenditure</div>
-                  {headwise(yearExpense).map(([cat, amt]) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{cat}</span><span className="font-bold">{fmt(amt)} /-</span></div>)}
-                  <div className="flex justify-between py-2 border-b-2 border-school-primary font-bold text-sm bg-school-paper rounded px-2"><span>Total Expenditure</span><span className="text-rose-600">{fmt(te)} /-</span></div>
+                  {agmData.expense.map(([cat, amt]: [string, number]) => <div key={cat} className="flex justify-between py-1 border-b border-school-border/50 text-sm"><span>{cat}</span><span className="font-bold">{fmt(amt)} /-</span></div>)}
+                  <div className="flex justify-between py-2 border-b-2 border-school-primary font-bold text-sm bg-school-paper rounded px-2"><span>Total Expenditure</span><span className="text-rose-600">{fmt(totalExpense)} /-</span></div>
                 </div>
-                <div className="flex justify-between py-3 mt-2 bg-school-primary text-white rounded-xl px-4 font-bold"><span>Annual {ns >= 0 ? 'Surplus' : 'Deficit'}</span><span>{fmt(Math.abs(ns))} /-</span></div>
+                <div className="flex justify-between py-3 mt-2 bg-school-primary text-white rounded-xl px-4 font-bold"><span>Annual {netSurplus >= 0 ? 'Surplus' : 'Deficit'}</span><span>{fmt(Math.abs(netSurplus))} /-</span></div>
               </div>
 
               {/* 2. Balance Sheet */}
@@ -404,9 +403,9 @@ const FinanceReports: React.FC = () => {
                 <table className="w-full text-sm">
                   <thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Account</th><th className="px-3 py-2 text-right">Balance</th></tr></thead>
                   <tbody>
-                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">AL RAWA Bank</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.AL_RAWA_BANK || 0)} /-</td></tr>
-                    <tr className="border-t border-school-border/50 bg-school-paper/30"><td className="px-3 py-2">Global Forum Bank</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.GLOBAL_FORUM_BANK || 0)} /-</td></tr>
-                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">Cash in Hand</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.CASH_IN_HAND || 0)} /-</td></tr>
+                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">AL RAWA Bank</td><td className="px-3 py-2 text-right font-bold">{fmt(closing.AL_RAWA_BANK || 0)} /-</td></tr>
+                    <tr className="border-t border-school-border/50 bg-school-paper/30"><td className="px-3 py-2">Global Forum Bank</td><td className="px-3 py-2 text-right font-bold">{fmt(closing.GLOBAL_FORUM_BANK || 0)} /-</td></tr>
+                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">Cash in Hand</td><td className="px-3 py-2 text-right font-bold">{fmt(closing.CASH_IN_HAND || 0)} /-</td></tr>
                   </tbody>
                   <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2">Total Assets</td><td className="px-3 py-2 text-right">{fmt(totalAssets)} /-</td></tr></tfoot>
                 </table>
@@ -419,23 +418,23 @@ const FinanceReports: React.FC = () => {
                 <table className="w-full text-sm">
                   <thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Account</th><th className="px-3 py-2 text-right">Opening</th><th className="px-3 py-2 text-right">Closing</th></tr></thead>
                   <tbody>
-                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">AL RAWA Bank</td><td className="px-3 py-2 text-right">{fmt(openingAL)} /-</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.AL_RAWA_BANK || 0)} /-</td></tr>
-                    <tr className="border-t border-school-border/50 bg-school-paper/30"><td className="px-3 py-2">Global Forum Bank</td><td className="px-3 py-2 text-right">{fmt(openingGF)} /-</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.GLOBAL_FORUM_BANK || 0)} /-</td></tr>
-                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">Cash in Hand</td><td className="px-3 py-2 text-right">{fmt(openingCash)} /-</td><td className="px-3 py-2 text-right font-bold">{fmt(balances.CASH_IN_HAND || 0)} /-</td></tr>
+                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">AL RAWA Bank</td><td className="px-3 py-2 text-right">{fmt(opening.AL_RAWA_BANK || 0)} /-</td><td className="px-3 py-2 text-right font-bold">{fmt(closing.AL_RAWA_BANK || 0)} /-</td></tr>
+                    <tr className="border-t border-school-border/50 bg-school-paper/30"><td className="px-3 py-2">Global Forum Bank</td><td className="px-3 py-2 text-right">{fmt(opening.GLOBAL_FORUM_BANK || 0)} /-</td><td className="px-3 py-2 text-right font-bold">{fmt(closing.GLOBAL_FORUM_BANK || 0)} /-</td></tr>
+                    <tr className="border-t border-school-border/50"><td className="px-3 py-2">Cash in Hand</td><td className="px-3 py-2 text-right">{fmt(opening.CASH_IN_HAND || 0)} /-</td><td className="px-3 py-2 text-right font-bold">{fmt(closing.CASH_IN_HAND || 0)} /-</td></tr>
                   </tbody>
                   <tfoot><tr className="border-t-2 border-school-primary font-bold bg-school-paper"><td className="px-3 py-2">Total</td><td className="px-3 py-2 text-right">{fmt(openTotal)} /-</td><td className="px-3 py-2 text-right">{fmt(totalAssets)} /-</td></tr></tfoot>
                 </table>
                 <div className="grid grid-cols-3 gap-3 mt-3">
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-emerald-600 font-bold">Total Received</div><div className="font-bold text-emerald-700">{fmt(ti)} /-</div></div>
-                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-rose-600 font-bold">Total Paid</div><div className="font-bold text-rose-700">{fmt(te)} /-</div></div>
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-blue-600 font-bold">Net Movement</div><div className={`font-bold ${ns >= 0 ? 'text-blue-700' : 'text-red-700'}`}>{fmt(ns)} /-</div></div>
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-emerald-600 font-bold">Total Received</div><div className="font-bold text-emerald-700">{fmt(totalIncome)} /-</div></div>
+                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-rose-600 font-bold">Total Paid</div><div className="font-bold text-rose-700">{fmt(totalExpense)} /-</div></div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center"><div className="text-[10px] uppercase text-blue-600 font-bold">Net Movement</div><div className={`font-bold ${netSurplus >= 0 ? 'text-blue-700' : 'text-red-700'}`}>{fmt(netSurplus)} /-</div></div>
                 </div>
               </div>
 
               {/* 4. Internal Transfers */}
               <div>
                 <h5 className="font-bold text-sm uppercase text-school-primary mb-2 border-b border-school-border pb-1">4. Internal Transfers</h5>
-                <p className="text-sm">Total: {fmt(totalTransfers)} /- ({allTransfers.length} transactions)</p>
+                <p className="text-sm">Total: {fmt(totalTransfers)} /- ({agmData.transfers?.length || 0} transactions)</p>
                 <p className="text-xs text-school-muted mt-1">Internal transfers between bank accounts and Cash in Hand do not affect income/expense.</p>
               </div>
 
@@ -443,10 +442,10 @@ const FinanceReports: React.FC = () => {
               <div>
                 <h5 className="font-bold text-sm uppercase text-school-primary mb-2 border-b border-school-border pb-1">5. Recommendations</h5>
                 <ol className="list-decimal list-inside space-y-1 text-sm text-gray-600">
-                  <li>Net surplus of {fmt(ns)} /- for FY {fyLabel}.</li>
-                  {ti > 0 && <li>Expense-to-income ratio: {((te / ti) * 100).toFixed(1)}%.</li>}
+                  <li>Net surplus of {fmt(netSurplus)} /- for FY {fyLabel}.</li>
+                  {totalIncome > 0 && <li>Expense-to-income ratio: {((totalExpense / totalIncome) * 100).toFixed(1)}%.</li>}
                   <li>Total assets stand at {fmt(totalAssets)} /- across 3 accounts.</li>
-                  <li>{yearFiltered.length} total transactions recorded during the year.</li>
+                  <li>{transactionCount} total transactions recorded during the year.</li>
                   <li>All financial records are available for detailed audit.</li>
                 </ol>
               </div>

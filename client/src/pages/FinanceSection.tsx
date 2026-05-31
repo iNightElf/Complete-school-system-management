@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSchoolStore, useAuthStore, useUserManagementStore, useUIStore } from '../store';
 import axios from 'axios';
-import { Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw, BookOpen, Shield } from 'lucide-react';
+import { Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw, BookOpen, Shield, Lock, Scale } from 'lucide-react';
 import { toast } from '../components/Toast';
 import FinanceReports from './FinanceReports';
 import DefaulterTab from './DefaulterTab';
@@ -9,6 +9,8 @@ import OptionalFeesTab from './OptionalFeesTab';
 import ExcelImportTab from './ExcelImportTab';
 import FeeScheduleTab from './FeeScheduleTab';
 import StudentWaiversTab from './StudentWaiversTab';
+import PeriodCloseTab from './PeriodCloseTab';
+import ReconciliationTab from './ReconciliationTab';
 
 const API_URL = '/api';
 
@@ -18,11 +20,10 @@ const ACCOUNTS = [
   { id: 'CASH_IN_HAND', label: 'Cash in Hand', short: 'Cash', color: 'from-emerald-500 to-emerald-600', ring: 'ring-emerald-200' },
 ] as const;
 
-const INCOME_CATEGORIES = ['Tuition Fee', 'Admission Fee', 'Hifz Tuition Fee', 'Hifz Admission Fee', 'Books Fee', 'Copy Fee', 'Stationary Fee', 'Accessories Fee', 'Transfer from Global Forum', 'Donation', 'Other Income'];
 const EXPENSE_CATEGORIES = ['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense'];
 
-type MainTab = 'transactions' | 'reports' | 'optional-fees' | 'defaulter' | 'import' | 'fee-schedule' | 'waivers';
-type TxTab = 'income' | 'expense' | 'transfer';
+type MainTab = 'transactions' | 'reports' | 'optional-fees' | 'defaulter' | 'fee-schedule' | 'waivers' | 'period-close' | 'reconciliation';
+type TxTab = 'income' | 'expense' | 'transfer' | 'import';
 
 const PAGE_SIZE = 25;
 
@@ -236,12 +237,19 @@ const FinanceSection: React.FC = () => {
   const [mainTab, setMainTab] = useState<MainTab>('transactions');
   const [activeTab, setActiveTab] = useState<TxTab>('income');
   const [loading, setLoading] = useState(false);
+  const [feeSchedules, setFeeSchedules] = useState<any[]>([]);
+  const [assignedStudentIds, setAssignedStudentIds] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    axios.get('/api/finance/fee-schedules', { withCredentials: true }).then(res => {
+      setFeeSchedules(res.data);
+    }).catch(() => {});
+  }, []);
 
   // Form state
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
-  const [customCategory, setCustomCategory] = useState('');
   const [desc, setDesc] = useState('');
   const [sourceAccount, setSourceAccount] = useState('AL_RAWA_BANK');
   const [transferTo, setTransferTo] = useState('AL_RAWA_BANK');
@@ -253,6 +261,53 @@ const FinanceSection: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); fetchUsers(); }, []);
   useEffect(() => { useUIStore.getState().registerSwipeBack(() => setMainTab('transactions')); }, []);
+  // Re-fetch students when class changes (ensures student data is current)
+  useEffect(() => { if (selectedClass) fetchStudents(); }, [selectedClass]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-fill amount from fee schedule minus waiver when category + student selected
+  useEffect(() => {
+    if (!category || category === 'Other Fee' || !selectedStudent || !selectedClass) {
+      return;
+    }
+    const sched = feeSchedules.find((fs: any) => fs.category === category && (!fs.classId || fs.classRel?.name === selectedClass));
+    if (!sched) return;
+    axios.get(`/api/finance/fee-waivers`, { params: { studentId: selectedStudent, feeScheduleId: sched.id, active: 'true' }, withCredentials: true })
+      .then(res => {
+        const waiver = res.data?.[0];
+        const amount = waiver ? Number(waiver.value) : Number(sched.amount);
+        setAmount(String(amount));
+      })
+      .catch(() => {});
+  }, [category, selectedStudent, selectedClass, feeSchedules]);
+
+  // When category or class changes, determine if ASSIGNED_ONLY and fetch assignments
+  useEffect(() => {
+    if (!category || category === 'Other Fee' || !selectedClass) {
+      setAssignedStudentIds(null);
+      return;
+    }
+    const sched = feeSchedules.find((fs: any) => fs.category === category && (!fs.classId || fs.classRel?.name === selectedClass));
+    if (sched?.applicability === 'ASSIGNED_ONLY') {
+      axios.get(`/api/finance/student-fee-assignments`, { params: { feeScheduleId: sched.id }, withCredentials: true })
+        .then(res => setAssignedStudentIds(res.data.map((a: any) => a.studentId)))
+        .catch(() => setAssignedStudentIds(null));
+    } else {
+      setAssignedStudentIds(null);
+    }
+  }, [category, selectedClass, feeSchedules]);
+
+  const availableStudents = useMemo(() => {
+    const classStudents = students.filter((s: any) => s.class === selectedClass);
+    if (!assignedStudentIds) return classStudents;
+    return classStudents.filter((s: any) => assignedStudentIds.includes(s.id));
+  }, [students, selectedClass, assignedStudentIds]);
+
+  // Clear selected student if no longer in available list
+  useEffect(() => {
+    if (selectedStudent && availableStudents.length > 0 && !availableStudents.some((s: any) => s.id === selectedStudent)) {
+      setSelectedStudent('');
+    }
+  }, [availableStudents, selectedStudent]);
 
   // Compute totals from transactions (exclude cancelled)
   const activeTransactions = transactions.filter((t: any) => !t.isCancelled);
@@ -268,7 +323,7 @@ const FinanceSection: React.FC = () => {
   const depositRemaining = totalIncome - totalDepositedToBank;
 
   const resetForm = () => {
-    setAmount(''); setCategory(''); setCustomCategory(''); setDesc('');
+    setAmount(''); setCategory(''); setDesc('');
     setDate(new Date().toISOString().split('T')[0]);
     setSelectedClass(''); setSelectedStudent(''); setFeeMonth('');
     setDepositTo('CASH_IN_HAND');
@@ -280,9 +335,11 @@ const FinanceSection: React.FC = () => {
     try {
       let source: string | undefined;
       let destination: string | undefined;
-      const finalCategory = customCategory || category;
+      const finalCategory = category;
 
       if (activeTab === 'income') {
+        if (!selectedClass) { toast('Class is required for income', 'error'); setLoading(false); return; }
+        if (!selectedStudent) { toast('Student is required for income', 'error'); setLoading(false); return; }
         source = undefined; // external
         destination = depositTo;
       } else if (activeTab === 'expense') {
@@ -362,7 +419,7 @@ const FinanceSection: React.FC = () => {
       )}
 
       {/* Main Tab Bar */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <button onClick={() => setMainTab('transactions')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'transactions' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
           <Clock size={14} /> Transactions
         </button>
@@ -375,39 +432,48 @@ const FinanceSection: React.FC = () => {
         <button onClick={() => setMainTab('optional-fees')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'optional-fees' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
           <Users size={14} /> Optional Fees
         </button>
-        {canWrite && <button onClick={() => setMainTab('import')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'import' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
-          <Upload size={14} /> Import Excel
-        </button>}
         <button onClick={() => setMainTab('fee-schedule')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'fee-schedule' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
           <BookOpen size={14} /> Fee Schedules
         </button>
         <button onClick={() => setMainTab('waivers')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'waivers' ? 'bg-school-primary text-white border-school-primary shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
           <Shield size={14} /> Waivers
         </button>
+        {role === 'admin' && <>
+          <button onClick={() => setMainTab('period-close')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'period-close' ? 'bg-amber-600 text-white border-amber-600 shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-amber-400'}`}>
+            <Lock size={14} /> Period Close
+          </button>
+          <button onClick={() => setMainTab('reconciliation')} className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${mainTab === 'reconciliation' ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-blue-400'}`}>
+            <Scale size={14} /> Reconcile
+          </button>
+        </>}
       </div>
 
       {mainTab === 'reports' ? <FinanceReports /> : null}
       {mainTab === 'defaulter' ? <DefaulterTab /> : null}
       {mainTab === 'optional-fees' ? <OptionalFeesTab /> : null}
-      {mainTab === 'import' ? <ExcelImportTab /> : null}
       {mainTab === 'fee-schedule' ? <FeeScheduleTab /> : null}
       {mainTab === 'waivers' ? <StudentWaiversTab /> : null}
+      {mainTab === 'period-close' ? <PeriodCloseTab /> : null}
+      {mainTab === 'reconciliation' ? <ReconciliationTab /> : null}
 
       {mainTab === 'transactions' && (<div className="space-y-4">
           {/* Tab Bar */}
-          <div className="flex gap-2">
-            {[
-              { k: 'income', lbl: <><DollarSign size={14} /> Income</>, cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-              { k: 'expense', lbl: <><TrendingDown size={14} /> Expense</>, cls: 'text-rose-700 bg-rose-50 border-rose-200' },
-              { k: 'transfer', lbl: <><RefreshCw size={14} /> Transfer</>, cls: 'text-blue-700 bg-blue-50 border-blue-200' },
-            ].map(({ k, lbl, cls }) => (
-              <button key={k} onClick={() => { setActiveTab(k as TxTab); resetForm(); }}
+          <div className="flex gap-2 flex-wrap">
+            {( [
+              { k: 'income' as TxTab, lbl: <><DollarSign size={14} /> Income</>, cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+              { k: 'expense' as TxTab, lbl: <><TrendingDown size={14} /> Expense</>, cls: 'text-rose-700 bg-rose-50 border-rose-200' },
+              { k: 'transfer' as TxTab, lbl: <><RefreshCw size={14} /> Transfer</>, cls: 'text-blue-700 bg-blue-50 border-blue-200' },
+              ...(canWrite ? [{ k: 'import' as TxTab, lbl: <><Upload size={14} /> Import Excel</>, cls: 'text-violet-700 bg-violet-50 border-violet-200' }] : []),
+            ] as { k: TxTab; lbl: React.ReactNode; cls: string }[]).map(({ k, lbl, cls }) => (
+              <button key={k} onClick={() => { setActiveTab(k); if (k !== 'import') resetForm(); }}
                 className={`px-4 py-2.5 rounded-xl text-sm font-bold border transition-all flex items-center gap-1.5 ${activeTab === k ? cls + ' shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
                 {lbl}
               </button>
             ))}
           </div>
 
+          {activeTab === 'import' ? <ExcelImportTab /> : (
+          <>
           {/* Form */}
           <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-school-border p-5 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -428,10 +494,12 @@ const FinanceSection: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Category</label>
-                    <select value={category} onChange={e => setCategory(e.target.value)}
+                    <select value={category} onChange={e => { setCategory(e.target.value); setSelectedStudent(''); }}
                       className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
                       <option value="">Select...</option>
-                      {INCOME_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      {[...new Set(feeSchedules.map((fs: any) => fs.category))].map(c => <option key={c} value={c}>{c}</option>)}
+                      <option disabled>──────────</option>
+                      <option value="Other Fee">Other Fee</option>
                     </select>
                   </div>
                   <div>
@@ -445,31 +513,36 @@ const FinanceSection: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Class (optional)</label>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Class <span className="text-red-500">*</span></label>
                     <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedStudent(''); }}
                       className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
-                      <option value="">None</option>
+                      <option value="">— Select Class —</option>
                       {classes.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
                     </select>
                   </div>
                 </div>
                 {selectedClass && (
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Student (optional)</label>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Student <span className="text-red-500">*</span></label>
                     <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
                       className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
-                      <option value="">Select student...</option>
-                      {students.filter((s: any) => s.class === selectedClass).map((s: any) => (
+                      <option value="">— Select Student —</option>
+                      {availableStudents.map((s: any) => (
                         <option key={s.id} value={s.id}>{s.name}{s.fatherName ? ` (${s.fatherName})` : ''}{s.roll ? ` - Roll ${s.roll}` : ''}</option>
                       ))}
                     </select>
+                    {assignedStudentIds && (
+                      <p className="text-[10px] text-school-muted mt-1">Only students assigned to this fee are shown.</p>
+                    )}
                   </div>
                 )}
-                {(category === 'Tuition Fee' || category === 'Hifz Tuition Fee') && (
+                {selectedStudent && (
                   <div>
                     <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee for Month</label>
-                    <input type="month" value={feeMonth} onChange={e => setFeeMonth(e.target.value)}
-                      className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent" />
+                    <div className="relative cursor-pointer" onClick={e => { const input = e.currentTarget.querySelector<HTMLInputElement>('input[type="month"]'); if (input) { if (typeof input.showPicker === 'function') input.showPicker(); else input.focus(); } }}>
+                      <input type="month" value={feeMonth} onChange={e => setFeeMonth(e.target.value)}
+                        className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent cursor-pointer" />
+                    </div>
                   </div>
                 )}
               </div>
@@ -515,14 +588,6 @@ const FinanceSection: React.FC = () => {
               </div>
             )}
 
-            {category && !customCategory && (
-              <div>
-                <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Or type custom category</label>
-                <input type="text" placeholder="Custom category..." value={customCategory} onChange={e => setCustomCategory(e.target.value)}
-                  className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent" />
-              </div>
-            )}
-
             <div>
               <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Description (optional)</label>
               <input type="text" placeholder="Notes..." value={desc} onChange={e => setDesc(e.target.value)}
@@ -533,6 +598,8 @@ const FinanceSection: React.FC = () => {
               {loading ? 'Processing...' : activeTab === 'income' ? <><DollarSign size={16} /> Record Income</> : activeTab === 'expense' ? <><TrendingDown size={16} /> Record Expense</> : <><RefreshCw size={16} /> Record Transfer</>}
             </button>
           </form>
+          </>
+          )}
 
       {/* Ledger */}
       <Ledger transactions={transactions} fmt={fmt} fetchTransactions={fetchTransactions} fetchFinance={fetchFinance} userMap={userMap} />

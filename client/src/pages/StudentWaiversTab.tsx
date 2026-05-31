@@ -1,15 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { useSchoolStore } from '../store';
-import { Save, X } from 'lucide-react';
+import { X, Shield, Search } from 'lucide-react';
 import { toast } from '../components/Toast';
-
-const WAIVER_TYPES = [
-  { value: 'FULL', label: 'Full Waiver (pays 0)' },
-  { value: 'PERCENTAGE', label: 'Percentage Off (e.g. 50)' },
-  { value: 'FIXED_AMOUNT', label: 'Fixed Amount Off (e.g. 300)' },
-  { value: 'CUSTOM_AMOUNT', label: 'Custom Amount (pays X)' },
-];
 
 const API_URL = '/api';
 
@@ -20,15 +13,39 @@ const StudentWaiversTab: React.FC = () => {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [waivers, setWaivers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
+  const [activeWaivers, setActiveWaivers] = useState<any[]>([]);
+  const [activeLoading, setActiveLoading] = useState(true);
+  const [selectedScheduleId, setSelectedScheduleId] = useState('');
+  const [expectedAmount, setExpectedAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [approvedBy, setApprovedBy] = useState('');
+  const [waiverSearch, setWaiverSearch] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editExpected, setEditExpected] = useState('');
 
   useEffect(() => { fetchClasses(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (selectedClass) fetchStudents({ class: selectedClass }); }, [selectedClass]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const loadActiveWaivers = useCallback(async () => {
+    setActiveLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/finance/fee-waivers`, { params: { active: 'true' }, withCredentials: true });
+      setActiveWaivers(res.data);
+    } catch { /* silent */ }
+    finally { setActiveLoading(false); }
+  }, []);
+
+  useEffect(() => { loadActiveWaivers(); }, [loadActiveWaivers]);
+
   const loadData = useCallback(async () => {
     if (!selectedStudent) return;
+    setSelectedScheduleId('');
+    setExpectedAmount('');
+    setReason('');
+    setApprovedBy('');
     setLoading(true);
     try {
       const [schedRes, waiverRes, historyRes] = await Promise.all([
@@ -43,56 +60,194 @@ const StudentWaiversTab: React.FC = () => {
     finally { setLoading(false); }
   }, [selectedStudent]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadData(); loadActiveWaivers(); }, [loadData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const classStudents = students.filter((s: any) => !selectedClass || s.class === selectedClass);
-
+  const filteredStudents = useMemo(() => {
+    if (!studentSearch) return classStudents;
+    const q = studentSearch.toLowerCase();
+    return classStudents.filter((s: any) => (s.name || '').toLowerCase().includes(q) || (s.roll && String(s.roll).includes(q)));
+  }, [classStudents, studentSearch]);
+  const filteredActiveWaivers = useMemo(() => {
+    if (!waiverSearch) return activeWaivers;
+    const q = waiverSearch.toLowerCase();
+    return activeWaivers.filter((w: any) => (w.student?.name || '').toLowerCase().includes(q));
+  }, [activeWaivers, waiverSearch]);
   const getWaiver = (feeScheduleId: string) => waivers.find(w => w.feeScheduleId === feeScheduleId);
 
-  const [form, setForm] = useState<Record<string, { type: string; value: string; reason: string; approvedBy: string }>>({});
-
-  const initForm = (feeScheduleId: string) => {
-    if (form[feeScheduleId]) return;
-    const existing = getWaiver(feeScheduleId);
-    setForm(prev => ({ ...prev, [feeScheduleId]: { type: existing?.type || '', value: existing ? String(existing.value) : '', reason: existing?.reason || '', approvedBy: existing?.approvedBy || '' } }));
+  const handleScheduleChange = (id: string) => {
+    setSelectedScheduleId(id);
+    const existing = getWaiver(id);
+    setExpectedAmount(existing ? String(existing.value) : '');
+    setReason(existing?.reason || '');
+    setApprovedBy(existing?.approvedBy || '');
   };
 
-  const saveWaiver = async (feeScheduleId: string) => {
-    const f = form[feeScheduleId];
-    if (!f || !f.type) { toast('Select a waiver type', 'error'); return; }
-    setSaving(feeScheduleId);
+  const saveWaiver = async () => {
+    if (!selectedScheduleId || !expectedAmount) { toast('Select a fee category and enter expected amount', 'error'); return; }
+    setSaving(true);
     try {
       await axios.post(`${API_URL}/finance/fee-waivers`, {
-        studentId: selectedStudent, feeScheduleId, type: f.type, value: Number(f.value), reason: f.reason, approvedBy: f.approvedBy,
+        studentId: selectedStudent, feeScheduleId: selectedScheduleId, value: Number(expectedAmount), reason, approvedBy,
       }, { withCredentials: true });
       toast('Waiver saved ✓', 'success');
       await loadData();
+      await loadActiveWaivers();
     } catch (e: any) { toast(e?.response?.data?.error || 'Failed to save waiver', 'error'); }
-    finally { setSaving(null); }
+    finally { setSaving(false); }
   };
 
   const deactivateWaiver = async (waiverId: string) => {
     try {
       await axios.post(`${API_URL}/finance/fee-waivers/${waiverId}/deactivate`, {}, { withCredentials: true });
-      toast('Waiver deactivated', 'success');
+      toast('Waiver removed', 'success');
       await loadData();
-    } catch { toast('Failed to deactivate', 'error'); }
+      await loadActiveWaivers();
+    } catch { toast('Failed to remove', 'error'); }
   };
+
+  const editWaiver = (w: any) => {
+    setEditingId(w.id);
+    setEditExpected(String(w.value));
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditExpected('');
+  };
+
+  const saveInline = async (w: any) => {
+    if (!editExpected) { toast('Enter expected amount', 'error'); return; }
+    try {
+      await axios.put(`${API_URL}/finance/fee-waivers/${w.id}`, { value: Number(editExpected) }, { withCredentials: true });
+      toast('Waiver updated ✓', 'success');
+      setEditingId(null);
+      setEditExpected('');
+      loadActiveWaivers();
+    } catch { toast('Failed to update', 'error'); }
+  };
+
+  const manageRef = useRef<HTMLDivElement>(null);
 
   const activeSchedules = schedules.filter((s: any) => {
     if (!selectedClass) return true;
     return !s.classId || s.classRel?.name === selectedClass;
   });
 
-  if (!selectedStudent) {
-    return (
-      <div className="space-y-4">
-        <h2 className="text-lg font-bold text-school-primary">Student Fee Waivers</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  const selectedSched = activeSchedules.find(s => s.id === selectedScheduleId);
+  const existingWaiver = getWaiver(selectedScheduleId);
+  const baseAmt = selectedSched ? Number(selectedSched.amount) : 0;
+  const expectedVal = Number(expectedAmount) || 0;
+  const waiverAmt = Math.max(0, baseAmt - expectedVal);
+
+  return (
+    <div className="space-y-6">
+      {/* ── Active Waivers List ── */}
+      <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+        <div className="px-5 py-4 border-b border-school-border flex items-center gap-2">
+          <Shield size={16} className="text-emerald-600" />
+          <h3 className="font-bold text-sm text-school-primary">Active Waivers</h3>
+          <span className="text-[10px] text-school-muted">({filteredActiveWaivers.length} waivers)</span>
+        </div>
+        {activeLoading ? (
+          <div className="px-5 py-8 text-center text-sm text-school-muted">Loading...</div>
+        ) : (
+          <>
+            <div className="px-5 py-3 border-b border-school-border">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-school-muted pointer-events-none" />
+                <input type="text" value={waiverSearch} onChange={e => setWaiverSearch(e.target.value)}
+                  placeholder="Search by student name..."
+                  className="w-full border border-school-border rounded-lg pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-school-accent" />
+              </div>
+            </div>
+            {filteredActiveWaivers.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-school-muted italic">{waiverSearch ? 'No waivers match search.' : 'No active waivers.'}</div>
+            ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm mobile-card-table">
+                <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Student</th>
+                    <th className="px-4 py-3 text-left">Class</th>
+                    <th className="px-4 py-3 text-left">Roll</th>
+                    <th className="px-4 py-3 text-left">Fee</th>
+                    <th className="px-4 py-3 text-right">Full Fee</th>
+                    <th className="px-4 py-3 text-right">Expected</th>
+                    <th className="px-4 py-3 text-right">Waiver</th>
+                    <th className="px-4 py-3 text-left">Reason</th>
+                    <th className="px-4 py-3 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-school-border/50">
+                  {filteredActiveWaivers.map((w: any) => {
+                  const fullFee = Number(w.feeSchedule?.amount || 0);
+                  const expected = Number(w.value);
+                  const waiverVal = Math.max(0, fullFee - expected);
+                  const isEditing = editingId === w.id;
+                  return (
+                    <tr key={w.id} className={`hover:bg-school-paper/30 transition-colors ${isEditing ? 'bg-blue-50/50' : ''}`}>
+                      <td data-label="Student" className="px-4 py-2.5 font-bold text-xs">{w.student?.name}</td>
+                      <td data-label="Class" className="px-4 py-2.5 text-xs">{w.student?.class || '—'}</td>
+                      <td data-label="Roll" className="px-4 py-2.5 text-xs">{w.student?.roll || '—'}</td>
+                      <td data-label="Fee" className="px-4 py-2.5 text-xs">{w.feeSchedule?.category || '—'}</td>
+                      <td data-label="Full Fee" className="px-4 py-2.5 text-right font-mono text-xs">৳{fullFee}</td>
+                      <td data-label="Expected" className="px-4 py-2.5 text-right font-mono text-xs font-bold text-emerald-600">
+                        {isEditing ? (
+                          <input type="number" min="0" value={editExpected} autoFocus
+                            onChange={e => setEditExpected(e.target.value)}
+                            className="w-24 text-right border border-blue-300 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                            onKeyDown={e => { if (e.key === 'Enter') saveInline(w); if (e.key === 'Escape') cancelEdit(); }} />
+                        ) : '৳' + expected}
+                      </td>
+                      <td data-label="Waiver" className="px-4 py-2.5 text-right font-mono text-xs text-rose-500">−৳{waiverVal}</td>
+                      <td data-label="Reason" className="px-4 py-2.5 text-xs text-school-muted">{w.reason || '—'}</td>
+                      <td data-label="Actions" className="px-4 py-2.5 text-center">
+                        {isEditing ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <button onClick={() => saveInline(w)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-700 hover:bg-emerald-200">
+                              Save
+                            </button>
+                            <button onClick={cancelEdit}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-gray-100 text-gray-600 hover:bg-gray-200">
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1">
+                            <button onClick={() => editWaiver(w)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-700 hover:bg-blue-200">
+                              Edit
+                            </button>
+                            <button onClick={() => deactivateWaiver(w.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-rose-100 text-rose-700 hover:bg-rose-200">
+                              <X size={12} /> Remove
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                  })}
+              </tbody>
+            </table>
+          </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Per-Student Waiver Form ── */}
+      <div ref={manageRef} className="bg-white rounded-2xl border border-school-border overflow-hidden">
+        <div className="px-5 py-4 border-b border-school-border">
+          <h3 className="font-bold text-sm text-school-primary">Manage Student Waivers</h3>
+        </div>
+        <div className="px-5 py-3 border-b border-school-border flex flex-wrap gap-3 items-end">
           <div>
             <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Class</label>
-            <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedStudent(''); }}
-              className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm bg-white">
+            <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedStudent(''); setStudentSearch(''); }}
+              className="border border-school-border rounded-xl px-3 py-2 text-sm bg-white">
               <option value="">— All —</option>
               {[...classes].sort((a: any, b: any) => a.order - b.order).map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
@@ -100,169 +255,132 @@ const StudentWaiversTab: React.FC = () => {
           <div>
             <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Student</label>
             <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
-              className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm bg-white">
+              className="border border-school-border rounded-xl px-3 py-2 text-sm bg-white min-w-[180px]">
               <option value="">— Select Student —</option>
-              {classStudents.map((s: any) => <option key={s.id} value={s.id}>{s.name}{s.roll ? ` (Roll ${s.roll})` : ''}</option>)}
+              {filteredStudents.map((s: any) => <option key={s.id} value={s.id}>{s.name}{s.roll ? ` (Roll ${s.roll})` : ''}</option>)}
             </select>
           </div>
+          {selectedClass && (
+            <div>
+              <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Search</label>
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-school-muted pointer-events-none" />
+                <input type="text" value={studentSearch} onChange={e => setStudentSearch(e.target.value)}
+                  placeholder="Type student name..."
+                  className="border border-school-border rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-school-accent min-w-[180px]" />
+              </div>
+            </div>
+          )}
+          {selectedStudent && (
+            <div className="flex items-end pb-2">
+              <span className="text-xs text-school-muted">
+                {classStudents.find((s: any) => s.id === selectedStudent)?.name}
+                {' — '}
+                {classStudents.find((s: any) => s.id === selectedStudent)?.class}
+                {classStudents.find((s: any) => s.id === selectedStudent)?.roll ? `, Roll ${classStudents.find((s: any) => s.id === selectedStudent)?.roll}` : ''}
+              </span>
+            </div>
+          )}
         </div>
-      </div>
-    );
-  }
 
-  const student = classStudents.find((s: any) => s.id === selectedStudent);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h2 className="text-lg font-bold text-school-primary">Fee Waivers</h2>
-        <button onClick={() => setShowHistory(!showHistory)} className="text-xs text-school-muted underline">
-          {showHistory ? 'Hide' : 'Show'} inactive waivers ({history.length})
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Class</label>
-          <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedStudent(''); }}
-            className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm bg-white">
-            <option value="">— All —</option>
-            {[...classes].sort((a: any, b: any) => a.order - b.order).map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Student</label>
-          <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
-            className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm bg-white">
-            {classStudents.map((s: any) => <option key={s.id} value={s.id}>{s.name}{s.roll ? ` (Roll ${s.roll})` : ''}</option>)}
-          </select>
-        </div>
-        <div className="flex items-end">
-          {student && <p className="text-sm text-school-muted pb-2.5">{student.name} — {student.class}{student.roll ? `, Roll ${student.roll}` : ''}</p>}
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-8 text-school-muted">Loading...</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-school-border text-left">
-                <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Fee Category</th>
-                <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Base Amount</th>
-                <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Waiver Type</th>
-                <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Value</th>
-                <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Expected</th>
-                <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Reason</th>
-                <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Approved By</th>
-                <th className="pb-2 font-bold text-[10px] uppercase text-school-muted"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeSchedules.length === 0 && (
-                <tr><td colSpan={8} className="py-8 text-center text-school-muted">No fee schedules found. Create one in Fee Schedules tab.</td></tr>
-              )}
-              {activeSchedules.map((sched: any) => {
-                initForm(sched.id);
-                const f = form[sched.id] || { type: '', value: '', reason: '', approvedBy: '' };
-                const existing = getWaiver(sched.id);
-                const baseAmt = Number(sched.amount);
-                let expected = baseAmt;
-                if (existing && existing.active) {
-                  if (existing.type === 'FULL') expected = 0;
-                  else if (existing.type === 'PERCENTAGE') expected = baseAmt - (baseAmt * Number(existing.value) / 100);
-                  else if (existing.type === 'FIXED_AMOUNT') expected = Math.max(0, baseAmt - Number(existing.value));
-                  else if (existing.type === 'CUSTOM_AMOUNT') expected = Number(existing.value);
-                }
-
-                return (
-                  <tr key={sched.id} className="border-b border-school-border/50">
-                    <td className="py-2.5 pr-3">
-                      <div className="font-medium">{sched.category}</div>
-                      <div className="text-[10px] text-school-muted">{sched.classRel?.name || 'School-wide'} · {sched.frequency}</div>
-                    </td>
-                    <td className="py-2.5 pr-3 font-mono">৳{baseAmt}</td>
-                    <td className="py-2.5 pr-3">
-                      <select value={f.type} onChange={e => setForm(prev => ({ ...prev, [sched.id]: { ...prev[sched.id], type: e.target.value } }))}
-                        className="w-full border border-school-border rounded-lg px-2 py-1.5 text-xs bg-white">
-                        <option value="">— None —</option>
-                        {WAIVER_TYPES.map(wt => <option key={wt.value} value={wt.value}>{wt.label}</option>)}
-                      </select>
-                    </td>
-                    <td className="py-2.5 pr-3">
-                      {f.type === 'FULL' ? <span className="text-xs text-school-muted">N/A</span> : (
-                        <input type="number" min="0" value={f.value} onChange={e => setForm(prev => ({ ...prev, [sched.id]: { ...prev[sched.id], value: e.target.value } }))}
-                          placeholder={f.type === 'PERCENTAGE' ? 'e.g. 50' : 'e.g. 300'}
-                          className="w-24 border border-school-border rounded-lg px-2 py-1.5 text-xs" />
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-3 font-mono text-sm">
-                      {existing?.active ? (
-                        <span className={expected < baseAmt ? 'text-emerald-600 font-bold' : ''}>৳{expected}</span>
-                      ) : (
-                        <span className="text-school-muted">—</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-3">
-                      <input type="text" value={f.reason} onChange={e => setForm(prev => ({ ...prev, [sched.id]: { ...prev[sched.id], reason: e.target.value } }))}
-                        placeholder="Reason" className="w-full border border-school-border rounded-lg px-2 py-1.5 text-xs" />
-                    </td>
-                    <td className="py-2.5 pr-3">
-                      <input type="text" value={f.approvedBy} onChange={e => setForm(prev => ({ ...prev, [sched.id]: { ...prev[sched.id], approvedBy: e.target.value } }))}
-                        placeholder="Approver" className="w-full border border-school-border rounded-lg px-2 py-1.5 text-xs" />
-                    </td>
-                    <td className="py-2.5 whitespace-nowrap">
-                      <button onClick={() => saveWaiver(sched.id)} disabled={saving === sched.id}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-school-primary text-white hover:opacity-90 disabled:opacity-50">
-                        <Save size={12} /> {saving === sched.id ? 'Saving...' : 'Save'}
-                      </button>
-                      {existing && (
-                        <button onClick={() => deactivateWaiver(existing.id)}
-                          className="ml-1 inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold bg-rose-100 text-rose-700 hover:bg-rose-200">
-                          <X size={12} /> Remove
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {showHistory && history.length > 0 && (
-        <div className="mt-4">
-          <h3 className="text-sm font-bold text-school-muted mb-2">Inactive Waiver History</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-school-border text-left">
-                  <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Category</th>
-                  <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Type</th>
-                  <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Value</th>
-                  <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Reason</th>
-                  <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Approved By</th>
-                  <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((w: any) => (
-                  <tr key={w.id} className="border-b border-school-border/50 text-school-muted">
-                    <td className="py-2 pr-3">{w.feeSchedule?.category}</td>
-                    <td className="py-2 pr-3">{w.type}</td>
-                    <td className="py-2 pr-3">{String(w.value)}</td>
-                    <td className="py-2 pr-3">{w.reason || '—'}</td>
-                    <td className="py-2 pr-3">{w.approvedBy || '—'}</td>
-                    <td className="py-2 pr-3">{new Date(w.createdAt).toLocaleDateString()}</td>
-                  </tr>
+        {!selectedStudent ? (
+          <div className="px-5 py-8 text-center text-sm text-school-muted italic">Select a student to manage their waivers.</div>
+        ) : loading ? (
+          <div className="px-5 py-8 text-center text-sm text-school-muted">Loading...</div>
+        ) : (
+          <div className="px-5 py-4 space-y-4">
+            <div>
+              <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee Category</label>
+              <select value={selectedScheduleId} onChange={e => handleScheduleChange(e.target.value)}
+                className="w-full border border-school-border rounded-xl px-3 py-2 text-sm bg-white">
+                <option value="">— Select Fee Category —</option>
+                {activeSchedules.map((sched: any) => (
+                  <option key={sched.id} value={sched.id}>{sched.category} — ৳{sched.amount} ({sched.frequency}){sched.classRel?.name ? ` — ${sched.classRel.name}` : ''}</option>
                 ))}
-              </tbody>
-            </table>
+              </select>
+            </div>
+
+            {selectedScheduleId && selectedSched && (
+              <div className="bg-school-paper/30 rounded-xl border border-school-border p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-sm">{selectedSched.category}</span>
+                    <span className="ml-2 text-xs text-school-muted">Full fee: ৳{baseAmt}</span>
+                  </div>
+                  {existingWaiver?.active && (
+                    <button onClick={() => deactivateWaiver(existingWaiver.id)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-rose-100 text-rose-700 hover:bg-rose-200">
+                      <X size={12} /> Remove Waiver
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Expected Amount (৳)</label>
+                    <input type="number" min="0" value={expectedAmount} onChange={e => setExpectedAmount(e.target.value)}
+                      placeholder="e.g. 500" className="w-full border border-school-border rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Reason</label>
+                    <input type="text" value={reason} onChange={e => setReason(e.target.value)}
+                      placeholder="Reason for waiver" className="w-full border border-school-border rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Approved By</label>
+                    <input type="text" value={approvedBy} onChange={e => setApprovedBy(e.target.value)}
+                      placeholder="Approver name" className="w-full border border-school-border rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div className="flex items-end pb-2">
+                    {expectedVal > 0 && (
+                      <div className="text-sm space-y-0.5">
+                        <p>Full fee: <span className="font-mono">৳{baseAmt}</span></p>
+                        <p>Expected: <span className="font-mono text-emerald-600 font-bold">৳{expectedVal}</span></p>
+                        <p>Waiver: <span className="font-mono text-rose-500">−৳{waiverAmt}</span></p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <button onClick={saveWaiver} disabled={saving || !expectedAmount}
+                  className="w-full py-2 rounded-xl text-sm font-bold bg-school-primary text-white hover:opacity-90 disabled:opacity-50">
+                  {saving ? 'Saving...' : existingWaiver?.active ? 'Update Waiver' : 'Apply Waiver'}
+                </button>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+
+        {history.length > 0 && (
+          <div className="px-5 py-4 border-t border-school-border">
+            <h3 className="text-sm font-bold text-school-muted mb-2">Inactive Waiver History</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-school-border text-left">
+                    <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Category</th>
+                    <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Expected</th>
+                    <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Reason</th>
+                    <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Approved By</th>
+                    <th className="pb-2 font-bold text-[10px] uppercase text-school-muted">Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((w: any) => (
+                    <tr key={w.id} className="border-b border-school-border/50 text-school-muted">
+                      <td className="py-2 pr-3">{w.feeSchedule?.category}</td>
+                      <td className="py-2 pr-3 font-mono">৳{Number(w.value)}</td>
+                      <td className="py-2 pr-3">{w.reason || '—'}</td>
+                      <td className="py-2 pr-3">{w.approvedBy || '—'}</td>
+                      <td className="py-2 pr-3">{new Date(w.createdAt).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

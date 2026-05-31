@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   postgres:
     image: postgres:17-alpine
@@ -17,6 +16,30 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  app:
+    build: .
+    container_name: schoolid-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    environment:
+      DATABASE_URL: "postgresql://schoolid:schoolid@postgres:5432/schoolid?sslmode=disable"
+      NODE_ENV: production
+      PORT: 5000
+      JWT_SECRET: "${JWT_SECRET}"
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET}"
+      BETTER_AUTH_URL: "${BETTER_AUTH_URL:-http://localhost:5000}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:5000}"
+      TRUSTED_ORIGINS: "${TRUSTED_ORIGINS:-http://localhost:5000}"
+      SETUP_TOKEN: "${SETUP_TOKEN}"
+      SMTP_HOST: "${SMTP_HOST}"
+      SMTP_PORT: "${SMTP_PORT}"
+      SMTP_USER: "${SMTP_USER}"
+      SMTP_PASS: "${SMTP_PASS}"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:

@@ -4,18 +4,7 @@ import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
 import { sanitizeError } from "../lib/errors.js";
 import { validate, createTeacherSchema, createStaffSchema, createBookSchema } from "../lib/validate.js";
-
-function parsePhoto(body: any): Buffer | null {
-  if (!body.photo) return null;
-  if (typeof body.photo === "string" && body.photo.startsWith("data:image")) {
-    try {
-      const base64 = body.photo.split(",")[1];
-      if (!base64) return null;
-      return Buffer.from(base64, "base64");
-    } catch { return null; }
-  }
-  return null;
-}
+import { parsePhoto, detectMimeType } from "../lib/photo.js";
 
 // ── Teachers ──
 
@@ -47,7 +36,7 @@ export const createTeacher = async (req: Request, res: Response) => {
     const v = validate(createTeacherSchema, req.body);
     if (!v.success) return res.status(400).json({ error: v.error });
     const { designation, name, email, contact } = v.data;
-    const photoBuffer = parsePhoto(req.body);
+    const parsed = parsePhoto(req.body);
 
     const teacher = await prisma.teacher.create({
       data: {
@@ -55,7 +44,7 @@ export const createTeacher = async (req: Request, res: Response) => {
         name,
         email: email || null,
         contact: contact || null,
-        photo: photoBuffer,
+        photo: parsed?.buffer ?? null,
       },
     });
 
@@ -71,7 +60,7 @@ export const updateTeacher = async (req: Request, res: Response) => {
     const v = validate(createTeacherSchema.partial(), req.body);
     if (!v.success) return res.status(400).json({ error: v.error });
     const { designation, name, email, contact } = v.data;
-    const photoBuffer = parsePhoto(req.body);
+    const parsed = parsePhoto(req.body);
 
     const data: any = {
       ...(designation !== undefined && { designation }),
@@ -79,7 +68,7 @@ export const updateTeacher = async (req: Request, res: Response) => {
       ...(email !== undefined && { email: email || null }),
       ...(contact !== undefined && { contact: contact || null }),
     };
-    if (photoBuffer) data.photo = photoBuffer;
+    if (parsed) data.photo = parsed.buffer;
 
     const teacher = await prisma.teacher.update({ where: { id }, data });
     res.json({ ...teacher, photo: undefined, hasPhoto: !!teacher.photo });
@@ -107,7 +96,7 @@ export const getTeacherPhoto = async (req: Request, res: Response) => {
     const buf = Buffer.from(teacher.photo);
     const etag = createHash('md5').update(buf).digest('hex');
     if (req.headers['if-none-match'] === etag) { return res.status(304).end(); }
-    res.set("Content-Type", "image/jpeg");
+    res.set("Content-Type", detectMimeType(buf));
     res.set("Cache-Control", "public, max-age=86400");
     res.set("ETag", etag);
     res.send(buf);
@@ -146,7 +135,7 @@ export const createStaff = async (req: Request, res: Response) => {
     const v = validate(createStaffSchema, req.body);
     if (!v.success) return res.status(400).json({ error: v.error });
     const { role, name, email, contact } = v.data;
-    const photoBuffer = parsePhoto(req.body);
+    const parsed = parsePhoto(req.body);
 
     const staff = await prisma.staff.create({
       data: {
@@ -154,7 +143,7 @@ export const createStaff = async (req: Request, res: Response) => {
         name,
         email: email || null,
         contact: contact || null,
-        photo: photoBuffer,
+        photo: parsed?.buffer ?? null,
       },
     });
 
@@ -170,7 +159,7 @@ export const updateStaff = async (req: Request, res: Response) => {
     const v = validate(createStaffSchema.partial(), req.body);
     if (!v.success) return res.status(400).json({ error: v.error });
     const { role, name, email, contact } = v.data;
-    const photoBuffer = parsePhoto(req.body);
+    const parsed = parsePhoto(req.body);
 
     const data: any = {
       ...(role !== undefined && { role }),
@@ -178,7 +167,7 @@ export const updateStaff = async (req: Request, res: Response) => {
       ...(email !== undefined && { email: email || null }),
       ...(contact !== undefined && { contact: contact || null }),
     };
-    if (photoBuffer) data.photo = photoBuffer;
+    if (parsed) data.photo = parsed.buffer;
 
     const staff = await prisma.staff.update({ where: { id }, data });
     res.json({ ...staff, photo: undefined, hasPhoto: !!staff.photo });
@@ -206,7 +195,7 @@ export const getStaffPhoto = async (req: Request, res: Response) => {
     const buf = Buffer.from(staff.photo);
     const etag = createHash('md5').update(buf).digest('hex');
     if (req.headers['if-none-match'] === etag) { return res.status(304).end(); }
-    res.set("Content-Type", "image/jpeg");
+    res.set("Content-Type", detectMimeType(buf));
     res.set("Cache-Control", "public, max-age=86400");
     res.set("ETag", etag);
     res.send(buf);

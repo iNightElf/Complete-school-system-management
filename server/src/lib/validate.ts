@@ -35,6 +35,7 @@ export const createTransactionSchema = z.object({
 }, { message: "Source and destination accounts must be different" });
 
 export const saveStudentResultSchema = z.object({
+  session: z.string().optional().nullable(),
   term: z.string().min(1, "Term is required"),
   marks: z.record(z.string(), z.number()),
   attendance: z.object({ days: z.number(), present: z.number() }).optional().nullable(),

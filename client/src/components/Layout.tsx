@@ -1,8 +1,8 @@
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore, useDarkMode } from '../store';
-import { ChevronLeft, Lock, Users, Sun, Moon } from 'lucide-react';
+import { ChevronLeft, Lock, Users, Sun, Moon, ClipboardList } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
 import BottomNav from './BottomNav';
 
@@ -26,6 +26,30 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { dark, toggle: toggleDark } = useDarkMode();
 
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); }, [dark]);
+
+  type ConnState = 'connected' | 'disconnected' | 'checking';
+  const [connState, setConnState] = useState<ConnState>('checking');
+
+  const checkHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/health', { signal: AbortSignal.timeout(5000) });
+      if (res.ok) setConnState('connected');
+      else setConnState('disconnected');
+    } catch { setConnState('disconnected'); }
+  }, []);
+
+  useEffect(() => {
+    checkHealth();
+    const interval = setInterval(checkHealth, 30000);
+    const onOnline = () => { setConnState('checking'); setTimeout(checkHealth, 500); };
+    const onOffline = () => setConnState('disconnected');
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => { clearInterval(interval); window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); };
+  }, [checkHealth]);
+
+  const connLabel = connState === 'connected' ? 'Connected' : connState === 'disconnected' ? 'Disconnected' : 'Checking…';
+  const connDotClass = connState === 'connected' ? 'bg-green-500' : connState === 'disconnected' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse';
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
@@ -75,14 +99,24 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         <div className="flex items-center gap-3">
           {role === 'admin' && (
-            <button
-              onClick={() => navigate('/users')}
-              className="p-2 hover:bg-white/10 rounded-full transition-colors group"
-              title="User Management"
-              aria-label="User Management"
-            >
-              <Users size={20} className="group-hover:scale-110 transition-transform" />
-            </button>
+            <>
+              <button
+                onClick={() => navigate('/audit')}
+                className="p-2 hover:bg-white/10 rounded-full transition-colors group"
+                title="Audit Logs"
+                aria-label="Audit Logs"
+              >
+                <ClipboardList size={20} className="group-hover:scale-110 transition-transform" />
+              </button>
+              <button
+                onClick={() => navigate('/users')}
+                className="p-2 hover:bg-white/10 rounded-full transition-colors group"
+                title="User Management"
+                aria-label="User Management"
+              >
+                <Users size={20} className="group-hover:scale-110 transition-transform" />
+              </button>
+            </>
           )}
           <div className="hidden sm:flex flex-col items-end mr-2">
             <span className="text-[10px] font-bold uppercase tracking-tighter opacity-50">Logged in as</span>
@@ -127,8 +161,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <footer className="bg-school-secondary text-white/50 text-[10px] py-2 px-4 flex justify-between items-center border-t border-white/5">
         <span>© 2026 AL RAWA English School</span>
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-spin"></div>
-          <span className="uppercase tracking-widest text-[9px]">Connected</span>
+          <div className={`w-1.5 h-1.5 rounded-full ${connDotClass}`}></div>
+          <span className={`uppercase tracking-widest text-[9px] ${connState === 'disconnected' ? 'text-red-400' : ''}`}>{connLabel}</span>
         </div>
       </footer>
 

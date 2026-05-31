@@ -4,6 +4,9 @@ import helmet from "helmet";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import "dotenv/config";
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 import { auth } from "./lib/auth.js";
 import { prisma } from "./lib/prisma.js";
@@ -18,6 +21,8 @@ import * as users from "./controllers/user.controller.js";
 import * as feeSchedule from "./controllers/feeSchedule.controller.js";
 import * as feeWaiver from "./controllers/feeWaiver.controller.js";
 import * as studentFeeAssignment from "./controllers/studentFeeAssignment.controller.js";
+import * as setup from "./controllers/setup.controller.js";
+import * as audit from "./controllers/audit.controller.js";
 import { authenticate, authorizePermission } from "./middleware/auth.middleware.js";
 
 const corsOrigins = process.env.CORS_ORIGINS
@@ -62,6 +67,10 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeade
 
 app.use("/api/", globalLimiter);
 app.use("/api/auth/", authLimiter);
+
+// ── Setup (no auth — first-admin bootstrap) ──
+app.get("/api/setup/status", setup.getSetupStatus);
+app.post("/api/setup/init", setup.initSetup);
 
 // Better-Auth handler — must come before other routes
 app.use("/api/auth", toNodeHandler(auth));
@@ -156,8 +165,29 @@ app.post("/api/finance/opening-balances/revert/:id", authenticate, authorizePerm
 app.get("/api/finance/reports/agm", authenticate, authorizePermission("finance:read"), finance.getAGMReport);
 app.get("/api/finance/defaulter", authenticate, authorizePermission("finance:read"), finance.getDefaulterReport);
 
+// ── Period Close ──
+app.get("/api/finance/period-closes", authenticate, authorizePermission("finance:write"), finance.getPeriodCloses);
+app.post("/api/finance/period-closes", authenticate, authorizePermission("finance:admin"), finance.closePeriod);
+app.delete("/api/finance/period-closes/:fiscalYear", authenticate, authorizePermission("finance:admin"), finance.reopenPeriod);
+
+// ── Reconciliation ──
+app.get("/api/finance/reconciliations", authenticate, authorizePermission("finance:read"), finance.getReconciliations);
+app.post("/api/finance/reconciliations", authenticate, authorizePermission("finance:admin"), finance.createReconciliation);
+
+// ── Audit Logs ──
+app.get("/api/audit", authenticate, authorizePermission("audit:read"), audit.getAuditLogs);
+app.get("/api/audit/actions", authenticate, authorizePermission("audit:read"), audit.getAuditActions);
+app.get("/api/audit/entity-types", authenticate, authorizePermission("audit:read"), audit.getAuditEntityTypes);
+
 // Health Check
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
+
+// ── Serve client build in production ──
+const clientDist = join(__dirname, '../../client/dist');
+app.use(express.static(clientDist));
+app.get('/{*path}', (_req, res) => {
+  res.sendFile(join(clientDist, 'index.html'));
+});
 
 // Global error handler — prevents crashes from becoming 502s
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

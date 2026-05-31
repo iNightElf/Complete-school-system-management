@@ -37,21 +37,6 @@ export const auth = betterAuth({
       await sendVerificationEmail(user.email, frontendUrl);
     },
   },
-  databaseHooks: {
-    user: {
-      create: {
-        after: async (user) => {
-          const userCount = await prisma.user.count();
-          if (userCount === 1) {
-            await prisma.user.update({
-              where: { id: user.id },
-              data: { role: "admin" },
-            });
-          }
-        },
-      },
-    },
-  },
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24,     // 1 day

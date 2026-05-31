@@ -26,6 +26,11 @@ const DefaulterTab: React.FC = () => {
   const { classes, students, fetchClasses, fetchStudents } = useSchoolStore();
   const [defaulterData, setDefaulterData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [feeSchedules, setFeeSchedules] = useState<any[]>([]);
+
+  useEffect(() => {
+    axios.get('/api/finance/fee-schedules', { withCredentials: true }).then(res => setFeeSchedules(res.data)).catch(() => {});
+  }, []);
 
   const [filterClass, setFilterClass] = useState('');
   const [filterStudent, setFilterStudent] = useState('');
@@ -139,22 +144,18 @@ const DefaulterTab: React.FC = () => {
           <select value={filterFee} onChange={e => setFilterFee(e.target.value)}
             className="border border-school-border rounded-xl px-3 py-2 text-sm bg-white">
             <option value="">All Fees</option>
-            <optgroup label="Monthly">
-              <option value="Tuition Fee">Tuition Fee</option>
-              <option value="Hifz Tuition Fee">Hifz Tuition Fee</option>
-              <option value="Transport Fee">Transport Fee</option>
-              <option value="hifz_tuition">Hifz Fee (Assigned)</option>
-              <option value="hifz_admission">Hifz Admission Fee (Assigned)</option>
-              <option value="transport">Transport Fee (Assigned)</option>
-            </optgroup>
-            <optgroup label="Yearly">
-              <option value="Admission Fee">Admission Fee</option>
-              <option value="Hifz Admission Fee">Hifz Admission Fee</option>
-              <option value="Books Fee">Books Fee</option>
-              <option value="Copy Fee">Copy Fee</option>
-              <option value="Stationary Fee">Stationary Fee</option>
-              <option value="Accessories Fee">Accessories Fee</option>
-            </optgroup>
+            {(() => {
+              const monthly = feeSchedules.filter((fs: any) => fs.frequency === 'MONTHLY');
+              const yearly = feeSchedules.filter((fs: any) => fs.frequency === 'YEARLY' || fs.frequency === 'ONETIME');
+              return <>
+                {monthly.length > 0 && <optgroup label="Monthly">
+                  {[...new Set(monthly.map((fs: any) => fs.category))].map(c => <option key={c} value={c}>{c}</option>)}
+                </optgroup>}
+                {yearly.length > 0 && <optgroup label="Yearly">
+                  {[...new Set(yearly.map((fs: any) => fs.category))].map(c => <option key={c} value={c}>{c}</option>)}
+                </optgroup>}
+              </>;
+            })()}
           </select>
         </div>
 
@@ -212,7 +213,7 @@ const DefaulterTab: React.FC = () => {
           </div>
         </div>
         <div id="defaulter-print-area" className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm mobile-card-table">
             <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
               <tr>
                 <th className="px-4 py-3 text-left sticky left-0 bg-school-paper/50 z-10">Student</th>
@@ -246,53 +247,48 @@ const DefaulterTab: React.FC = () => {
                   <tr key={`${row.studentId}_${fee.name}_${idx}`} className="hover:bg-school-paper/30 transition-colors">
                     {idx === 0 ? (
                       <>
-                        <td className="px-4 py-2 sticky left-0 bg-white z-10" rowSpan={allFees.length}>
+                        <td className="px-4 py-2 sticky left-0 bg-white z-10" rowSpan={allFees.length} data-label="Student">
                           <p className="font-bold text-xs">{row.name}</p>
                           {row.fatherName && <p className="text-[10px] text-school-muted">{row.fatherName}</p>}
                         </td>
-                        <td className="px-3 py-2 sticky left-[140px] bg-white z-10 text-xs" rowSpan={allFees.length}>
+                        <td className="px-3 py-2 sticky left-[140px] bg-white z-10 text-xs" rowSpan={allFees.length} data-label="Class">
                           {row.class}{row.roll ? ` - ${row.roll}` : ''}
                         </td>
                       </>
-                    ) : null}
-                    <td className="px-3 py-2">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                        fee.type === 'special' ? 'bg-amber-50 text-amber-700' :
-                        fee.type === 'global' ? 'bg-purple-50 text-purple-700' :
-                        fee.type === 'recurring' ? 'bg-blue-50 text-blue-700' :
-                        'bg-school-paper text-school-primary'
-                      }`}>{fee.name}</span>
+                    ) : <td data-label="Student" className="hidden"></td>}
+                    <td className="px-3 py-2" data-label="Fee">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-blue-50 text-blue-700">{fee.name}</span>
                       <span className="text-[9px] text-school-muted ml-1">{fmt(fee.amount)} /-</span>
                     </td>
                     {/* Monthly cells */}
                     {monthRange.map(m => {
+                      const [yr, mn] = m.split('-');
                       if (fee.months) {
                         const md = fee.months.find((x: any) => x.month === m);
                         if (md) {
-                          return <td key={m} className="px-1 py-2 text-center">
+                          return <td key={m} className="px-1 py-2 text-center" data-label={`${getMonthName(Number(mn) - 1)} '${yr.slice(2)}`}>
                             <span className={`inline-block w-4 h-4 rounded text-[8px] leading-4 font-bold ${md.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                               {md.paid ? <Check size={10} /> : <X size={10} />}
                             </span>
                           </td>;
                         }
-                        return <td key={m} className="px-1 py-2 text-center text-[8px] text-school-muted">—</td>;
+                        return <td key={m} className="px-1 py-2 text-center text-[8px] text-school-muted" data-label={`${getMonthName(Number(mn) - 1)} '${yr.slice(2)}`}>—</td>;
                       }
-                      // One-time fee: show in first month column only
                       if (idx === 0 && fee.paid !== undefined) {
-                        return <td key={m} className="px-1 py-2 text-center"></td>;
+                        return <td key={m} className="px-1 py-2 text-center" data-label={`${getMonthName(Number(mn) - 1)} '${yr.slice(2)}`}></td>;
                       }
-                      return <td key={m} className="px-1 py-2 text-center text-[8px] text-school-muted">—</td>;
+                      return <td key={m} className="px-1 py-2 text-center text-[8px] text-school-muted" data-label={`${getMonthName(Number(mn) - 1)} '${yr.slice(2)}`}>—</td>;
                     })}
                     {idx === 0 ? (
                       <>
-                        <td className="px-3 py-2 text-right font-bold text-xs" rowSpan={allFees.length}>{fmt(row.totalDue)} /-</td>
-                        <td className="px-3 py-2 text-right text-xs font-bold text-emerald-600" rowSpan={allFees.length}>{fmt(row.totalPaid)} /-</td>
-                        <td className="px-3 py-2 text-right font-bold text-xs" rowSpan={allFees.length}>
+                        <td className="px-3 py-2 text-right font-bold text-xs" rowSpan={allFees.length} data-label="Due">{fmt(row.totalDue)} /-</td>
+                        <td className="px-3 py-2 text-right text-xs font-bold text-emerald-600" rowSpan={allFees.length} data-label="Paid">{fmt(row.totalPaid)} /-</td>
+                        <td className="px-3 py-2 text-right font-bold text-xs" rowSpan={allFees.length} data-label="Balance">
                           <span className={row.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}>{fmt(Math.abs(row.balance))} /-</span>
                           {row.balance <= 0 && <span className="text-[9px] text-emerald-500 ml-1">(clear)</span>}
                         </td>
                       </>
-                    ) : null}
+                    ) : <td data-label="Due" className="hidden"></td>}
                   </tr>
                 ));
               }) : (

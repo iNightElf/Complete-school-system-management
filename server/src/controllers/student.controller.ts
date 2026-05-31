@@ -5,22 +5,11 @@ import { prisma } from "../lib/prisma.js";
 import { sanitizeError } from "../lib/errors.js";
 import { validate, createStudentSchema } from "../lib/validate.js";
 import { logAudit } from "../lib/audit.js";
+import { parsePhoto, detectMimeType } from "../lib/photo.js";
 
 async function resolveClassId(className: string): Promise<string | null> {
   const cls = await prisma.schoolClass.findUnique({ where: { name: className } });
   return cls?.id || null;
-}
-
-function parsePhoto(body: any): Buffer | null {
-  if (!body.photo) return null;
-  if (typeof body.photo === "string" && body.photo.startsWith("data:image")) {
-    try {
-      const base64 = body.photo.split(",")[1];
-      if (!base64) return null;
-      return Buffer.from(base64, "base64");
-    } catch { return null; }
-  }
-  return null;
 }
 
 export const getAllStudents = async (req: Request, res: Response) => {
@@ -57,9 +46,9 @@ export const createStudent = async (req: Request, res: Response) => {
     const v = validate(createStudentSchema, req.body);
     if (!v.success) return res.status(400).json({ error: v.error });
     const { class: className, roll, name, fatherName, motherName, contact } = v.data;
-    const photoBuffer = parsePhoto(req.body);
-
+    const parsed = parsePhoto(req.body);
     const classId = await resolveClassId(className);
+
     const student = await prisma.student.create({
       data: {
         class: className,
@@ -69,7 +58,7 @@ export const createStudent = async (req: Request, res: Response) => {
         fatherName: fatherName || null,
         motherName: motherName || null,
         contact: contact || null,
-        photo: photoBuffer,
+        photo: parsed?.buffer ?? null,
       },
     });
 
@@ -86,19 +75,18 @@ export const updateStudent = async (req: Request, res: Response) => {
     const v = validate(createStudentSchema.partial(), req.body);
     if (!v.success) return res.status(400).json({ error: v.error });
     const { class: className, roll, name, fatherName, motherName, contact } = v.data;
-    const photoBuffer = parsePhoto(req.body);
+    const parsed = parsePhoto(req.body);
 
-    const data: any = {};
-    if (className !== undefined) {
-      data.class = className;
-      data.classId = await resolveClassId(className);
-    }
-    if (roll !== undefined) data.roll = roll || null;
-    if (name !== undefined) data.name = name;
-    if (fatherName !== undefined) data.fatherName = fatherName || null;
-    if (motherName !== undefined) data.motherName = motherName || null;
-    if (contact !== undefined) data.contact = contact || null;
-    if (photoBuffer) data.photo = photoBuffer;
+    const data: any = {
+      ...(className !== undefined && { class: className }),
+      ...(className !== undefined && { classId: await resolveClassId(className) }),
+      ...(roll !== undefined && { roll: roll || null }),
+      ...(name !== undefined && { name }),
+      ...(fatherName !== undefined && { fatherName: fatherName || null }),
+      ...(motherName !== undefined && { motherName: motherName || null }),
+      ...(contact !== undefined && { contact: contact || null }),
+    };
+    if (parsed) data.photo = parsed.buffer;
 
     const student = await prisma.student.update({
       where: { id },
@@ -136,7 +124,7 @@ export const getStudentPhoto = async (req: Request, res: Response) => {
     const buf = Buffer.from(student.photo);
     const etag = createHash('md5').update(buf).digest('hex');
     if (req.headers['if-none-match'] === etag) { return res.status(304).end(); }
-    res.set("Content-Type", "image/jpeg");
+    res.set("Content-Type", detectMimeType(buf));
     res.set("Cache-Control", "public, max-age=86400");
     res.set("ETag", etag);
     res.send(buf);

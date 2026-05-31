@@ -53,7 +53,7 @@ export const createFeeSchedule = async (req: AuthRequest, res: Response) => {
 export const updateFeeSchedule = async (req: AuthRequest, res: Response) => {
   try {
     const id = param(req, "id");
-    const { category, amount, frequency, classId } = req.body;
+    const { category, amount, frequency, classId, applicability } = req.body;
     const data: any = {};
     if (category !== undefined) data.category = category;
     if (amount != null) data.amount = Number(amount);
@@ -64,6 +64,7 @@ export const updateFeeSchedule = async (req: AuthRequest, res: Response) => {
       data.frequency = frequency;
     }
     if (classId !== undefined) data.classId = classId || null;
+    if (applicability !== undefined) data.applicability = applicability;
     const schedule = await prisma.feeSchedule.update({ where: { id }, data });
     logAudit({ userId: req.session?.user?.id, action: "UPDATE", entityType: "FeeSchedule", entityId: id, details: JSON.stringify(data) });
     res.json(schedule);

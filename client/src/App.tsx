@@ -7,6 +7,7 @@ const Register = lazy(() => import('./pages/Register'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
+const AuditLogs = lazy(() => import('./pages/AuditLogs'));
 
 function PageLoader() {
   return (
@@ -35,6 +36,7 @@ const App: React.FC = () => {
           <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/users" element={user?.role === 'admin' ? <UserManagement /> : <Navigate to="/" />} />
+          <Route path="/audit" element={user?.role === 'admin' ? <AuditLogs /> : <Navigate to="/" />} />
           <Route path="/" element={user ? <Dashboard /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
