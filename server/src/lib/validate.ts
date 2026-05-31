@@ -73,12 +73,6 @@ export const createBookSchema = z.object({
   classId: z.string().uuid("Invalid class ID"),
 });
 
-export const toggleFeeAssignmentSchema = z.object({
-  studentId: z.string().uuid("Invalid student ID"),
-  feeType: z.enum(["hifz_tuition", "hifz_admission", "transport"]),
-  amount: z.number().optional().nullable(),
-});
-
 export function validate<T>(schema: z.ZodSchema<T>, data: unknown): { success: true; data: T } | { success: false; error: string } {
   const result = schema.safeParse(data);
   if (result.success) return { success: true, data: result.data };

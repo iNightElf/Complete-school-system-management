@@ -26,7 +26,7 @@ export const getFeeSchedules = async (req: Request, res: Response) => {
 
 export const createFeeSchedule = async (req: AuthRequest, res: Response) => {
   try {
-    const { academicYearId, classId, category, amount, frequency } = req.body;
+    const { academicYearId, classId, category, amount, frequency, applicability } = req.body;
     if (!academicYearId || !category || amount == null) {
       return res.status(400).json({ error: "academicYearId, category, and amount are required" });
     }
@@ -40,6 +40,7 @@ export const createFeeSchedule = async (req: AuthRequest, res: Response) => {
         category,
         amount: Number(amount),
         frequency: frequency || "MONTHLY",
+        applicability: applicability || "AUTO",
       },
     });
     logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "FeeSchedule", entityId: schedule.id, details: JSON.stringify({ academicYearId, classId, category, amount }) });

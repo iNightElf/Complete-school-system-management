@@ -305,67 +305,21 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
 
 // ── Fee Assignments (special fees: hifz, hifz_admission, transport) ──
 
-const SPECIAL_FEE_TYPES = ['hifz_tuition', 'hifz_admission', 'transport'] as const;
-
-export const getFeeAssignments = async (req: Request, res: Response) => {
-  try {
-    const { className } = req.query;
-    let assignments = await prisma.feeAssignment.findMany({
-      where: { active: true },
-    });
-    if (className) {
-      const classStudents = await prisma.student.findMany({ where: { class: String(className) }, select: { id: true } });
-      const ids = classStudents.map(s => s.id);
-      assignments = assignments.filter(a => ids.includes(a.studentId));
-    }
-    res.json(assignments);
-  } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
-  }
-};
-
-export const toggleFeeAssignment = async (req: AuthRequest, res: Response) => {
-  try {
-    const { studentId, feeType, amount } = req.body;
-    if (!studentId || !feeType) return res.status(400).json({ error: 'studentId and feeType required' });
-    if (!SPECIAL_FEE_TYPES.includes(feeType as any)) return res.status(400).json({ error: 'Invalid feeType' });
-
-    const existing = await prisma.feeAssignment.findUnique({ where: { studentId_feeType: { studentId, feeType } } });
-    if (existing) {
-      const updated = await prisma.feeAssignment.update({ where: { id: existing.id }, data: { active: !existing.active, amount: amount != null ? Number(amount) : existing.amount } });
-      return res.json(updated);
-    }
-    const created = await prisma.feeAssignment.create({ data: { studentId, feeType, amount: Number(amount || 0) } });
-    res.status(201).json(created);
-  } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
-  }
-};
-
-export const updateFeeAssignmentAmount = async (req: AuthRequest, res: Response) => {
-  try {
-    const id = req.params.id as string;
-    const { amount } = req.body;
-    const updated = await prisma.feeAssignment.update({ where: { id }, data: { amount: Number(amount) } });
-    res.json(updated);
-  } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
-  }
-};
-
-// ── Per-student fee categories (from transactions) ──
-const RECURRING_CATEGORIES = ['Tuition Fee', 'Hifz Tuition Fee', 'Transport Fee'];
-const ONETIME_CATEGORIES = ['Admission Fee', 'Hifz Admission Fee', 'Books Fee', 'Copy Fee', 'Stationary Fee'];
+// ── Per-student fee categories (from transactions) — kept for fallback ──
 const GLOBAL_CATEGORIES = ['Accessories Fee'];
-const SPECIAL_LABELS: Record<string, string> = { hifz_tuition: 'Hifz Fee', hifz_admission: 'Hifz Admission Fee', transport: 'Transport Fee' };
+const FREQ_MONTHLY = ['MONTHLY'];
+const FREQ_YEARLY = ['YEARLY', 'ONETIME']; // Note: keep spelling as ONETIME from FeeSchedule
 
-function getMonthRange(startYM: string, endYM: string): string[] {
+// Helper: get month range between two YYYY-MM strings
+function getMonthRange(from: string, to: string): string[] {
+  const [y1, m1] = from.split('-').map(Number);
+  const [y2, m2] = to.split('-').map(Number);
   const months: string[] = [];
-  let [y, m] = startYM.split('-').map(Number);
-  const [ey, em] = endYM.split('-').map(Number);
-  while (y < ey || (y === ey && m <= em)) {
+  let y = y1, m = m1;
+  while (y < y2 || (y === y2 && m <= m2)) {
     months.push(`${y}-${String(m).padStart(2, '0')}`);
-    m++; if (m > 12) { m = 1; y++; }
+    m++;
+    if (m > 12) { m = 1; y++; }
   }
   return months;
 }
@@ -391,33 +345,51 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
     });
 
     const studentTx = allIncomeTx.filter(t => studentIds.includes(t.studentId || ''));
-    const specialAssignments = await prisma.feeAssignment.findMany({
-      where: { active: true, ...(studentIds.length ? { studentId: { in: studentIds } } : {}) },
-    });
 
-    // Build per-class fee lookup
+    // Fetch fee schedules, assignments, and active waivers
+    const feeSchedules = await prisma.feeSchedule.findMany();
+    const studentFeeAssignments = await prisma.studentFeeAssignment.findMany({
+      where: { active: true, studentId: { in: studentIds } },
+    });
+    const assignMap = new Map<string, true>();
+    studentFeeAssignments.forEach(a => assignMap.set(`${a.studentId}|${a.feeScheduleId}`, true));
+
+    const activeWaivers = await prisma.feeWaiver.findMany({
+      where: { active: true, studentId: { in: studentIds } },
+    });
+    const waiverMap = new Map<string, typeof activeWaivers[0]>();
+    activeWaivers.forEach(w => waiverMap.set(`${w.studentId}|${w.feeScheduleId}`, w));
+
+    // Resolve expected amount: fee schedule → waiver → fallback
+    const getExpectedAmount = (studentId: string, studentClass: string, cat: string, fsId?: string): number => {
+      const fs = fsId ? feeSchedules.find(f => f.id === fsId) : feeSchedules.find(f => f.category === cat && (f.classId === null || students.find(s => s.id === studentId)?.classId === f.classId));
+      const baseAmount = fs ? Number(fs.amount) : (getStudentDefault(studentId, cat) || getClassDefault(studentClass, cat) || 0);
+      if (!fs) return baseAmount;
+      const waiver = waiverMap.get(`${studentId}|${fs.id}`);
+      if (!waiver) return baseAmount;
+      if (waiver.type === 'FULL') return 0;
+      if (waiver.type === 'PERCENTAGE') return baseAmount - (baseAmount * Number(waiver.value) / 100);
+      if (waiver.type === 'FIXED_AMOUNT') return Math.max(0, baseAmount - Number(waiver.value));
+      if (waiver.type === 'CUSTOM_AMOUNT') return Number(waiver.value);
+      return baseAmount;
+    };
+
+    // Build per-class fee lookup from transactions (fallback)
     const classFeeMap: Record<string, Record<string, number>> = {};
     allIncomeTx.forEach(t => {
-      if (t.className && (RECURRING_CATEGORIES.includes(t.category || '') || ONETIME_CATEGORIES.includes(t.category || '') || GLOBAL_CATEGORIES.includes(t.category || ''))) {
+      if (t.className) {
         if (!classFeeMap[t.className]) classFeeMap[t.className] = {};
         if (!classFeeMap[t.className][t.category!]) classFeeMap[t.className][t.category!] = Number(t.amount);
       }
     });
 
-    // Global fee: last amount paid by ANY student
-    const globalFeeAmounts: Record<string, number> = {};
-    GLOBAL_CATEGORIES.forEach(cat => {
-      const tx = allIncomeTx.find(t => t.category === cat);
-      if (tx) globalFeeAmounts[cat] = Number(tx.amount);
-    });
-
-    // Default fee amounts per student (last paid)
+    // Default fee amounts per student (last paid) — fallback
     const getStudentDefault = (sid: string, cat: string): number | null => {
       const tx = studentTx.find(t => t.studentId === sid && t.category === cat);
       return tx ? Number(tx.amount) : null;
     };
 
-    // Per-class default: last paid by any student in class
+    // Per-class default: last paid by any student in class — fallback
     const getClassDefault = (cls: string, cat: string): number | null => {
       return classFeeMap[cls]?.[cat] || null;
     };
@@ -425,18 +397,37 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
     const result = students.map(student => {
       const fees: any[] = [];
 
-      // ── Recurring fees (monthly) ──
+      // Determine applicable fee schedules for this student
+      const applicableSchedules = feeSchedules.filter(fs => {
+        // Class-specific or school-wide
+        if (fs.classId !== null && fs.classId !== student.classId) return false;
+        if (fs.applicability === 'AUTO') return true;
+        // ASSIGNED_ONLY: check for active assignment
+        if (fs.applicability === 'ASSIGNED_ONLY') return assignMap.has(`${student.id}|${fs.id}`);
+        return false;
+      });
+
+      // Group by category for dedup (class-specific wins over school-wide)
+      const scheduleByCat = new Map<string, typeof feeSchedules[0]>();
+      for (const fs of applicableSchedules) {
+        const existing = scheduleByCat.get(fs.category);
+        if (!existing || (fs.classId !== null && existing.classId === null)) {
+          scheduleByCat.set(fs.category, fs);
+        }
+      }
+
+      // ── Recurring fees (frequency: MONTHLY) ──
       if (monthFrom && monthTo) {
         const months = getMonthRange(String(monthFrom), String(monthTo));
-        RECURRING_CATEGORIES.forEach(cat => {
-          if (feeCategory && feeCategory !== cat) return;
-          const defaultAmt = getStudentDefault(student.id, cat) || getClassDefault(student.class, cat) || 0;
-          if (defaultAmt <= 0) return;
+        for (const [cat, fs] of scheduleByCat) {
+          if (feeCategory && feeCategory !== cat) continue;
+          if (fs.frequency !== 'MONTHLY') continue;
+          const defaultAmt = getExpectedAmount(student.id, student.class, cat, fs.id);
+          if (defaultAmt <= 0) continue;
           const paidMonths = new Set(
             studentTx
               .filter(t => t.studentId === student.id && t.category === cat)
               .map(t => {
-                // Prefer explicit feeMonth, fall back to transaction date
                 if (t.feeMonth) return t.feeMonth;
                 const d = new Date(t.transactionDate);
                 return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -450,41 +441,42 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
             totalPaid: defaultAmt * (months.length - unpaidCount),
             months: monthDetail,
           });
-        });
+        }
 
-        // Special recurring fees
-        SPECIAL_FEE_TYPES.forEach(ft => {
-          if (feeCategory && feeCategory !== ft) return;
-          const assignment = specialAssignments.find(a => a.studentId === student.id && a.feeType === ft);
-          const defaultAmt = assignment ? Number(assignment.amount) : 0;
-          if (!assignment) return;
-          const label = SPECIAL_LABELS[ft];
+        // Fallback: categories from transactions not in fee schedules
+        const scheduledCats = new Set(scheduleByCat.keys());
+        const fallbackRecurringCats = new Set<string>();
+        studentTx.filter(t => t.studentId === student.id).forEach(t => {
+          if (t.category && !scheduledCats.has(t.category) && t.feeMonth) {
+            fallbackRecurringCats.add(t.category);
+          }
+        });
+        for (const cat of fallbackRecurringCats) {
+          if (feeCategory && feeCategory !== cat) continue;
+          const defaultAmt = getExpectedAmount(student.id, student.class, cat);
+          if (defaultAmt <= 0) continue;
           const paidMonths = new Set(
-            studentTx
-              .filter(t => t.studentId === student.id && t.category === label)
-              .map(t => {
-                if (t.feeMonth) return t.feeMonth;
-                const d = new Date(t.transactionDate);
-                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-              })
+            studentTx.filter(t => t.studentId === student.id && t.category === cat)
+              .map(t => t.feeMonth || `${new Date(t.transactionDate).getFullYear()}-${String(new Date(t.transactionDate).getMonth() + 1).padStart(2, '0')}`)
           );
           const monthDetail = months.map(m => ({ month: m, paid: paidMonths.has(m), amount: defaultAmt }));
           const unpaidCount = monthDetail.filter(m => !m.paid).length;
           fees.push({
-            name: label, type: 'special', amount: defaultAmt,
+            name: cat, type: 'recurring', amount: defaultAmt,
             totalDue: defaultAmt * unpaidCount,
             totalPaid: defaultAmt * (months.length - unpaidCount),
             months: monthDetail,
           });
-        });
+        }
       }
 
-      // ── One-time fees (yearly) ──
+      // ── One-time fees (frequency: YEARLY or ONETIME) ──
       if (year) {
-        ONETIME_CATEGORIES.forEach(cat => {
-          if (feeCategory && feeCategory !== cat) return;
-          let defaultAmt = getStudentDefault(student.id, cat) || getClassDefault(student.class, cat) || 0;
-          if (defaultAmt <= 0) return;
+        for (const [cat, fs] of scheduleByCat) {
+          if (feeCategory && feeCategory !== cat) continue;
+          if (fs.frequency !== 'YEARLY' && fs.frequency !== 'ONETIME') continue;
+          const defaultAmt = getExpectedAmount(student.id, student.class, cat, fs.id);
+          if (defaultAmt <= 0) continue;
           const paid = studentTx.some(t => t.studentId === student.id && t.category === cat && new Date(t.transactionDate).getFullYear() === Number(year));
           fees.push({
             name: cat, type: 'onetime', amount: defaultAmt,
@@ -493,12 +485,15 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
             paid,
             year: Number(year),
           });
-        });
+        }
+      }
 
-        // Global fees (Accessories Fee) — same for all students
+      // Global fees (Accessories Fee) — same for all students, from transaction fallback
+      if (year) {
         GLOBAL_CATEGORIES.forEach(cat => {
           if (feeCategory && feeCategory !== cat) return;
-          const defaultAmt = globalFeeAmounts[cat] || 0;
+          const tx = allIncomeTx.find(t => t.category === cat);
+          const defaultAmt = tx ? Number(tx.amount) : 0;
           if (defaultAmt <= 0) return;
           const paid = studentTx.some(t => t.studentId === student.id && t.category === cat && new Date(t.transactionDate).getFullYear() === Number(year));
           fees.push({

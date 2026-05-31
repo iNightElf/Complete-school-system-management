@@ -76,7 +76,8 @@ model Student {
   createdAt   DateTime         @default(now())
   results     Result[]
   transactions Transaction[]
-  feeAssignments FeeAssignment[]
+  feeWaivers  FeeWaiver[]
+  studentAssignments StudentFeeAssignment[]
   paymentAllocations PaymentAllocation[]
 
   @@index([class])
@@ -160,9 +161,12 @@ model FeeSchedule {
   category       String        @db.VarChar(100)
   amount         Decimal       @db.Decimal(12, 2)
   frequency      String        @default("MONTHLY") @db.VarChar(20)
+  applicability  String        @default("AUTO") @db.VarChar(20) // AUTO or ASSIGNED_ONLY
   createdAt      DateTime      @default(now()) @map("created_at")
 
   paymentAllocations PaymentAllocation[]
+  waivers FeeWaiver[]
+  studentAssignments StudentFeeAssignment[]
 
   @@index([academicYearId, classId, category])
   @@map("fee_schedules")
@@ -262,18 +266,45 @@ model Transaction {
   @@map("transactions")
 }
 
-model FeeAssignment {
-  id          String   @id @default(uuid())
-  studentId   String   @map("student_id")
-  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  feeType     String   @map("fee_type") @db.VarChar(50)
-  amount      Decimal  @db.Decimal(12, 2) @default(0)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now()) @map("created_at")
+model FeeWaiver {
+  id             String      @id @default(uuid())
+  studentId      String      @map("student_id")
+  feeScheduleId  String      @map("fee_schedule_id") @db.Uuid
+  type           String      @db.VarChar(20) // FULL, PERCENTAGE, FIXED_AMOUNT, CUSTOM_AMOUNT
+  value          Decimal     @db.Decimal(12, 2)
+  reason         String?     @db.Text
+  approvedBy     String?     @db.VarChar(100)
+  active         Boolean     @default(true)
+  startsAt       DateTime?   @map("starts_at")
+  endsAt         DateTime?   @map("ends_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
 
-  @@unique([studentId, feeType])
-  @@index([active, studentId])
-  @@map("fee_assignments")
+  student        Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  feeSchedule    FeeSchedule @relation(fields: [feeScheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, feeScheduleId])
+  @@index([studentId])
+  @@index([feeScheduleId])
+  @@map("fee_waivers")
+}
+
+model StudentFeeAssignment {
+  id            String      @id @default(uuid())
+  studentId     String      @map("student_id")
+  feeScheduleId String      @map("fee_schedule_id") @db.Uuid
+  active        Boolean     @default(true)
+  startsAt      DateTime?   @map("starts_at")
+  endsAt        DateTime?   @map("ends_at")
+  note          String?     @db.Text
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  student       Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  feeSchedule   FeeSchedule @relation(fields: [feeScheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, feeScheduleId])
+  @@index([studentId])
+  @@index([feeScheduleId])
+  @@map("student_fee_assignments")
 }
 
 model OpeningBalance {

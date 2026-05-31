@@ -5,13 +5,14 @@ import { Plus, Save, Trash2, BookOpen } from 'lucide-react';
 import { toast } from '../components/Toast';
 
 const FREQUENCIES = ['MONTHLY', 'YEARLY', 'ONETIME'];
+const APPLICABILITIES = ['AUTO', 'ASSIGNED_ONLY'];
 
 const FeeScheduleTab: React.FC = () => {
   const { classes, fetchClasses } = useSchoolStore();
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ academicYearId: '', classId: '', category: '', amount: '', frequency: 'MONTHLY' });
+  const [form, setForm] = useState({ academicYearId: '', classId: '', category: '', amount: '', frequency: 'MONTHLY', applicability: 'AUTO' });
 
   const load = async () => {
     setLoading(true);
@@ -44,10 +45,11 @@ const FeeScheduleTab: React.FC = () => {
         category: form.category,
         amount: Number(form.amount),
         frequency: form.frequency,
+        applicability: form.applicability,
       });
       toast('Fee schedule created ✓', 'success');
       setShowForm(false);
-      setForm({ academicYearId: '', classId: '', category: '', amount: '', frequency: 'MONTHLY' });
+      setForm({ academicYearId: '', classId: '', category: '', amount: '', frequency: 'MONTHLY', applicability: 'AUTO' });
       load();
     } catch { toast('Failed to create fee schedule', 'error'); }
   };
@@ -93,6 +95,12 @@ const FeeScheduleTab: React.FC = () => {
                 {FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
               </select>
             </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase text-school-muted block mb-1">Applicability</label>
+              <select value={form.applicability} onChange={e => setForm({ ...form, applicability: e.target.value })} className="w-full border border-school-border rounded-xl px-3 py-2 text-sm bg-white">
+                {APPLICABILITIES.map(a => <option key={a} value={a}>{a === 'AUTO' ? 'Auto (all students)' : 'Assigned Only (per student)'}</option>)}
+              </select>
+            </div>
           </div>
           <button onClick={handleCreate} className="flex items-center gap-1.5 px-4 py-2 bg-school-primary text-white rounded-xl text-sm font-bold">
             <Save size={14} /> Create Schedule
@@ -114,6 +122,7 @@ const FeeScheduleTab: React.FC = () => {
               <th className="px-3 py-2 text-left">Class</th>
               <th className="px-3 py-2 text-right">Amount</th>
               <th className="px-3 py-2 text-left">Frequency</th>
+              <th className="px-3 py-2 text-left">Applicability</th>
               <th className="px-3 py-2 text-left">Year</th>
               <th className="px-3 py-2 text-right">Actions</th>
             </tr></thead>
@@ -124,6 +133,11 @@ const FeeScheduleTab: React.FC = () => {
                   <td className="px-3 py-2 text-xs">{s.classRel?.name || 'All'}</td>
                   <td className="px-3 py-2 text-right font-bold">{Number(s.amount).toLocaleString()} /-</td>
                   <td className="px-3 py-2 text-[10px] uppercase">{s.frequency}</td>
+                  <td className="px-3 py-2 text-[10px]">
+                    <span className={`px-2 py-0.5 rounded font-bold ${s.applicability === 'AUTO' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                      {s.applicability === 'AUTO' ? 'Auto' : 'Assigned'}
+                    </span>
+                  </td>
                   <td className="px-3 py-2 text-xs">{s.academicYear?.name || '-'}</td>
                   <td className="px-3 py-2 text-right">
                     <button onClick={() => handleDelete(s.id)} className="text-rose-600 hover:text-rose-800 p-1" title="Delete" aria-label="Delete schedule">

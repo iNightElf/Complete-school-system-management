@@ -9,20 +9,22 @@ const mockPrisma = vi.hoisted(() => {
   };
   const ob = { findMany: vi.fn(), findUnique: vi.fn(), upsert: vi.fn(), create: vi.fn() };
   const obh = { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() };
-  const fa = { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn() };
+  const sfa = { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn(), upsert: vi.fn() };
   const m = {
     transaction: tx,
     openingBalance: ob,
     openingBalanceHistory: obh,
-    feeAssignment: fa,
+    studentFeeAssignment: sfa,
     paymentAllocation: { create: vi.fn() },
     student: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn(), create: vi.fn() },
     schoolClass: { findUnique: vi.fn() },
     feeSchedule: { findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+    feeWaiver: { findMany: vi.fn(), upsert: vi.fn(), update: vi.fn() },
     auditLog: { create: vi.fn() },
     academicYear: { findMany: vi.fn() },
     user: { findMany: vi.fn() },
     $queryRaw: vi.fn(),
+    $queryRawUnsafe: vi.fn(),
   };
   m.$transaction = vi.fn((arg: any) => {
     if (Array.isArray(arg)) return Promise.all(arg);
@@ -91,7 +93,7 @@ describe("API Integration Tests", () => {
     mockGetSession.mockResolvedValue(sessions.admin);
     mockPrisma.openingBalance.findMany.mockResolvedValue([]);
     mockPrisma.openingBalanceHistory.findMany.mockResolvedValue([]);
-    mockPrisma.feeAssignment.findMany.mockResolvedValue([]);
+    mockPrisma.studentFeeAssignment.findMany.mockResolvedValue([]);
     mockPrisma.student.findMany.mockResolvedValue([]);
     mockPrisma.student.count.mockResolvedValue(0);
     mockPrisma.academicYear.findMany.mockResolvedValue([]);
@@ -385,24 +387,25 @@ describe("API Integration Tests", () => {
 
   describe("Finance — Fee Assignments", () => {
     it("GET returns assignments", async () => {
-      mockPrisma.feeAssignment.findMany.mockResolvedValueOnce([{ id: "fa-1", studentId: "s1", feeType: "hifz_tuition", amount: 500, active: true }]);
-      const res = await request(app).get("/api/finance/fee-assignments");
+      mockPrisma.studentFeeAssignment.findMany.mockResolvedValueOnce([{ id: "sfa-1", studentId: "s1", feeScheduleId: "fs-1", active: true }]);
+      const res = await request(app).get("/api/finance/student-fee-assignments");
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
     });
 
     it("POST toggles assignment", async () => {
-      mockPrisma.feeAssignment.findUnique.mockResolvedValueOnce(null);
-      mockPrisma.feeAssignment.create.mockResolvedValueOnce({ id: "fa-2", studentId: "s1", feeType: "transport", amount: 300, active: true });
-      const res = await request(app).post("/api/finance/fee-assignments/toggle").send({ studentId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", feeType: "transport", amount: 300 });
+      mockPrisma.studentFeeAssignment.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.studentFeeAssignment.create.mockResolvedValueOnce({ id: "sfa-2", studentId: "s1", feeScheduleId: "fs-2", active: true });
+      const res = await request(app).post("/api/finance/student-fee-assignments/toggle").send({ studentId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", feeScheduleId: "fs-2" });
       expect(res.status).toBe(201);
-      expect(res.body.feeType).toBe("transport");
+      expect(res.body.active).toBe(true);
     });
 
-    it("PUT updates amount", async () => {
-      mockPrisma.feeAssignment.update.mockResolvedValueOnce({ id: "fa-1", studentId: "s1", feeType: "hifz_tuition", amount: 600, active: true });
-      const res = await request(app).put("/api/finance/fee-assignments/fa-1").send({ amount: 600 });
+    it("POST bulk assigns", async () => {
+      mockPrisma.studentFeeAssignment.upsert.mockResolvedValue({ id: "sfa-3", studentId: "s1", feeScheduleId: "fs-1", active: true });
+      const res = await request(app).post("/api/finance/student-fee-assignments/bulk").send({ feeScheduleId: "fs-1", studentIds: ["s1", "s2"] });
       expect(res.status).toBe(200);
+      expect(res.body.count).toBe(2);
     });
   });
 
@@ -413,6 +416,9 @@ describe("API Integration Tests", () => {
         { id: "s2", name: "Bob", fatherName: "Mr. B", class: "One", roll: "2" },
       ]);
       mockPrisma.transaction.findMany.mockResolvedValueOnce([]);
+      mockPrisma.feeSchedule.findMany.mockResolvedValueOnce([]);
+      mockPrisma.studentFeeAssignment.findMany.mockResolvedValueOnce([]);
+      mockPrisma.feeWaiver.findMany.mockResolvedValueOnce([]);
       const res = await request(app).get("/api/finance/defaulter?className=One&monthFrom=2026-01&monthTo=2026-03&year=2026");
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);

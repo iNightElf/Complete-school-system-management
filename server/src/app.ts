@@ -16,6 +16,8 @@ import * as classes from "./controllers/class.controller.js";
 import * as results from "./controllers/result.controller.js";
 import * as users from "./controllers/user.controller.js";
 import * as feeSchedule from "./controllers/feeSchedule.controller.js";
+import * as feeWaiver from "./controllers/feeWaiver.controller.js";
+import * as studentFeeAssignment from "./controllers/studentFeeAssignment.controller.js";
 import { authenticate, authorizePermission } from "./middleware/auth.middleware.js";
 
 const corsOrigins = process.env.CORS_ORIGINS
@@ -127,16 +129,22 @@ app.post("/api/finance/fee-schedules", authenticate, authorizePermission("financ
 app.put("/api/finance/fee-schedules/:id", authenticate, authorizePermission("finance:write"), feeSchedule.updateFeeSchedule);
 app.delete("/api/finance/fee-schedules/:id", authenticate, authorizePermission("finance:write"), feeSchedule.deleteFeeSchedule);
 
+// ── Fee Waivers ──
+app.get("/api/finance/fee-waivers", authenticate, authorizePermission("finance:read"), feeWaiver.getFeeWaivers);
+app.post("/api/finance/fee-waivers", authenticate, authorizePermission("finance:write"), feeWaiver.createFeeWaiver);
+app.put("/api/finance/fee-waivers/:id", authenticate, authorizePermission("finance:write"), feeWaiver.updateFeeWaiver);
+app.post("/api/finance/fee-waivers/:id/deactivate", authenticate, authorizePermission("finance:write"), feeWaiver.deactivateFeeWaiver);
+
 // ── Finance ──
 app.get("/api/finance/balances", authenticate, authorizePermission("finance:read"), finance.getBalances);
 app.get("/api/finance/transactions", authenticate, authorizePermission("finance:read"), finance.getTransactions);
 app.post("/api/finance/transactions", authenticate, authorizePermission("finance:write"), finance.createTransaction);
 app.post("/api/finance/transactions/:id/cancel", authenticate, authorizePermission("finance:write"), finance.cancelTransaction);
 
-// ── Fee Assignments ──
-app.get("/api/finance/fee-assignments", authenticate, authorizePermission("finance:read"), finance.getFeeAssignments);
-app.post("/api/finance/fee-assignments/toggle", authenticate, authorizePermission("finance:write"), finance.toggleFeeAssignment);
-app.put("/api/finance/fee-assignments/:id", authenticate, authorizePermission("finance:write"), finance.updateFeeAssignmentAmount);
+// ── Student Fee Assignments ──
+app.get("/api/finance/student-fee-assignments", authenticate, authorizePermission("finance:read"), studentFeeAssignment.getStudentFeeAssignments);
+app.post("/api/finance/student-fee-assignments/toggle", authenticate, authorizePermission("finance:write"), studentFeeAssignment.toggleStudentFeeAssignment);
+app.post("/api/finance/student-fee-assignments/bulk", authenticate, authorizePermission("finance:write"), studentFeeAssignment.bulkAssign);
 
 // ── Opening Balances ──
 app.get("/api/finance/opening-balances", authenticate, authorizePermission("finance:read"), finance.getOpeningBalances);
