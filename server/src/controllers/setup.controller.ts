@@ -20,19 +20,21 @@ export const initSetup = async (req: Request, res: Response) => {
     }
 
     const { name, email, password, token } = req.body;
-    if (!name || !email || !password || !token) {
-      return res.status(400).json({ error: "name, email, password, and token are required" });
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: "name, email, and password are required" });
     }
 
     const setupToken = process.env.SETUP_TOKEN;
-    if (!setupToken) {
-      return res.status(500).json({ error: "SETUP_TOKEN is not configured on the server" });
-    }
-    const tokenBuf = Buffer.from(String(token));
-    const setupBuf = Buffer.from(setupToken);
-    const valid = tokenBuf.length === setupBuf.length && timingSafeEqual(tokenBuf, setupBuf);
-    if (!valid) {
-      return res.status(403).json({ error: "Invalid setup token" });
+    if (setupToken) {
+      if (!token) {
+        return res.status(400).json({ error: "Setup token is required" });
+      }
+      const tokenBuf = Buffer.from(String(token));
+      const setupBuf = Buffer.from(setupToken);
+      const valid = tokenBuf.length === setupBuf.length && timingSafeEqual(tokenBuf, setupBuf);
+      if (!valid) {
+        return res.status(403).json({ error: "Invalid setup token" });
+      }
     }
 
     const existingUser = await prisma.user.findUnique({ where: { email } });

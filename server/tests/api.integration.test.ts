@@ -16,7 +16,9 @@ const mockPrisma = vi.hoisted(() => {
     openingBalanceHistory: obh,
     studentFeeAssignment: sfa,
     paymentAllocation: { create: vi.fn() },
-    student: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn(), create: vi.fn() },
+    student: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
+    teacher: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
+    staff: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
     schoolClass: { findUnique: vi.fn() },
     feeSchedule: { findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
     feeWaiver: { findMany: vi.fn(), upsert: vi.fn(), update: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
@@ -109,7 +111,7 @@ describe("API Integration Tests", () => {
     it("responds with status ok", async () => {
       const res = await request(app).get("/health");
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ status: "ok" });
+      expect(res.body.status).toBe("ok");
     });
   });
 
@@ -168,6 +170,69 @@ describe("API Integration Tests", () => {
         mockGetSession.mockResolvedValueOnce(sessions.viewer);
         const res = await request(app).post("/api/students").send({ class: "One", name: "Bob" });
         expect(res.status).toBe(403);
+      });
+    });
+
+    describe("Soft Delete & Restore", () => {
+      it("DELETE /api/students/:id sets deletedAt instead of removing", async () => {
+        mockPrisma.student.update.mockResolvedValueOnce({ id: "s1", deletedAt: new Date() });
+        const res = await request(app).delete("/api/students/s1");
+        expect(res.status).toBe(200);
+        expect(res.body.id).toBe("s1");
+        expect(mockPrisma.student.update).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: "s1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) })
+        );
+      });
+
+      it("POST /api/students/:id/restore clears deletedAt", async () => {
+        mockPrisma.student.update.mockResolvedValueOnce({ id: "s1", deletedAt: null });
+        const res = await request(app).post("/api/students/s1/restore");
+        expect(res.status).toBe(200);
+        expect(mockPrisma.student.update).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: "s1" }, data: { deletedAt: null } })
+        );
+      });
+
+      it("GET /api/students excludes soft-deleted records", async () => {
+        mockPrisma.student.findMany.mockResolvedValueOnce([{ id: "active-1", name: "Active" }]);
+        mockPrisma.student.count.mockResolvedValueOnce(1);
+        const res = await request(app).get("/api/students");
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(1);
+        expect(res.body.data[0].id).toBe("active-1");
+        expect(mockPrisma.student.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ deletedAt: null }) })
+        );
+      });
+
+      it("DELETE /api/teachers/:id sets deletedAt", async () => {
+        mockPrisma.teacher.update.mockResolvedValueOnce({ id: "t1", deletedAt: new Date() });
+        const res = await request(app).delete("/api/teachers/t1");
+        expect(res.status).toBe(200);
+        expect(mockPrisma.teacher.update).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: "t1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) })
+        );
+      });
+
+      it("POST /api/teachers/:id/restore clears deletedAt", async () => {
+        mockPrisma.teacher.update.mockResolvedValueOnce({ id: "t1", deletedAt: null });
+        const res = await request(app).post("/api/teachers/t1/restore");
+        expect(res.status).toBe(200);
+      });
+
+      it("DELETE /api/staff/:id sets deletedAt", async () => {
+        mockPrisma.staff.update.mockResolvedValueOnce({ id: "st1", deletedAt: new Date() });
+        const res = await request(app).delete("/api/staff/st1");
+        expect(res.status).toBe(200);
+        expect(mockPrisma.staff.update).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: "st1" }, data: expect.objectContaining({ deletedAt: expect.any(Date) }) })
+        );
+      });
+
+      it("POST /api/staff/:id/restore clears deletedAt", async () => {
+        mockPrisma.staff.update.mockResolvedValueOnce({ id: "st1", deletedAt: null });
+        const res = await request(app).post("/api/staff/st1/restore");
+        expect(res.status).toBe(200);
       });
     });
 

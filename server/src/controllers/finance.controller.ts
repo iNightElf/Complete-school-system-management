@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { classifyTransaction } from "../lib/finance-rules.js";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError } from "../lib/errors.js";
+import { sanitizeError, errorStatus } from "../lib/errors.js";
 import { validate, createTransactionSchema } from "../lib/validate.js";
 import { logAudit } from "../lib/audit.js";
 import { getFiscalYearForDate, getFiscalYearRange } from "../lib/fiscal-year.js";
@@ -141,7 +141,7 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(transaction);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
@@ -361,7 +361,7 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
     logAudit({ userId, action: "CANCEL", entityType: "Transaction", entityId: id, details: JSON.stringify({ reason, reversalId: reversal.id }) });
     res.json({ cancelled, reversal });
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 

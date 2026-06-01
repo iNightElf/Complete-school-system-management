@@ -2,19 +2,54 @@ import type { Request, Response } from "express";
 import { createHash } from "crypto";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError } from "../lib/errors.js";
+import { sanitizeError, errorStatus } from "../lib/errors.js";
 import { validate, createTeacherSchema, createStaffSchema, createBookSchema } from "../lib/validate.js";
 import { parsePhoto, detectMimeType } from "../lib/photo.js";
+import { logAudit } from "../lib/audit.js";
 
 // ── Teachers ──
+
+export const importTeachers = async (req: Request, res: Response) => {
+  try {
+    const { teachers } = req.body;
+    if (!Array.isArray(teachers) || teachers.length === 0) {
+      return res.status(400).json({ error: "Send { teachers: [...] } with at least one teacher" });
+    }
+    if (teachers.length > 500) return res.status(400).json({ error: "Maximum 500 per import" });
+
+    const created: any[] = [];
+    const errors: { row: number; error: string }[] = [];
+
+    for (let i = 0; i < teachers.length; i++) {
+      const t = teachers[i];
+      if (!t.name || !t.designation) {
+        errors.push({ row: i + 1, error: !t.name ? "Name is required" : "Designation is required" });
+        continue;
+      }
+      try {
+        const teacher = await prisma.teacher.create({
+          data: { designation: t.designation, name: t.name, email: t.email || null, contact: t.contact || null },
+        });
+        created.push({ id: teacher.id, name: teacher.name, designation: teacher.designation });
+      } catch (e: any) {
+        errors.push({ row: i + 1, error: e.message || "Create failed" });
+      }
+    }
+
+    logAudit({ action: "IMPORT", entityType: "Teacher", entityId: `batch-${created.length}`, details: JSON.stringify({ created: created.length, errors: errors.length }) });
+    res.status(201).json({ created: created.length, errors, teachers: created });
+  } catch (error: any) {
+    res.status(500).json({ error: sanitizeError(error) });
+  }
+};
 
 export const getAllTeachers = async (req: Request, res: Response) => {
   try {
     const skip = Math.max(0, parseInt(String(req.query.skip || '0')));
     const take = Math.min(500, Math.max(1, parseInt(String(req.query.take || '200'))));
     const [teachers, total] = await Promise.all([
-      prisma.teacher.findMany({ orderBy: { createdAt: "desc" }, skip, take }),
-      prisma.teacher.count(),
+      prisma.teacher.findMany({ where: { deletedAt: null }, orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.teacher.count({ where: { deletedAt: null } }),
     ]);
     const result = teachers.map((t) => ({
       id: t.id,
@@ -50,7 +85,7 @@ export const createTeacher = async (req: Request, res: Response) => {
 
     res.status(201).json({ ...teacher, photo: null });
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
@@ -73,15 +108,25 @@ export const updateTeacher = async (req: Request, res: Response) => {
     const teacher = await prisma.teacher.update({ where: { id }, data });
     res.json({ ...teacher, photo: undefined, hasPhoto: !!teacher.photo });
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
 export const deleteTeacher = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    await prisma.teacher.delete({ where: { id } });
-    res.json({ message: "Teacher deleted" });
+    await prisma.teacher.update({ where: { id }, data: { deletedAt: new Date() } });
+    res.json({ message: "Teacher deleted", id });
+  } catch (error: any) {
+    res.status(500).json({ error: sanitizeError(error) });
+  }
+};
+
+export const restoreTeacher = async (req: Request, res: Response) => {
+  try {
+    const id = param(req, "id");
+    await prisma.teacher.update({ where: { id }, data: { deletedAt: null } });
+    res.json({ message: "Teacher restored", id });
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
   }
@@ -105,13 +150,47 @@ export const getTeacherPhoto = async (req: Request, res: Response) => {
   }
 };
 
+export const importStaff = async (req: Request, res: Response) => {
+  try {
+    const { staff } = req.body;
+    if (!Array.isArray(staff) || staff.length === 0) {
+      return res.status(400).json({ error: "Send { staff: [...] } with at least one staff member" });
+    }
+    if (staff.length > 500) return res.status(400).json({ error: "Maximum 500 per import" });
+
+    const created: any[] = [];
+    const errors: { row: number; error: string }[] = [];
+
+    for (let i = 0; i < staff.length; i++) {
+      const s = staff[i];
+      if (!s.name || !s.role) {
+        errors.push({ row: i + 1, error: !s.name ? "Name is required" : "Role is required" });
+        continue;
+      }
+      try {
+        const member = await prisma.staff.create({
+          data: { role: s.role, name: s.name, email: s.email || null, contact: s.contact || null },
+        });
+        created.push({ id: member.id, name: member.name, role: member.role });
+      } catch (e: any) {
+        errors.push({ row: i + 1, error: e.message || "Create failed" });
+      }
+    }
+
+    logAudit({ action: "IMPORT", entityType: "Staff", entityId: `batch-${created.length}`, details: JSON.stringify({ created: created.length, errors: errors.length }) });
+    res.status(201).json({ created: created.length, errors, staff: created });
+  } catch (error: any) {
+    res.status(500).json({ error: sanitizeError(error) });
+  }
+};
+
 export const getAllStaff = async (req: Request, res: Response) => {
   try {
     const skip = Math.max(0, parseInt(String(req.query.skip || '0')));
     const take = Math.min(500, Math.max(1, parseInt(String(req.query.take || '200'))));
     const [staff, total] = await Promise.all([
-      prisma.staff.findMany({ orderBy: { createdAt: "desc" }, skip, take }),
-      prisma.staff.count(),
+      prisma.staff.findMany({ where: { deletedAt: null }, orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.staff.count({ where: { deletedAt: null } }),
     ]);
     const result = staff.map((s) => ({
       id: s.id,
@@ -147,7 +226,7 @@ export const createStaff = async (req: Request, res: Response) => {
 
     res.status(201).json({ ...staff, photo: null });
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
@@ -170,15 +249,25 @@ export const updateStaff = async (req: Request, res: Response) => {
     const staff = await prisma.staff.update({ where: { id }, data });
     res.json({ ...staff, photo: undefined, hasPhoto: !!staff.photo });
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
 export const deleteStaff = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    await prisma.staff.delete({ where: { id } });
-    res.json({ message: "Staff deleted" });
+    await prisma.staff.update({ where: { id }, data: { deletedAt: new Date() } });
+    res.json({ message: "Staff deleted", id });
+  } catch (error: any) {
+    res.status(500).json({ error: sanitizeError(error) });
+  }
+};
+
+export const restoreStaff = async (req: Request, res: Response) => {
+  try {
+    const id = param(req, "id");
+    await prisma.staff.update({ where: { id }, data: { deletedAt: null } });
+    res.json({ message: "Staff restored", id });
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
   }
@@ -246,7 +335,7 @@ export const createBook = async (req: Request, res: Response) => {
 
     res.status(201).json(book);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
@@ -273,7 +362,7 @@ export const updateBook = async (req: Request, res: Response) => {
 
     res.json(book);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 

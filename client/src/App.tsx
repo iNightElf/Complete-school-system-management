@@ -1,6 +1,8 @@
 import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
+import ErrorBoundary from './components/ErrorBoundary';
+import NotFound from './pages/NotFound';
 
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
@@ -22,6 +24,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchSession();
+    fetch('/api/wake-db').catch(() => {}); // wake Neon DB from sleep
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
@@ -30,6 +33,7 @@ const App: React.FC = () => {
 
   return (
     <Router>
+      <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
@@ -38,9 +42,10 @@ const App: React.FC = () => {
           <Route path="/users" element={user?.role === 'admin' ? <UserManagement /> : <Navigate to="/" />} />
           <Route path="/audit" element={user?.role === 'admin' ? <AuditLogs /> : <Navigate to="/" />} />
           <Route path="/" element={user ? <Dashboard /> : <Navigate to="/login" />} />
-          <Route path="*" element={<Navigate to="/" />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
+      </ErrorBoundary>
     </Router>
   );
 };

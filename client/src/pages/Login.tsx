@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../store';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { LogIn, ShieldAlert, School, BookOpen } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -13,6 +12,8 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const fetchSession = useAuthStore((state) => state.fetchSession);
+
+  useEffect(() => { document.title = 'Login - AL RAWA English School'; }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

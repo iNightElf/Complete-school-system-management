@@ -1,6 +1,6 @@
 {
   // Visit https://aka.ms/tsconfig to read more about this file
-  "exclude": ["scripts", "src/scripts", "tests"],
+  "exclude": ["scripts", "src/scripts", "tests", "e2e", "vitest.config.ts"],
   "compilerOptions": {
     // File Layout
     "rootDir": "./src",

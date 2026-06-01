@@ -3,8 +3,7 @@ import { useSchoolStore } from '../store';
 import axios from 'axios';
 import { toast } from '../components/Toast';
 import { Search, CheckSquare, Square } from 'lucide-react';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 interface FeeSchedule {
   id: string;
@@ -32,12 +31,14 @@ const OptionalFeesTab: React.FC = () => {
   const [assignments, setAssignments] = useState<StudentFeeAssignment[]>([]);
   const [selectedScheduleId, setSelectedScheduleId] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [dateEdits, setDateEdits] = useState<Record<string, { startsAt: string; endsAt: string }>>({});
 
   const dateKey = (studentId: string) => `${studentId}_${selectedScheduleId}`;
 
   const load = async () => {
+    setLoading(true);
     try {
       const [fsRes, asRes] = await Promise.all([
         axios.get(`${API_URL}/finance/fee-schedules`, { withCredentials: true }),
@@ -46,6 +47,7 @@ const OptionalFeesTab: React.FC = () => {
       setFeeSchedules(fsRes.data);
       setAssignments(asRes.data);
     } catch { toast('Failed to load data', 'error'); }
+    finally { setLoading(false); }
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -156,6 +158,23 @@ const OptionalFeesTab: React.FC = () => {
         </div>
       )}
 
+      {loading ? (
+        <div className="px-5 py-8 space-y-3">
+          {[1,2,3,4].map(i => (
+            <div key={i} className="flex items-center gap-4 px-4 py-3">
+              <div className="w-9 h-9 bg-gray-100 rounded-full animate-pulse" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3 bg-gray-100 rounded w-1/3 animate-pulse" />
+                <div className="h-3 bg-gray-50 rounded w-1/5 animate-pulse" />
+              </div>
+              <div className="h-6 bg-gray-100 rounded w-20 animate-pulse" />
+              <div className="h-6 bg-gray-100 rounded w-20 animate-pulse" />
+              <div className="h-6 bg-gray-100 rounded w-16 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      ) : (
+      <>
       <div className="overflow-x-auto">
         <table className="w-full text-sm mobile-card-table">
           <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
@@ -218,6 +237,8 @@ const OptionalFeesTab: React.FC = () => {
           Select a fee schedule and class to manage optional fee assignments.
         </div>
       )}
+    </>
+    )}
     </div>
   );
 };

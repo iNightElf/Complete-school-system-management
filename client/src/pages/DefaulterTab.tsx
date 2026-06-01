@@ -4,8 +4,7 @@ import axios from 'axios';
 import { toast } from '../components/Toast';
 import { AlertTriangle, Download, Printer, Check, X } from 'lucide-react';
 import { defaulterPDF } from '../lib/defaulterPdf';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 function getMonthName(m: number) { return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m]; }
 

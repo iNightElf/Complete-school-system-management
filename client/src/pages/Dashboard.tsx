@@ -25,6 +25,7 @@ const Dashboard: React.FC = () => {
   const { students, teachers, staff, studentTotal, fetchClasses, fetchStudents, fetchTeachers, fetchStaff, fetchBooks } = useSchoolStore();
   const user = useAuthStore((s) => s.user);
 
+  useEffect(() => { document.title = 'Dashboard - AL RAWA English School'; }, []);
   useEffect(() => {
     fetchClasses();
     fetchStudents();
@@ -62,7 +63,9 @@ const Dashboard: React.FC = () => {
             <div className="absolute inset-0 bg-white/5 [mask-image:radial-gradient(ellipse_at_top_right,black_30%,transparent_70%)]" />
             <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4" />
             <div className="relative flex items-center gap-4">
-              <img src={SCHOOL_LOGO} alt="" className="w-14 h-14 rounded-full border-2 border-white/20 shadow-lg object-cover hidden sm:block" />
+              <button onClick={() => handleSetMode(null)} className="hidden sm:block">
+                <img src={SCHOOL_LOGO} alt="" className="w-14 h-14 rounded-full border-2 border-white/20 shadow-lg object-cover cursor-pointer hover:scale-105 transition-transform" />
+              </button>
               <div className="flex-1">
                 <p className="text-sm text-white/70 font-medium">{TodaysGreeting()}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}</p>
                 <h1 className="font-serif text-xl sm:text-2xl mt-0.5">AL RAWA English School</h1>

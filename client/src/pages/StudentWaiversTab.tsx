@@ -3,8 +3,7 @@ import axios from 'axios';
 import { useSchoolStore } from '../store';
 import { X, Shield, Search } from 'lucide-react';
 import { toast } from '../components/Toast';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 const StudentWaiversTab: React.FC = () => {
   const { classes, students, fetchClasses, fetchStudents } = useSchoolStore();

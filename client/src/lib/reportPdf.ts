@@ -1,8 +1,6 @@
 import jsPDF from 'jspdf';
 import { gradeFromMarks, gpaToGrade, calcYearSummary, calcTermRanks, calcYearRanks, calcAttendPct } from './grading';
-
-const API_URL = '/api';
-const TERM_NAMES: Record<string, string> = { '1': '1st Term', '2': '2nd Term', '3': 'Final Exam' };
+import { API_URL, TERM_NAMES } from './config';
 
 export function _pdfGradeChip(doc: jsPDF, cx: number, cy: number, grade: string) {
   const map: Record<string, [number[], number[]]> = {

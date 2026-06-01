@@ -73,6 +73,8 @@ model Student {
   motherName  String?
   contact     String?
   photo       Bytes?
+  deletedAt   DateTime?
+  graduatedAt DateTime?
   createdAt   DateTime         @default(now())
   results     Result[]
   transactions Transaction[]
@@ -92,6 +94,7 @@ model Teacher {
   email       String?
   contact     String?
   photo       Bytes?
+  deletedAt   DateTime?
   createdAt   DateTime @default(now())
 }
 
@@ -102,6 +105,7 @@ model Staff {
   email       String?
   contact     String?
   photo       Bytes?
+  deletedAt   DateTime?
   createdAt   DateTime @default(now())
 }
 

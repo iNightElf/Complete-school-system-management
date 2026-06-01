@@ -3,13 +3,13 @@ import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import ClassManagerModal from '../../components/ClassManagerModal';
 import CameraModal from '../../components/CameraModal';
+import ImportModal from '../../components/ImportModal';
 import { CardSkeleton } from '../../components/Skeleton';
-import { Settings, RefreshCw, Download, Camera, Pencil, Trash2, Check, User, GraduationCap, Play, Sprout, Palette, BookOpen } from 'lucide-react';
+import { Settings, RefreshCw, Download, Upload, Camera, Pencil, Trash2, Check, User, GraduationCap, Play, Sprout, Palette, BookOpen, Search, Archive } from 'lucide-react';
 import { contactLinks } from '../../lib/contacts';
 import DeleteConfirmModal from '../../components/DeleteConfirmModal';
 import jsPDF from 'jspdf';
-
-const API_URL = '/api';
+import { API_URL } from '../../lib/config';
 
 export default function StudentSection() {
   const { classes, students, fetchClasses, fetchStudents, loading } = useSchoolStore();
@@ -19,6 +19,8 @@ export default function StudentSection() {
   const [activeClass, setActiveClass] = useState<string | null>(null);
   const [showClassManager, setShowClassManager] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showGraduated, setShowGraduated] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const searchTimer = useRef<any>(null);
@@ -29,6 +31,7 @@ export default function StudentSection() {
     searchTimer.current = setTimeout(() => setDebouncedSearch(value), 200);
   };
 
+  useEffect(() => { document.title = 'Students - AL RAWA English School'; }, []);
   useEffect(() => { return () => clearTimeout(searchTimer.current); }, []);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddNew, setShowAddNew] = useState(false);
@@ -38,11 +41,15 @@ export default function StudentSection() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchClasses(); fetchStudents(); }, []);
+  useEffect(() => { fetchStudents(showGraduated ? { showGraduated: 'true' } : undefined); }, [showGraduated]);
 
-  const sorted = [...classes].sort((a, b) => a.order - b.order);
+  const sorted = [...classes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const classStudents = students.filter((s) => activeClass && s.class === activeClass);
   const filtered = classStudents.filter((s) =>
     !debouncedSearch || s.name.toLowerCase().includes(debouncedSearch.toLowerCase()) || s.roll?.includes(debouncedSearch)
+  );
+  const searchResults = students.filter((s) =>
+    debouncedSearch && (s.name.toLowerCase().includes(debouncedSearch.toLowerCase()) || s.roll?.includes(debouncedSearch) || (s.class || '').toLowerCase().includes(debouncedSearch.toLowerCase()))
   );
 
   const resetForm = () => {
@@ -104,6 +111,9 @@ export default function StudentSection() {
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [archiveId, setArchiveId] = useState<string | null>(null);
+  const [archiveName, setArchiveName] = useState('');
+  const [archiveLoading, setArchiveLoading] = useState(false);
 
   const confirmDelete = async () => {
     if (!deleteId) return;
@@ -111,17 +121,37 @@ export default function StudentSection() {
     try {
       const res = await fetch(`${API_URL}/students/${deleteId}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Delete failed'); }
-      toast('Student deleted');
+      toast('Student deleted', '', { label: 'Undo', onClick: async () => {
+        try {
+          await fetch(`${API_URL}/students/${deleteId}/restore`, { method: 'POST', credentials: 'include' });
+          toast('Student restored ✓', 'success');
+          fetchStudents();
+        } catch { toast('Could not undo', 'error'); }
+      }});
     } catch (e: any) { toast(e.message || 'Error', 'error'); }
     setDeleteId(null);
     setDeleteLoading(false);
     fetchStudents();
   };
 
+  const confirmArchive = async () => {
+    if (!archiveId) return;
+    setArchiveLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/classes/${archiveId}/graduate`, { method: 'POST', credentials: 'include' });
+      const d = await res.json();
+      if (res.ok) { toast(d.message, 'success'); fetchStudents(); fetchClasses(); }
+      else throw new Error(d.error);
+    } catch (e: any) { toast(e.message || 'Error', 'error'); }
+    setArchiveId(null);
+    setArchiveName('');
+    setArchiveLoading(false);
+  };
+
   const renderEditCard = (isNew: boolean) => {
     const inputCls = 'w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent';
     return (
-      <div className={`p-4 rounded-2xl border-2 transition-all ${isNew ? 'border-violet-400 bg-violet-50/50' : 'border-blue-400 bg-blue-50/50'}`}>
+      <div className={`p-4 rounded-2xl border-2 transition-all ${isNew ? 'border-violet-400 bg-violet-50/50' : 'border-blue-400 bg-blue-50/50'}`} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}>
         <div className="flex justify-center mb-3">
           <button onClick={() => setShowCamera(true)} className="relative group" aria-label="Take photo">
             {photo ? (
@@ -176,7 +206,7 @@ export default function StudentSection() {
   };
 
   const renderViewCard = (s: any) => (
-    <div className="bg-white p-4 rounded-2xl border border-school-border card-shadow text-center">
+    <div className={`bg-white p-4 rounded-2xl border card-shadow text-center ${s.hasGraduated ? 'border-amber-300 bg-amber-50/30' : 'border-school-border'}`}>
       <div className="flex flex-col items-center gap-2">
         {s.hasPhoto ? (
           <img src={`${API_URL}/students/${s.id}/photo`} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-school-border shadow-sm" />
@@ -186,6 +216,7 @@ export default function StudentSection() {
         <div>
           <div className="font-bold text-sm text-school-primary">{s.name}</div>
           <div className="text-xs text-school-muted">{s.roll ? `Roll: ${s.roll}` : activeClass}</div>
+          {s.hasGraduated && <span className="inline-block mt-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full">Archived</span>}
         </div>
       </div>
       <div className="mt-2 space-y-0.5">
@@ -196,6 +227,25 @@ export default function StudentSection() {
       {isAdmin && (
         <div className="flex gap-2 mt-3 pt-3 border-t border-school-border">
           <button onClick={() => handleEdit(s)} className="flex-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 flex items-center justify-center gap-1"><Pencil size={14} /> Edit</button>
+          {s.hasGraduated ? (
+            <button onClick={async () => {
+              try {
+                const res = await fetch(`/api/students/${s.id}/ungraduate`, { method: 'POST', credentials: 'include' });
+                if (!res.ok) throw new Error((await res.json()).error);
+                toast('Student unarchived ✓', 'success');
+                fetchStudents(showGraduated ? { showGraduated: 'true' } : undefined);
+              } catch (e: any) { toast(e.message || 'Error', 'error'); }
+            }} className="flex-1 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-xs font-medium hover:bg-amber-100 flex items-center justify-center gap-1"><Archive size={14} /> Unarchive</button>
+          ) : (
+            <button onClick={async () => {
+              try {
+                const res = await fetch(`/api/students/${s.id}/graduate`, { method: 'POST', credentials: 'include' });
+                if (!res.ok) throw new Error((await res.json()).error);
+                toast('Student archived ✓', 'success');
+                fetchStudents(showGraduated ? { showGraduated: 'true' } : undefined);
+              } catch (e: any) { toast(e.message || 'Error', 'error'); }
+            }} className="flex-1 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-xs font-medium hover:bg-amber-100 flex items-center justify-center gap-1"><Archive size={14} /> Archive</button>
+          )}
           <button onClick={() => setDeleteId(s.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center justify-center gap-1"><Trash2 size={14} /> Delete</button>
         </div>
       )}
@@ -206,6 +256,7 @@ export default function StudentSection() {
     <div className="space-y-4">
       <ClassManagerModal open={showClassManager} onClose={() => setShowClassManager(false)} />
       <CameraModal open={showCamera} onClose={() => setShowCamera(false)} onCapture={(d) => { setPhoto(d); setShowCamera(false); }} />
+      <ImportModal open={showImport} onClose={() => setShowImport(false)} onImported={() => fetchStudents()} />
 
       {/* Panel Header */}
         <div className="flex items-center justify-between">
@@ -219,7 +270,7 @@ export default function StudentSection() {
               const list = activeClass ? (filtered.length > 0 ? filtered : classStudents) : students;
               const photoCache: Record<string, string> = {};
               await Promise.all(list.filter((s: any) => s.hasPhoto).map(async (s: any) => {
-                try { const r = await fetch(`${API_URL}/students/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch { console.debug('Photo load skipped'); }
+                try { const r = await fetch(`${API_URL}/students/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
               }));
               const doc = new jsPDF();
               const title = activeClass ? activeClass + ' — Students' : 'All Students';
@@ -233,7 +284,7 @@ export default function StudentSection() {
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
                 const lines = [`Class: ${s.class}${s.roll ? '   Roll No: ' + s.roll : ''}`, `Father: ${s.fatherName || ''}`, `Mother: ${s.motherName || ''}`, `Contact: ${s.contact || ''}`];
                 if (photoCache[s.id]) {
-                  try { doc.addImage(photoCache[s.id], 'JPEG', 15, y, 22, 22); } catch { console.debug('PDF image add skipped'); }
+                  try { doc.addImage(photoCache[s.id], 'JPEG', 15, y, 22, 22); } catch {}
                   lines.forEach((l, li) => doc.text(l, 42, y + 5 + li * 5)); y += 28;
                 } else { lines.forEach(l => { doc.text(l, 15, y); y += 5; }); }
                 doc.setDrawColor(200); doc.setLineWidth(0.3); doc.setLineDashPattern([4, 4], 0);
@@ -245,15 +296,32 @@ export default function StudentSection() {
           >
             <Download size={12} /> PDF
           </button>
-          <button onClick={() => fetchStudents()} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
+          {isAdmin && <button onClick={() => setShowImport(true)} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
+            <Upload size={12} /> Import
+          </button>}
+          <button onClick={() => { setShowGraduated(!showGraduated); }} className={`flex items-center gap-1 px-3 py-1.5 border rounded-lg text-xs ${showGraduated ? 'bg-amber-100 border-amber-300 text-amber-700' : 'border-school-border hover:bg-school-paper'}`}>
+            <Archive size={12} /> {showGraduated ? 'All' : 'Active'}
+          </button>
+          <button onClick={() => fetchStudents(showGraduated ? { showGraduated: 'true' } : undefined)} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
             <RefreshCw size={12} /> Refresh
           </button>
         </div>
       </div>
 
+      {/* Global search across all students */}
+      {!activeClass && (
+        <div className="relative mb-3">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-school-muted" />
+          <input type="text" value={search} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Search all students by name or roll..."
+            className="w-full pl-9 pr-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
+        </div>
+      )}
+
       {/* Class Picker or Student List */}
       {!activeClass ? (
         <div>
+          {!debouncedSearch && (
+            <>
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-school-muted">Select a class to view students:</p>
             {isAdmin && (
@@ -262,6 +330,31 @@ export default function StudentSection() {
               </button>
             )}
           </div>
+          </>)}
+          {debouncedSearch ? (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm text-school-muted">Search results for "<span className="text-school-primary font-medium">{debouncedSearch}</span>"</span>
+                <button onClick={() => { setSearch(''); setDebouncedSearch(''); }} className="text-xs text-school-accent hover:underline">Clear</button>
+              </div>
+              {loading.students ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
+                </div>
+              ) : searchResults.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {searchResults.map((s: any) => (
+                    <div key={s.id}>{renderViewCard(s)}</div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-school-muted">
+                  <Search size={40} className="text-school-muted mx-auto mb-2" />
+                  <p className="text-sm">No students found matching "<span className="font-medium">{debouncedSearch}</span>"</p>
+                </div>
+              )}
+            </div>
+          ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {sorted.map((cls) => {
               const iconMap: Record<string, { icon: React.ReactNode; bg: string }> = {
@@ -271,17 +364,25 @@ export default function StudentSection() {
               };
               const ic = iconMap[cls.name] || { icon: <BookOpen size={28} className="mx-auto" />, bg: 'from-blue-400 to-indigo-600' };
               return (
-                <button key={cls.id} onClick={() => { setActiveClass(cls.name); setForm({ ...form, className: cls.name }); }}
-                  className="bg-white p-5 rounded-2xl border border-school-border text-center hover:border-school-accent card-shadow transition-all">
-                  <div className={`w-14 h-14 bg-gradient-to-br ${ic.bg} text-white rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-md`}>
-                    {ic.icon}
-                  </div>
-                  <div className="font-bold text-sm text-school-primary">{cls.name}</div>
-                  <div className="text-[11px] text-school-muted mt-1">{cls.studentCount} student{cls.studentCount !== 1 ? 's' : ''}</div>
-                </button>
+                <div key={cls.id} className="bg-white p-5 rounded-2xl border border-school-border text-center card-shadow relative group">
+                  <button onClick={() => { setActiveClass(cls.name); setForm({ ...form, className: cls.name }); }}
+                    className="w-full text-center">
+                    <div className={`w-14 h-14 bg-gradient-to-br ${ic.bg} text-white rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-md`}>
+                      {ic.icon}
+                    </div>
+                    <div className="font-bold text-sm text-school-primary">{cls.name}</div>
+                    <div className="text-[11px] text-school-muted mt-1">{cls.studentCount} student{cls.studentCount !== 1 ? 's' : ''}</div>
+                  </button>
+                  {isAdmin && (
+                    <button onClick={() => { setArchiveId(cls.id); setArchiveName(cls.name); }} className="absolute top-2 right-2 p-1.5 bg-school-paper rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50" title="Archive all students in this class" aria-label="Archive class">
+                      <Archive size={14} className="text-school-muted hover:text-red-500" />
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
+            )}
         </div>
       ) : (
         <div>
@@ -327,6 +428,7 @@ export default function StudentSection() {
         </div>
       )}
       <DeleteConfirmModal open={!!deleteId} title="Delete Student" message="This will permanently delete this student and all their results." onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} loading={deleteLoading} />
+      <DeleteConfirmModal open={!!archiveId} title="Archive Class" message={`Archive all students in ${archiveName}? This will mark them as graduated.`} onConfirm={confirmArchive} onCancel={() => { setArchiveId(null); setArchiveName(''); }} loading={archiveLoading} />
     </div>
   );
 }

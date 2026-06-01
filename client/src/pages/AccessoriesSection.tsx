@@ -4,8 +4,7 @@ import { toast } from '../components/Toast';
 import ClassManagerModal from '../components/ClassManagerModal';
 import { Settings, RefreshCw, Plus, Pencil, ChevronUp, ChevronDown, Check, BookOpen, ArrowLeft } from 'lucide-react';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 function BookSkeleton() {
   return (
@@ -20,6 +19,7 @@ function BookSkeleton() {
 }
 
 const AccessoriesSection: React.FC = () => {
+  useEffect(() => { document.title = 'Accessories - AL RAWA English School'; }, []);
   const { classes, books, loading, fetchClasses, fetchBooks } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'admin';
@@ -34,7 +34,7 @@ const AccessoriesSection: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchClasses(); fetchBooks(); }, []);
 
-  const sorted = [...classes].sort((a, b) => a.order - b.order);
+  const sorted = [...classes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const classBooks = books.filter((b: any) => activeClass && b.class?.name === activeClass);
   const totalSell = classBooks.reduce((sum: number, b: any) => sum + Number(b.sell || 0), 0);
 
@@ -204,7 +204,7 @@ const AccessoriesSection: React.FC = () => {
           ) : (
             <div className="bg-white rounded-xl border border-school-border overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm mobile-card-table">
                   <thead>
                     <tr className="bg-school-paper text-school-muted text-xs uppercase tracking-wider">
                       <th className="px-4 py-3 text-left">#</th>

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore, useUserManagementStore } from '../store';
 import { Users, Trash2, ChevronDown, AlertTriangle } from 'lucide-react';
+import Layout from '../components/Layout';
+import { toast } from '../components/Toast';
 
 const ROLE_BADGES: Record<string, string> = {
   admin: 'bg-purple-100 text-purple-700 border-purple-200',
@@ -15,6 +17,7 @@ const UserManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
+  useEffect(() => { document.title = 'User Management - AL RAWA English School'; }, []);
   useEffect(() => {
     Promise.all([fetchUsers(), fetchRoles()]).finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -22,8 +25,9 @@ const UserManagement: React.FC = () => {
   const handleRoleChange = async (userId: string, newRole: string) => {
     try {
       await updateRole(userId, newRole);
+      toast('Role updated', 'success');
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to update role');
+      toast(err.response?.data?.error || 'Failed to update role', 'error');
     }
   };
 
@@ -31,20 +35,24 @@ const UserManagement: React.FC = () => {
     try {
       await deleteUser(userId);
       setConfirmDelete(null);
+      toast('User deleted', 'success');
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to delete user');
+      toast(err.response?.data?.error || 'Failed to delete user', 'error');
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-8 h-8 border-3 border-school-primary/20 border-t-school-primary rounded-full animate-spin" />
-      </div>
+      <Layout>
+        <div className="flex items-center justify-center py-20">
+          <div className="w-8 h-8 border-3 border-school-primary/20 border-t-school-primary rounded-full animate-spin" />
+        </div>
+      </Layout>
     );
   }
 
   return (
+    <Layout>
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex items-center gap-3 mb-6">
         <div className="w-10 h-10 bg-purple-500 text-white rounded-xl flex items-center justify-center">
@@ -82,7 +90,7 @@ const UserManagement: React.FC = () => {
       {/* Users Table */}
       <div className="bg-white rounded-xl border border-school-border overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm mobile-card-table">
             <thead>
               <tr className="bg-gray-50 border-b border-school-border">
                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase text-school-muted">User</th>
@@ -181,6 +189,7 @@ const UserManagement: React.FC = () => {
         </div>
       </div>
     </div>
+    </Layout>
   );
 };
 

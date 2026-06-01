@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { ClipboardList, X } from 'lucide-react';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 const ACTION_LABELS: Record<string, string> = {
   CREATE: 'Create',
@@ -36,6 +35,8 @@ const AuditLogs: React.FC = () => {
   const [dateTo, setDateTo] = useState('');
   const [userIdFilter, setUserIdFilter] = useState('');
   const [detailLog, setDetailLog] = useState<any>(null);
+
+  useEffect(() => { document.title = 'Audit Logs - AL RAWA English School'; }, []);
 
   const fetchLogs = async () => {
     setLoading(true);

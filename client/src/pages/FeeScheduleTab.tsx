@@ -171,7 +171,7 @@ const FeeScheduleTab: React.FC = () => {
                   <span className="text-[10px] text-school-muted ml-auto">{items.length} schedule{items.length > 1 ? 's' : ''}</span>
                 </button>
                 {isOpen && (
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm mobile-card-table">
                     <thead><tr className="bg-school-primary text-white text-[10px] uppercase">
                       <th className="px-3 py-2 text-left">Category</th>
                       <th className="px-3 py-2 text-right">Amount</th>

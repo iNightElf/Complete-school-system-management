@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError } from "../lib/errors.js";
+import { sanitizeError, errorStatus } from "../lib/errors.js";
 import { logAudit } from "../lib/audit.js";
 import { param } from "../lib/param.js";
 
@@ -71,7 +71,7 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
     logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "StudentFeeAssignment", entityId: created.id, details: JSON.stringify({ studentId, feeScheduleId }) });
     res.status(201).json(created);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
@@ -82,15 +82,14 @@ export const bulkAssign = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "feeScheduleId and studentIds array are required" });
     }
 
-    const results = await Promise.allSettled(
-      studentIds.map(async (sid: string) => {
-        // Deactivate any existing active assignment
-        await prisma.studentFeeAssignment.updateMany({
+    const count = await prisma.$transaction(async (tx) => {
+      let done = 0;
+      for (const sid of studentIds) {
+        await tx.studentFeeAssignment.updateMany({
           where: { studentId: sid, feeScheduleId, active: true },
           data: { active: false },
         });
-        // Create new record
-        return prisma.studentFeeAssignment.create({
+        await tx.studentFeeAssignment.create({
           data: {
             studentId: sid,
             feeScheduleId,
@@ -99,13 +98,14 @@ export const bulkAssign = async (req: AuthRequest, res: Response) => {
             ...(endsAt ? { endsAt: new Date(endsAt) } : {}),
           },
         });
-      })
-    );
+        done++;
+      }
+      return done;
+    });
 
-    const count = results.filter(r => r.status === "fulfilled").length;
     logAudit({ userId: req.session?.user?.id, action: "BULK_ASSIGN", entityType: "StudentFeeAssignment", entityId: feeScheduleId, details: JSON.stringify({ studentIds: studentIds.length, count }) });
     res.json({ count });
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };

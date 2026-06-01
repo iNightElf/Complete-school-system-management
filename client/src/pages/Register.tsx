@@ -3,8 +3,7 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { UserPlus, ShieldAlert, MailCheck, School, KeyRound } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 const Register: React.FC = () => {
   const [name, setName] = useState('');
@@ -17,6 +16,7 @@ const Register: React.FC = () => {
   const [registered, setRegistered] = useState(false);
   const [setupMode, setSetupMode] = useState<boolean | null>(null);
 
+  useEffect(() => { document.title = 'Register - AL RAWA English School'; }, []);
   useEffect(() => {
     axios.get(`${API_URL}/setup/status`)
       .then(res => setSetupMode(!res.data.adminExists && res.data.setupTokenRequired))

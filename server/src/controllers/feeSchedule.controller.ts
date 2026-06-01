@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError } from "../lib/errors.js";
+import { sanitizeError, errorStatus } from "../lib/errors.js";
 import { logAudit } from "../lib/audit.js";
 import { param } from "../lib/param.js";
 
@@ -46,7 +46,7 @@ export const createFeeSchedule = async (req: AuthRequest, res: Response) => {
     logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "FeeSchedule", entityId: schedule.id, details: JSON.stringify({ academicYearId, classId, category, amount }) });
     res.status(201).json(schedule);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
@@ -69,7 +69,7 @@ export const updateFeeSchedule = async (req: AuthRequest, res: Response) => {
     logAudit({ userId: req.session?.user?.id, action: "UPDATE", entityType: "FeeSchedule", entityId: id, details: JSON.stringify(data) });
     res.json(schedule);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
@@ -80,6 +80,6 @@ export const deleteFeeSchedule = async (req: AuthRequest, res: Response) => {
     logAudit({ userId: req.session?.user?.id, action: "DELETE", entityType: "FeeSchedule", entityId: id });
     res.status(204).send();
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };

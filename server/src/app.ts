@@ -10,6 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 import { auth } from "./lib/auth.js";
 import { prisma } from "./lib/prisma.js";
+import { sanitizeError, waitForDatabase } from "./lib/errors.js";
 import { requestIdMiddleware, log } from "./lib/logger.js";
 import { toNodeHandler } from "better-auth/node";
 import * as students from "./controllers/student.controller.js";
@@ -84,23 +85,32 @@ app.delete("/api/users/:id", authenticate, authorizePermission("users:write"), u
 // ── Students ──
 app.get("/api/students", authenticate, authorizePermission("students:read"), students.getAllStudents);
 app.post("/api/students", authenticate, authorizePermission("students:write"), students.createStudent);
+app.post("/api/students/import", authenticate, authorizePermission("students:write"), students.importStudents);
 app.put("/api/students/:id", authenticate, authorizePermission("students:write"), students.updateStudent);
 app.delete("/api/students/:id", authenticate, authorizePermission("students:write"), students.deleteStudent);
 app.get("/api/students/:id/photo", authenticate, authorizePermission("students:read"), students.getStudentPhoto);
+app.post("/api/students/:id/restore", authenticate, authorizePermission("students:write"), students.restoreStudent);
+app.post("/api/students/:id/graduate", authenticate, authorizePermission("students:write"), students.graduateStudent);
+app.post("/api/students/:id/ungraduate", authenticate, authorizePermission("students:write"), students.ungraduateStudent);
+app.post("/api/classes/:classId/graduate", authenticate, authorizePermission("students:write"), students.graduateClass);
 
 // ── Teachers ──
 app.get("/api/teachers", authenticate, authorizePermission("teachers:read"), ops.getAllTeachers);
 app.post("/api/teachers", authenticate, authorizePermission("teachers:write"), ops.createTeacher);
+app.post("/api/teachers/import", authenticate, authorizePermission("teachers:write"), ops.importTeachers);
 app.put("/api/teachers/:id", authenticate, authorizePermission("teachers:write"), ops.updateTeacher);
 app.delete("/api/teachers/:id", authenticate, authorizePermission("teachers:write"), ops.deleteTeacher);
 app.get("/api/teachers/:id/photo", authenticate, authorizePermission("teachers:read"), ops.getTeacherPhoto);
+app.post("/api/teachers/:id/restore", authenticate, authorizePermission("teachers:write"), ops.restoreTeacher);
 
 // ── Staff ──
 app.get("/api/staff", authenticate, authorizePermission("staff:read"), ops.getAllStaff);
 app.post("/api/staff", authenticate, authorizePermission("staff:write"), ops.createStaff);
+app.post("/api/staff/import", authenticate, authorizePermission("staff:write"), ops.importStaff);
 app.put("/api/staff/:id", authenticate, authorizePermission("staff:write"), ops.updateStaff);
 app.delete("/api/staff/:id", authenticate, authorizePermission("staff:write"), ops.deleteStaff);
 app.get("/api/staff/:id/photo", authenticate, authorizePermission("staff:read"), ops.getStaffPhoto);
+app.post("/api/staff/:id/restore", authenticate, authorizePermission("staff:write"), ops.restoreStaff);
 
 // ── Books (Accessories) ──
 app.get("/api/books", authenticate, authorizePermission("books:read"), ops.getAllBooks);
@@ -180,8 +190,25 @@ app.get("/api/audit", authenticate, authorizePermission("audit:read"), audit.get
 app.get("/api/audit/actions", authenticate, authorizePermission("audit:read"), audit.getAuditActions);
 app.get("/api/audit/entity-types", authenticate, authorizePermission("audit:read"), audit.getAuditEntityTypes);
 
+// Wake DB (client calls this on load to warm up Neon)
+app.get("/api/wake-db", async (_req, res) => {
+  try {
+    await waitForDatabase(prisma, 20, 1500);
+    res.json({ status: "ok" });
+  } catch {
+    res.status(503).json({ error: "Database unreachable" });
+  }
+});
+
 // Health Check
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
+app.get("/health", async (_req, res) => {
+  try {
+    await prisma.$queryRawUnsafe('SELECT 1');
+    res.json({ status: "ok", database: "connected" });
+  } catch {
+    res.json({ status: "ok", database: "connecting" });
+  }
+});
 
 // ── API 404 handler — unmatched /api/* routes return JSON, not SPA HTML ──
 app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
@@ -200,7 +227,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
     stack: process.env.NODE_ENV !== "production" ? err?.stack : undefined,
   });
   const message = process.env.NODE_ENV === "production"
-    ? "Internal server error"
+    ? sanitizeError(err)
     : err?.message || "Internal server error";
   res.status(err?.status || err?.statusCode || 500).json({ error: message });
 });

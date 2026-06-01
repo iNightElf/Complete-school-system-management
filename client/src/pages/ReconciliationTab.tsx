@@ -3,8 +3,7 @@ import axios from 'axios';
 import { Scale, Plus, X, Download } from 'lucide-react';
 import { toast } from '../components/Toast';
 import { useAuthStore } from '../store';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 const ACCOUNTS = ['AL_RAWA_BANK', 'GLOBAL_FORUM_BANK', 'CASH_IN_HAND'];
 

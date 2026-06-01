@@ -68,6 +68,7 @@ function printDiv(id: string) {
 }
 
 const FinanceReports: React.FC = () => {
+  useEffect(() => { document.title = 'Finance Reports - AL RAWA English School'; }, []);
   const { transactions, fetchTransactions, students, fetchStudents, fetchFinance, fetchOpeningBalances, setOpeningBalances, openingBalancesHistory, fetchOpeningBalanceHistory, revertOpeningBalance } = useSchoolStore();
   const [tab, setTab] = useState<ReportTab>('headwise-income');
   const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
@@ -148,7 +149,7 @@ const FinanceReports: React.FC = () => {
   const expenseTx = filtered.filter((t: any) => t.transactionType === 'EXPENSE' && t.affectsExpenseLedger);
   const yearIncome = yearFiltered.filter((t: any) => t.transactionType === 'INCOME' && t.affectsIncomeLedger);
   const yearExpense = yearFiltered.filter((t: any) => t.transactionType === 'EXPENSE' && t.affectsExpenseLedger);
-  const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const fmtDate = (d: string | undefined) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 
 
@@ -302,13 +303,13 @@ const FinanceReports: React.FC = () => {
         <div className="bg-white rounded-xl border border-school-border p-4" id="print-area">
           <h4 className="font-serif text-sm text-school-primary mb-3">Monthly Income — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
           {(() => { if (!incomeTx.length) return <p className="text-sm text-school-muted">No income data for this period.</p>;
-            const sorted = [...incomeTx].sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
+            const sorted = [...incomeTx].sort((a, b) => new Date(a.transactionDate ?? a.date).getTime() - new Date(b.transactionDate ?? b.date).getTime());
             const total = sorted.reduce((s, t) => s + Number(t.amount), 0);
             return (
             <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Date</th><th className="px-3 py-2 text-left">Class</th><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-right">Amount</th></tr></thead>
               <tbody>{sorted.map((t, i) => <tr key={t.id} className={`border-t border-school-border/50 ${i % 2 ? 'bg-school-paper/30' : ''}`}>
                 <td className="px-3 py-2 whitespace-nowrap text-xs font-mono">{fmtDate(t.transactionDate)}</td>
-                <td className="px-3 py-2 text-xs">{t.student?.class || t.className || '—'}</td>
+                <td className="px-3 py-2 text-xs">{t.className || '—'}</td>
                 <td className="px-3 py-2 text-xs font-medium">{t.student?.name || '—'}</td>
                 <td className="px-3 py-2 font-medium">{t.category || 'Uncategorized'}</td>
                 <td className="px-3 py-2 text-right font-bold text-emerald-600">{fmt(Number(t.amount))} /-</td>
@@ -323,7 +324,7 @@ const FinanceReports: React.FC = () => {
         <div className="bg-white rounded-xl border border-school-border p-4" id="print-area">
           <h4 className="font-serif text-sm text-school-primary mb-3">Monthly Expense — {getMonthName(Number(dateFrom.split('-')[1]) - 1)} {dateFrom.split('-')[0]} to {getMonthName(Number(dateTo.split('-')[1]) - 1)} {dateTo.split('-')[0]}</h4>
           {(() => { if (!expenseTx.length) return <p className="text-sm text-school-muted">No expense data for this period.</p>;
-            const sorted = [...expenseTx].sort((a, b) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
+            const sorted = [...expenseTx].sort((a, b) => new Date(a.transactionDate ?? a.date).getTime() - new Date(b.transactionDate ?? b.date).getTime());
             const total = sorted.reduce((s, t) => s + Number(t.amount), 0);
             return (
             <table className="w-full text-sm"><thead><tr className="bg-school-primary text-white text-[10px] uppercase"><th className="px-3 py-2 text-left">Date</th><th className="px-3 py-2 text-left">Category</th><th className="px-3 py-2 text-left">Description</th><th className="px-3 py-2 text-right">Amount</th></tr></thead>

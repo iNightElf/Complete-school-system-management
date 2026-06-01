@@ -17,6 +17,7 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
 
 const ResultSection: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('subject');
+  useEffect(() => { document.title = 'Results - AL RAWA English School'; }, []);
   useEffect(() => { useUIStore.getState().registerSwipeBack(() => setActiveTab('subject')); }, []);
 
   return (

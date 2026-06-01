@@ -1,7 +1,7 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuthStore, useUIStore, useDarkMode } from '../store';
+import { useAuthStore, useUIStore, useDarkMode, useSchoolStore } from '../store';
 import { ChevronLeft, Lock, Users, Sun, Moon, ClipboardList } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
 import BottomNav from './BottomNav';
@@ -19,10 +19,11 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [, setSearchParams] = useSearchParams();
   const { logout, user } = useAuthStore();
   const role = user?.role;
-  const { activeMode, swipeBack } = useUIStore();
+  const { activeMode, swipeBack, setMode } = useUIStore();
   const { dark, toggle: toggleDark } = useDarkMode();
 
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); }, [dark]);
@@ -50,6 +51,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const connLabel = connState === 'connected' ? 'Connected' : connState === 'disconnected' ? 'Disconnected' : 'Checking…';
   const connDotClass = connState === 'connected' ? 'bg-green-500' : connState === 'disconnected' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse';
+  const lastFetched = useSchoolStore((s) => s.lastFetched);
+  const lastFetchedLabel = lastFetched
+    ? new Date(lastFetched).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : null;
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
@@ -90,11 +95,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <ChevronLeft size={24} />
             </button>
           )}
-          <img src={SCHOOL_LOGO} alt="Logo" className="w-9 h-9 rounded-full object-cover ring-2 ring-white/20 shadow-sm" id="school-logo" />
-          <div>
-            <h1 className="font-serif text-xl leading-tight">AL RAWA</h1>
-            <p className="text-[10px] uppercase tracking-widest opacity-70">English School</p>
-          </div>
+          <button onClick={() => { setMode(null); navigate('/'); }} className="flex items-center gap-3 text-left">
+            <img src={SCHOOL_LOGO} alt="Logo" className="w-9 h-9 rounded-full object-cover ring-2 ring-white/20 shadow-sm" id="school-logo" />
+            <div>
+              <h1 className="font-serif text-xl leading-tight">AL RAWA</h1>
+              <p className="text-[10px] uppercase tracking-widest opacity-70">English School</p>
+            </div>
+          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -145,7 +152,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <main className="flex-1 overflow-x-hidden relative" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeMode || 'home'}
+            key={activeMode || location.pathname}
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
@@ -160,9 +167,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Footer */}
       <footer className="bg-school-secondary text-white/50 text-[10px] py-2 px-4 flex justify-between items-center border-t border-white/5">
         <span>© 2026 AL RAWA English School</span>
-        <div className="flex items-center gap-2">
-          <div className={`w-1.5 h-1.5 rounded-full ${connDotClass}`}></div>
-          <span className={`uppercase tracking-widest text-[9px] ${connState === 'disconnected' ? 'text-red-400' : ''}`}>{connLabel}</span>
+        <div className="flex items-center gap-3">
+          {lastFetchedLabel && <span className="hidden sm:inline text-[9px] opacity-60">Updated {lastFetchedLabel}</span>}
+          <div className="flex items-center gap-2">
+            <div className={`w-1.5 h-1.5 rounded-full ${connDotClass}`}></div>
+            <span className={`uppercase tracking-widest text-[9px] ${connState === 'disconnected' ? 'text-red-400' : ''}`}>{connLabel}</span>
+          </div>
         </div>
       </footer>
 

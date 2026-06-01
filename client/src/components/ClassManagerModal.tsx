@@ -44,12 +44,12 @@ const ClassManagerModal: React.FC<Props> = ({ open, onClose }) => {
   const handleMove = async (index: number, dir: -1 | 1) => {
     const j = index + dir;
     if (j < 0 || j >= classes.length) return;
-    const sorted = [...classes].sort((a, b) => a.order - b.order);
+    const sorted = [...classes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     [sorted[index], sorted[j]] = [sorted[j], sorted[index]];
     await reorderClasses(sorted.map((c) => c.id));
   };
 
-  const sorted = [...classes].sort((a, b) => a.order - b.order);
+  const sorted = [...classes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>

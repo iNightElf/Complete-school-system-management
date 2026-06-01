@@ -14,6 +14,7 @@ interface DataTableProps<T> {
   data: T[];
   keyExtractor: (item: T) => string;
   loading?: boolean;
+  error?: string | null;
   emptyMessage?: string;
   className?: string;
 }
@@ -23,6 +24,7 @@ export default function DataTable<T>({
   data,
   keyExtractor,
   loading,
+  error,
   emptyMessage = 'No data',
   className = '',
 }: DataTableProps<T>) {
@@ -32,6 +34,14 @@ export default function DataTable<T>({
         {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="h-10 bg-school-paper/50 rounded-lg animate-pulse" />
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={`text-center py-8 ${className}`}>
+        <p className="text-red-500">{error}</p>
       </div>
     );
   }

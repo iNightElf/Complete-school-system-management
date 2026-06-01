@@ -3,8 +3,7 @@ import { toast } from '../components/Toast';
 import { Upload, Trash2, Edit2, Check, X, Download, Loader } from 'lucide-react';
 import { useSchoolStore } from '../store';
 import axios from 'axios';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 const EXPENSE_CATEGORIES = ['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense'];
 

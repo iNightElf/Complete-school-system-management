@@ -1,7 +1,6 @@
 import jsPDF from 'jspdf';
 import { gradeFromMarks, gpaToGrade, calcYearRanks, calcTermRanks } from './grading';
-
-const TERM_NAMES: Record<string, string> = { '1': '1st Term', '2': '2nd Term', '3': 'Final Exam' };
+import { TERM_NAMES } from './config';
 
 export function tabulationPDF({ clsName, subjects, clsStudents, allResults, term }: { clsName: string; subjects: any[]; clsStudents: any[]; allResults: any[]; term: string }) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });

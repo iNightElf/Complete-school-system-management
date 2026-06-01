@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { AlertTriangle } from 'lucide-react';
 
 interface DeleteConfirmModalProps {
@@ -10,6 +11,16 @@ interface DeleteConfirmModalProps {
 }
 
 export default function DeleteConfirmModal({ open, title, message, onConfirm, onCancel, loading }: DeleteConfirmModalProps) {
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Enter' && !loading) onConfirm();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onCancel, onConfirm, loading]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onCancel}>

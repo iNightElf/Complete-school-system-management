@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { MailCheck, ShieldAlert } from 'lucide-react';
 
 const VerifyEmail: React.FC = () => {
+  useEffect(() => { document.title = 'Verify Email - AL RAWA English School'; }, []);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');

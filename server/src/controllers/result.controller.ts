@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError } from "../lib/errors.js";
+import { sanitizeError, errorStatus } from "../lib/errors.js";
 import { validate, saveStudentResultSchema } from "../lib/validate.js";
 
 export const getSubjectsByClass = async (req: Request, res: Response) => {
@@ -41,7 +41,7 @@ export const createSubject = async (req: Request, res: Response) => {
 
     res.status(201).json(subject);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
@@ -60,7 +60,7 @@ export const updateSubject = async (req: Request, res: Response) => {
 
     res.json(subject);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
@@ -105,36 +105,42 @@ export const saveStudentResult = async (req: Request, res: Response) => {
 
     const sessionVal = session || String(new Date().getFullYear());
 
-    const existing = await prisma.result.findUnique({
-      where: { studentId_term_session: { studentId: id, term: String(term), session: sessionVal } },
-    });
-    const mergedMarks = existing
-      ? { ...(existing.marks as Record<string, number>), ...marks }
-      : marks;
-    const mergedAttendance = attendance && existing?.attendance
-      ? { ...((existing.attendance as Record<string, number>) || {}), ...attendance }
-      : (attendance || existing?.attendance);
+    const student = await prisma.student.findUnique({ where: { id } });
+    if (!student) return res.status(404).json({ error: "Student not found" });
 
-    const result = await prisma.result.upsert({
-      where: { studentId_term_session: { studentId: id, term: String(term), session: sessionVal } },
-      create: {
-        studentId: id,
-        session: sessionVal,
-        term: String(term),
-        marks: mergedMarks,
-        attendance: mergedAttendance || null,
-        comment: comment || null,
-      },
-      update: {
-        marks: mergedMarks,
-        attendance: mergedAttendance,
-        ...(comment !== undefined ? { comment } : {}),
-      },
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.result.findUnique({
+        where: { studentId_term_session: { studentId: id, term: String(term), session: sessionVal } },
+      });
+      const marksKeys = marks && typeof marks === 'object' ? Object.keys(marks) : [];
+      const mergedMarks = existing && marksKeys.length > 0
+        ? { ...((existing.marks as Record<string, number>) || {}), ...marks }
+        : (existing && marksKeys.length === 0 ? existing.marks : marks);
+      const mergedAttendance = attendance && existing?.attendance
+        ? { ...((existing.attendance as Record<string, number>) || {}), ...attendance }
+        : (attendance || existing?.attendance);
+
+      return tx.result.upsert({
+        where: { studentId_term_session: { studentId: id, term: String(term), session: sessionVal } },
+        create: {
+          studentId: id,
+          session: sessionVal,
+          term: String(term),
+          marks: mergedMarks,
+          attendance: mergedAttendance || null,
+          comment: comment || null,
+        },
+        update: {
+          marks: mergedMarks,
+          attendance: mergedAttendance,
+          ...(comment !== undefined ? { comment } : {}),
+        },
+      });
     });
 
     res.json(result);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 

@@ -1,7 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import { readFileSync } from 'fs';
 
-let rawData = readFileSync('C:\\Users\\Owner\\AppData\\Local\\Temp\\firebase_data.json', 'utf-8');
+const DATA_PATH = process.argv[2] || 'C:\\Users\\Owner\\AppData\\Local\\Temp\\firebase_data.json';
+let rawData = readFileSync(DATA_PATH, 'utf-8');
 if (rawData.charCodeAt(0) === 0xFEFF) rawData = rawData.slice(1);
 const FB = JSON.parse(rawData);
 
@@ -101,7 +102,72 @@ async function main() {
   }
   console.log(`Books: ${bCount}`);
 
-  // 7. Fee Schedules (clean up duplicates first)
+  // 7. Subjects
+  let subCount = 0;
+  for (const [className, classKey] of Object.entries(LEGACY_KEYS)) {
+    const cls = classes[classKey];
+    if (!cls) continue;
+    const subjectData = FB.results?.[classKey]?.subjects;
+    if (!subjectData) continue;
+    const subjects = Array.isArray(subjectData) ? subjectData : Object.values(subjectData);
+    for (let i = 0; i < subjects.length; i++) {
+      const s = subjects[i];
+      if (!s?.name) continue;
+      try {
+        await p.subject.upsert({
+          where: { name_classId: { name: s.name, classId: cls.id } },
+          update: { fullMarks: Number(s.fullMarks) || 100, order: i },
+          create: { name: s.name, fullMarks: Number(s.fullMarks) || 100, classId: cls.id, order: i },
+        });
+        subCount++;
+      } catch (e) {
+        console.log(`  Error creating subject ${s.name}: ${e.message}`);
+      }
+    }
+  }
+  console.log(`Subjects: ${subCount}`);
+
+  // 8. Photos (students, teachers, staff)
+  let photoCount = 0;
+  function photoToBuffer(photo) {
+    if (!photo || typeof photo !== 'string' || !photo.includes('base64,')) return null;
+    return Buffer.from(photo.split(',')[1], 'base64');
+  }
+  for (const [ck, arr] of Object.entries(FB.students || {})) {
+    const cls = classes[ck];
+    if (!cls) continue;
+    for (const s of (arr || [])) {
+      if (!s?.name) continue;
+      const buf = photoToBuffer(s.photo);
+      if (!buf) continue;
+      const roll = s.roll || s.id || null;
+      const student = await p.student.findFirst({ where: roll ? { class: cls.name, roll } : { class: cls.name, name: s.name } });
+      if (!student) continue;
+      await p.student.update({ where: { id: student.id }, data: { photo: buf } });
+      photoCount++;
+    }
+  }
+  for (const t of (FB.teachers || [])) {
+    if (!t?.name) continue;
+    const buf = photoToBuffer(t.photo);
+    if (!buf) continue;
+    const match = await p.teacher.findFirst({ where: { name: t.name } });
+    if (!match) continue;
+    await p.teacher.update({ where: { id: match.id }, data: { photo: buf } });
+    photoCount++;
+  }
+  for (const s of (FB.staff || [])) {
+    if (!s?.name) continue;
+    const buf = photoToBuffer(s.photo);
+    if (!buf) continue;
+    const match = await p.staff.findFirst({ where: { name: s.name } });
+    if (!match) continue;
+    await p.staff.update({ where: { id: match.id }, data: { photo: buf } });
+    photoCount++;
+  }
+  console.log(`Photos: ${photoCount}`);
+
+  // 9. Fee Schedules (clean up duplicates first)
   const allFees = await p.feeSchedule.findMany({ select: { id: true, category: true, classId: true, academicYearId: true, frequency: true } });
   const seen = new Set();
   for (const f of allFees) {
@@ -144,7 +210,7 @@ async function main() {
   }
   console.log(`Fee schedules: ${fCount}`);
 
-  // 8. Results (use raw SQL since Prisma client may be out of sync)
+  // 10. Results (use raw SQL since Prisma client may be out of sync)
   let rCount = 0;
   for (const [ck, cr] of Object.entries(FB.results || {})) {
     const cls = classes[ck];
@@ -186,7 +252,7 @@ async function main() {
       for (let t = 0; t < terms.length; t++) {
         const td = terms[t];
         if (!td) continue;
-        const term = `Term ${t + 1}`;
+        const term = `${t + 1}`;
         try {
           const params = [student.id, term, JSON.stringify(td), attendance?.[t] ? JSON.stringify(attendance[t]) : null, comment];
           await p.$executeRawUnsafe(
@@ -207,7 +273,7 @@ async function main() {
   }
   console.log(`Results: ${rCount}`);
 
-  // 9. Transactions (fee payments)
+  // 11. Transactions (fee payments)
   const payments = FB.fees?.payments || {};
   const studentFees = FB.fees?.studentFees || {};
   let txCount = 0;
@@ -233,7 +299,7 @@ async function main() {
             await p.transaction.create({
               data: {
                 transactionDate: new Date(pd.date || Date.now()),
-                transactionType: 'income',
+                transactionType: 'INCOME',
                 amount: pd.amount,
                 category: head.name,
                 description: `${cls.name} - ${head.name} - ${period}`,

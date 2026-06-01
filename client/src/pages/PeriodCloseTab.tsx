@@ -3,8 +3,7 @@ import axios from 'axios';
 import { Lock, Unlock, Plus, X } from 'lucide-react';
 import { toast } from '../components/Toast';
 import { useAuthStore } from '../store';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -87,9 +86,25 @@ export default function PeriodCloseTab() {
 
       <div className="divide-y divide-school-border">
         {loading ? (
-          <div className="px-5 py-8 text-center text-xs text-school-muted">Loading...</div>
+          <div className="px-5 py-6 space-y-3">
+            {[1,2,3].map(i => (
+              <div key={i} className="flex items-center justify-between px-5 py-3">
+                <div className="space-y-2 flex-1">
+                  <div className="h-4 bg-gray-100 rounded w-24 animate-pulse" />
+                  <div className="h-3 bg-gray-50 rounded w-40 animate-pulse" />
+                </div>
+                <div className="h-8 bg-gray-100 rounded w-20 animate-pulse" />
+              </div>
+            ))}
+          </div>
         ) : periods.length === 0 ? (
-          <div className="px-5 py-8 text-center text-xs text-school-muted">No closed periods</div>
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-3">
+              <Lock size={20} className="text-gray-300" />
+            </div>
+            <p className="text-sm text-school-muted">No closed periods</p>
+            <p className="text-[10px] text-school-muted mt-1">Closed fiscal years will appear here</p>
+          </div>
         ) : periods.map(p => (
           <div key={p.id} className="px-5 py-3 flex items-center justify-between">
             <div>

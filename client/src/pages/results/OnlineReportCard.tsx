@@ -4,9 +4,7 @@ import { Download, User, CalendarDays, MessageSquare } from 'lucide-react';
 import { gradeFromMarks, gradeChip, gpaToGrade, calcTermRanks, calcYearRanks, calcYearSummary, calcAttendPct } from '../../lib/grading';
 import { downloadReportCardPDF } from '../../lib/reportPdf';
 import { SCHOOL_LOGO } from '../../lib/logo';
-
-const API_URL = '/api';
-const TERM_NAMES: Record<string, string> = { '1': '1st Term', '2': '2nd Term', '3': 'Final Exam' };
+import { API_URL, TERM_NAMES } from '../../lib/config';
 
 export default function OnlineReportCard({ student, cls, subjects, allResults, term, onBack }: { student: any; cls: any; subjects: any[]; allResults: any[]; term: string; onBack: () => void }) {
   const isFinal = term === 'final';

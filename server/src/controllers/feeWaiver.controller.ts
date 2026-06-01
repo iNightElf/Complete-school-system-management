@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError } from "../lib/errors.js";
+import { sanitizeError, errorStatus } from "../lib/errors.js";
 import { logAudit } from "../lib/audit.js";
 import { param } from "../lib/param.js";
 
@@ -47,7 +47,7 @@ export const createFeeWaiver = async (req: AuthRequest, res: Response) => {
     logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "FeeWaiver", entityId: waiver.id, details: JSON.stringify({ studentId, feeScheduleId, value }) });
     res.status(201).json(waiver);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 
@@ -64,6 +64,6 @@ export const deactivateFeeWaiver = async (req: AuthRequest, res: Response) => {
     logAudit({ userId: req.session?.user?.id, action: "DEACTIVATE", entityType: "FeeWaiver", entityId: id });
     res.json(waiver);
   } catch (error: any) {
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };

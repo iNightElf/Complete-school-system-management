@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { useSchoolStore, useAuthStore } from '../../store';
 import { toast } from '../../components/Toast';
 import CameraModal from '../../components/CameraModal';
+import ImportModal from '../../components/ImportModal';
 import { CardSkeleton } from '../../components/Skeleton';
-import { RefreshCw, Mail, Download, Camera, Pencil, Trash2, Check, Building2 } from 'lucide-react';
+import { RefreshCw, Mail, Download, Upload, Camera, Pencil, Trash2, Check, Building2 } from 'lucide-react';
 import { contactLinks } from '../../lib/contacts';
 import DeleteConfirmModal from '../../components/DeleteConfirmModal';
 import jsPDF from 'jspdf';
-
-const API_URL = '/api';
+import { API_URL } from '../../lib/config';
 
 export default function StaffSection() {
   const { staff, fetchStaff, loading } = useSchoolStore();
@@ -16,6 +16,7 @@ export default function StaffSection() {
   const isAdmin = role === 'admin';
 
   const [showCamera, setShowCamera] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddNew, setShowAddNew] = useState(false);
   const [search, setSearch] = useState('');
@@ -23,6 +24,7 @@ export default function StaffSection() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [form, setForm] = useState({ role: '', name: '', email: '', contact: '' });
 
+  useEffect(() => { document.title = 'Staff - AL RAWA English School'; }, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchStaff(); }, []);
 
@@ -76,7 +78,13 @@ export default function StaffSection() {
     try {
       const res = await fetch(`${API_URL}/staff/${deleteId}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Delete failed'); }
-      toast('Staff deleted');
+      toast('Staff deleted', '', { label: 'Undo', onClick: async () => {
+        try {
+          await fetch(`${API_URL}/staff/${deleteId}/restore`, { method: 'POST', credentials: 'include' });
+          toast('Staff restored ✓', 'success');
+          fetchStaff();
+        } catch { toast('Could not undo', 'error'); }
+      }});
     } catch (e: any) { toast(e.message || 'Error', 'error'); }
     setDeleteId(null);
     setDeleteLoading(false);
@@ -86,7 +94,7 @@ export default function StaffSection() {
   const inputCls = 'w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent';
 
   const renderEditCard = (isNew: boolean) => (
-    <div className={`p-4 rounded-2xl border-2 transition-all ${isNew ? 'border-violet-400 bg-violet-50/50' : 'border-blue-400 bg-blue-50/50'}`}>
+    <div className={`p-4 rounded-2xl border-2 transition-all ${isNew ? 'border-violet-400 bg-violet-50/50' : 'border-blue-400 bg-blue-50/50'}`} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}>
       <div className="flex justify-center mb-3">
         <button onClick={() => setShowCamera(true)} className="relative group" aria-label="Take photo">
           {photo ? (
@@ -155,6 +163,7 @@ export default function StaffSection() {
   return (
     <div className="space-y-4">
       <CameraModal open={showCamera} onClose={() => setShowCamera(false)} onCapture={(d) => { setPhoto(d); setShowCamera(false); }} />
+      <ImportModal open={showImport} onClose={() => setShowImport(false)} onImported={() => fetchStaff()} entity="staff" />
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -167,7 +176,7 @@ export default function StaffSection() {
             onClick={async () => {
               const photoCache: Record<string, string> = {};
               await Promise.all(filtered.filter((s: any) => s.hasPhoto).map(async (s: any) => {
-                try { const r = await fetch(`${API_URL}/staff/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch { console.debug('Photo load skipped'); }
+                try { const r = await fetch(`${API_URL}/staff/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
               }));
               const doc = new jsPDF();
               doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
@@ -180,7 +189,7 @@ export default function StaffSection() {
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
                 const lines = [`Role: ${s.role || ''}`, s.email ? `Email: ${s.email}` : null, `Contact: ${s.contact || ''}`].filter(Boolean);
                 if (photoCache[s.id]) {
-                  try { doc.addImage(photoCache[s.id], 'JPEG', 15, y, 22, 22); } catch { console.debug('PDF image add skipped'); }
+                  try { doc.addImage(photoCache[s.id], 'JPEG', 15, y, 22, 22); } catch {}
                   lines.forEach((l, li) => doc.text(l!, 42, y + 5 + li * 5)); y += 28;
                 } else { lines.forEach(l => { doc.text(l!, 15, y); y += 5; }); }
                 doc.setDrawColor(200); doc.setLineWidth(0.3); doc.setLineDashPattern([4, 4], 0);
@@ -192,6 +201,9 @@ export default function StaffSection() {
           >
             <Download size={12} /> PDF
           </button>
+          {isAdmin && <button onClick={() => setShowImport(true)} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
+            <Upload size={12} /> Import
+          </button>}
           <button onClick={() => fetchStaff()} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
             <RefreshCw size={12} /> Refresh
           </button>

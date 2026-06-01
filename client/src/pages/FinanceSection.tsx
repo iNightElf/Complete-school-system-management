@@ -11,8 +11,7 @@ import FeeScheduleTab from './FeeScheduleTab';
 import StudentWaiversTab from './StudentWaiversTab';
 import PeriodCloseTab from './PeriodCloseTab';
 import ReconciliationTab from './ReconciliationTab';
-
-const API_URL = '/api';
+import { API_URL } from '../lib/config';
 
 const ACCOUNTS = [
   { id: 'AL_RAWA_BANK', label: 'AL RAWA English School Bank', short: 'AL RAWA Bank', color: 'from-blue-500 to-blue-600', ring: 'ring-blue-200' },
@@ -227,6 +226,8 @@ const FinanceSection: React.FC = () => {
   const { users, fetchUsers } = useUserManagementStore();
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
+
+  useEffect(() => { document.title = 'Finance - AL RAWA English School'; }, []);
 
   const userMap = useMemo(() => {
     const map: Record<string, string> = {};

@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import type { User } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "./prisma.js";
 import { sendVerificationEmail } from "./email.js";
@@ -45,6 +46,18 @@ export const auth = betterAuth({
     database: {
       generateId: () => {
         return crypto.randomUUID();
+      },
+      hooks: {
+        user: {
+          create: {
+            before: async (user: User & Record<string, unknown>) => {
+              const admin = await prisma.user.findFirst({ where: { role: "admin" }, select: { id: true } });
+              if (!admin) {
+                return { data: { ...user, role: "admin", emailVerified: true } };
+              }
+            },
+          },
+        },
       },
     },
   },

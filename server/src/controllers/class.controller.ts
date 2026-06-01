@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError } from "../lib/errors.js";
+import { sanitizeError, errorStatus } from "../lib/errors.js";
 
 export const getAllClasses = async (req: Request, res: Response) => {
   try {
@@ -54,7 +54,7 @@ export const createClass = async (req: Request, res: Response) => {
     if (error.code === "P2002") {
       return res.status(400).json({ error: "Class already exists" });
     }
-    res.status(400).json({ error: sanitizeError(error) });
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
 };
 

@@ -5,9 +5,7 @@ import ClassSelect from '../../components/ClassSelect';
 import { gradeFromMarks, gradeChip, gpaToGrade, calcTermSummary, calcTermRanks } from '../../lib/grading';
 import OnlineReportCard from './OnlineReportCard';
 import { FileText, Save, CalendarDays, MessageSquare, PenLine, Award, User } from 'lucide-react';
-
-const API_URL = '/api';
-const TERM_NAMES: Record<string, string> = { '1': '1st Term', '2': '2nd Term', '3': 'Final Exam' };
+import { API_URL, TERM_NAMES } from '../../lib/config';
 
 export default function EnterByStudent() {
   const { students, fetchStudents, subjects, fetchSubjects, saveStudentResult } = useSchoolStore();
@@ -37,7 +35,7 @@ export default function EnterByStudent() {
     try { const res = await fetch(`${API_URL}/classes/${clsId}/results`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
   };
 
-  const handleSelectClass = (c: any) => { setCls(c); setActiveStudent(null); fetchSubjects(c.id); fetchStudents(); loadResults(c.id); };
+  const handleSelectClass = (c: any) => { setCls(c); setActiveStudent(null); setActiveTerm('1'); fetchSubjects(c.id); fetchStudents(); loadResults(c.id); };
 
   const clsStudents = cls ? students.filter((s: any) => s.class === cls.name).sort((a: any, b: any) => (+a.roll || 999) - (+b.roll || 999) || a.name.localeCompare(b.name)) : [];
 

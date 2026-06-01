@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useUIStore } from '../store';
 import { GraduationCap, Building2 } from 'lucide-react';
 import StudentSection from './students/StudentSection';
@@ -6,6 +6,7 @@ import TeacherSection from './teachers/TeacherSection';
 import StaffSection from './staff/StaffSection';
 
 const IdCardSection: React.FC = () => {
+  useEffect(() => { document.title = 'ID Cards - AL RAWA English School'; }, []);
   const { activeSubMode, setIdSubMode } = useUIStore();
 
   const tabs = [
