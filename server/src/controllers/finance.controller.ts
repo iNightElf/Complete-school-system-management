@@ -3,25 +3,23 @@ import { classifyTransaction } from "../lib/finance-rules.js";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
 import { sanitizeError, errorStatus } from "../lib/errors.js";
-import { validate, createTransactionSchema } from "../lib/validate.js";
+import { validate, createTransactionSchema, setOpeningBalancesSchema, closePeriodSchema, createReconciliationSchema } from "../lib/validate.js";
 import { logAudit } from "../lib/audit.js";
 import { getFiscalYearForDate, getFiscalYearRange } from "../lib/fiscal-year.js";
 import { param } from "../lib/param.js";
 
-function accountBalancesSql(start: Date, end: Date): string {
-  return `
-    SELECT
-      COALESCE(SUM(CASE WHEN destination_account = 'AL_RAWA_BANK' THEN amount
-                       WHEN source_account = 'AL_RAWA_BANK' THEN -amount ELSE 0 END), 0) AS al_rawa,
-      COALESCE(SUM(CASE WHEN destination_account = 'GLOBAL_FORUM_BANK' THEN amount
-                       WHEN source_account = 'GLOBAL_FORUM_BANK' THEN -amount ELSE 0 END), 0) AS global_forum,
-      COALESCE(SUM(CASE WHEN destination_account = 'CASH_IN_HAND' THEN amount
-                       WHEN source_account = 'CASH_IN_HAND' THEN -amount ELSE 0 END), 0) AS cash
-    FROM transactions
-    WHERE is_cancelled = false AND reversal_of_id IS NULL
-      AND transaction_date >= '${start.toISOString()}' AND transaction_date <= '${end.toISOString()}'
-  `;
-}
+const ACCOUNT_BALANCES_SQL = `
+  SELECT
+    COALESCE(SUM(CASE WHEN destination_account = 'AL_RAWA_BANK' THEN amount
+                     WHEN source_account = 'AL_RAWA_BANK' THEN -amount ELSE 0 END), 0) AS al_rawa,
+    COALESCE(SUM(CASE WHEN destination_account = 'GLOBAL_FORUM_BANK' THEN amount
+                     WHEN source_account = 'GLOBAL_FORUM_BANK' THEN -amount ELSE 0 END), 0) AS global_forum,
+    COALESCE(SUM(CASE WHEN destination_account = 'CASH_IN_HAND' THEN amount
+                     WHEN source_account = 'CASH_IN_HAND' THEN -amount ELSE 0 END), 0) AS cash
+  FROM transactions
+  WHERE is_cancelled = false AND reversal_of_id IS NULL
+    AND transaction_date >= $1::timestamptz AND transaction_date <= $2::timestamptz
+`;
 
 export const createTransaction = async (req: AuthRequest, res: Response) => {
   try {
@@ -166,7 +164,7 @@ export const getBalances = async (req: Request, res: Response) => {
     const fiscalYear = year ? Number(year) : new Date().getFullYear();
     const { start, end } = getFiscalYearRange(fiscalYear);
 
-    const rows = await prisma.$queryRawUnsafe<[{ al_rawa: string | null; global_forum: string | null; cash: string | null }]>(accountBalancesSql(start, end));
+    const rows = await prisma.$queryRawUnsafe<[{ al_rawa: string | null; global_forum: string | null; cash: string | null }]>(ACCOUNT_BALANCES_SQL, start, end);
     const r = rows[0];
 
     const openingRows = await prisma.openingBalance.findMany({ where: { fiscalYear } });
@@ -201,11 +199,10 @@ export const getOpeningBalances = async (req: Request, res: Response) => {
 
 export const setOpeningBalances = async (req: AuthRequest, res: Response) => {
   try {
-    const { year, balances } = req.body;
+    const v = validate(setOpeningBalancesSchema, req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { year, balances } = v.data;
     const fiscalYear = year ? Number(year) : new Date().getFullYear();
-    if (!balances || typeof balances !== 'object') {
-      return res.status(400).json({ error: 'balances object required' });
-    }
     const userId = req.session?.user?.id || 'system';
     const accounts = ['AL_RAWA_BANK', 'GLOBAL_FORUM_BANK', 'CASH_IN_HAND'];
     const updates: any[] = [];
@@ -284,9 +281,90 @@ export const revertOpeningBalance = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const getLedger = async (req: Request, res: Response) => {
+  try {
+    const { account, dateFrom, dateTo, page: pageStr, limit: limitStr, year: yearStr } = req.query;
+    if (account !== 'AL_RAWA_BANK' && account !== 'CASH_IN_HAND') {
+      return res.status(400).json({ error: "account must be AL_RAWA_BANK or CASH_IN_HAND" });
+    }
+    const fiscalYear = yearStr ? Number(yearStr) : new Date().getFullYear();
+    const { start, end } = getFiscalYearRange(fiscalYear);
+    const dateFromStr = dateFrom ? String(dateFrom) : start.toISOString().split('T')[0];
+    const dateToStr = dateTo ? String(dateTo) : end.toISOString().split('T')[0];
+
+    const where: any = {
+      isCancelled: false,
+      reversalOfId: null,
+      transactionDate: {
+        gte: new Date(dateFromStr),
+        lte: new Date(dateToStr + 'T23:59:59Z'),
+      },
+      OR: [
+        { destinationAccount: account },
+        { sourceAccount: account },
+      ],
+    };
+
+    const [allRows, total] = await Promise.all([
+      prisma.transaction.findMany({
+        where,
+        orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
+        include: { student: { select: { id: true, name: true, class: true } } },
+      }),
+      prisma.transaction.count({ where }),
+    ]);
+
+    const openingRow = await prisma.openingBalance.findFirst({
+      where: { fiscalYear, account: account as string },
+    });
+    const openingBalance = openingRow ? Number(openingRow.amount) : 0;
+
+    let running = openingBalance;
+    const entries = allRows.map((t: any) => {
+      const isDebit = t.destinationAccount === account;
+      const debit = isDebit ? Number(t.amount) : 0;
+      const credit = !isDebit ? Number(t.amount) : 0;
+      running = running + debit - credit;
+      return {
+        id: t.id,
+        date: t.transactionDate,
+        transactionType: t.transactionType,
+        description: [
+          t.category || '',
+          t.student?.name || '',
+          t.description || '',
+        ].filter(Boolean).join(' — ') || `${(t.sourceAccount || 'External').replace(/_/g, ' ')} → ${(t.destinationAccount || 'External').replace(/_/g, ' ')}`,
+        debit: debit || null,
+        credit: credit || null,
+        runningBalance: running,
+      };
+    });
+
+    const page = Math.max(1, parseInt(String(pageStr || '1'), 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(String(limitStr || '25'), 10) || 25));
+    const totalPages = Math.max(1, Math.ceil(entries.length / limit));
+    const paged = entries.slice((page - 1) * limit, page * limit);
+    const totalDebits = entries.reduce((s, e) => s + (e.debit || 0), 0);
+    const totalCredits = entries.reduce((s, e) => s + (e.credit || 0), 0);
+
+    res.json({
+      data: paged,
+      openingBalance,
+      closingBalance: running,
+      totalDebits,
+      totalCredits,
+      total,
+      page,
+      totalPages,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: sanitizeError(error) });
+  }
+};
+
 export const getTransactions = async (req: Request, res: Response) => {
   try {
-    const { dateFrom, dateTo, type } = req.query;
+    const { dateFrom, dateTo, type, page: pageStr, limit: limitStr } = req.query;
     const where: any = {};
     if (dateFrom || dateTo) {
       where.transactionDate = {};
@@ -294,6 +372,21 @@ export const getTransactions = async (req: Request, res: Response) => {
       if (dateTo) where.transactionDate.lte = new Date(String(dateTo) + 'T23:59:59Z');
     }
     if (type && type !== 'all') where.transactionType = String(type);
+    const page = pageStr ? Math.max(1, parseInt(String(pageStr), 10) || 1) : undefined;
+    const limit = page ? Math.min(200, Math.max(1, parseInt(String(limitStr || '50'), 10) || 50)) : undefined;
+    if (page) {
+      const [data, total] = await Promise.all([
+        prisma.transaction.findMany({
+          where,
+          orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
+          skip: (page - 1) * limit!,
+          take: limit!,
+          include: { student: { select: { id: true, name: true, class: true, roll: true } } },
+        }),
+        prisma.transaction.count({ where }),
+      ]);
+      return res.json({ data, total, page, totalPages: Math.ceil(total / limit!) });
+    }
     const transactions = await prisma.transaction.findMany({
       where,
       orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
@@ -483,7 +576,7 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
           if (defaultAmt <= 0) continue;
           const assignment = assignMap.get(`${student.id}|${fs.id}`);
           const monthDetail = months
-            .filter(m => isMonthInAssignment(m, assignment))
+            .filter(m => fs.applicability !== 'ASSIGNED_ONLY' || isMonthInAssignment(m, assignment))
             .map(m => {
               const key = `${student.id}|${fs.id}|${m}`;
               const paidAmt = paidMap.get(key) || 0;
@@ -493,8 +586,8 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
           if (monthDetail.length === 0) continue;
           fees.push({
             name: cat, type: 'recurring', amount: defaultAmt,
-            totalDue: defaultAmt * unpaidCount,
-            totalPaid: monthDetail.reduce((s, m) => s + (m.paid ? defaultAmt : 0), 0),
+            totalDue: defaultAmt * monthDetail.length,
+            totalPaid: monthDetail.reduce((s, m) => s + m.paidAmt, 0),
             months: monthDetail,
           });
         }
@@ -512,9 +605,9 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
           const paid = paidAmt >= defaultAmt;
           fees.push({
             name: cat, type: 'onetime', amount: defaultAmt,
-            totalDue: paid ? 0 : defaultAmt,
-            totalPaid: paid ? defaultAmt : 0,
-            paid,
+            totalDue: defaultAmt,
+            totalPaid: paidAmt,
+            paid: paidAmt >= defaultAmt,
             year: Number(year),
           });
         }
@@ -579,7 +672,7 @@ export const getAGMReport = async (req: Request, res: Response) => {
     const opening: Record<string, number> = { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 };
     openingRows.forEach(o => { opening[o.account] = Number(o.amount); });
 
-    const balancesRaw = await prisma.$queryRawUnsafe<[{ al_rawa: string; global_forum: string; cash: string }]>(accountBalancesSql(start, end));
+    const balancesRaw = await prisma.$queryRawUnsafe<[{ al_rawa: string; global_forum: string; cash: string }]>(ACCOUNT_BALANCES_SQL, start, end);
     const b = balancesRaw[0];
     const closing = {
       AL_RAWA_BANK: Number(b.al_rawa) + opening.AL_RAWA_BANK,
@@ -622,10 +715,9 @@ export const getPeriodCloses = async (_req: Request, res: Response) => {
 
 export const closePeriod = async (req: AuthRequest, res: Response) => {
   try {
-    const { fiscalYear, notes } = req.body;
-    if (!fiscalYear || typeof fiscalYear !== 'number') {
-      return res.status(400).json({ error: 'fiscalYear is required and must be a number' });
-    }
+    const v = validate(closePeriodSchema, req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { fiscalYear, notes } = v.data;
     const existing = await prisma.periodClose.findUnique({ where: { fiscalYear } });
     if (existing) return res.status(409).json({ error: `Fiscal year ${fiscalYear} is already closed` });
 
@@ -693,10 +785,9 @@ export const getReconciliations = async (req: Request, res: Response) => {
 
 export const createReconciliation = async (req: AuthRequest, res: Response) => {
   try {
-    const { account, statementDate, closingBalance, notes } = req.body;
-    if (!account || !statementDate || closingBalance === undefined) {
-      return res.status(400).json({ error: 'account, statementDate, and closingBalance are required' });
-    }
+    const v = validate(createReconciliationSchema, req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { account, statementDate, closingBalance, notes } = v.data;
 
     const statementEnd = new Date(statementDate);
     statementEnd.setHours(23, 59, 59, 999);

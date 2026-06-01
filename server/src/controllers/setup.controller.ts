@@ -31,7 +31,10 @@ export const initSetup = async (req: Request, res: Response) => {
       }
       const tokenBuf = Buffer.from(String(token));
       const setupBuf = Buffer.from(setupToken);
-      const valid = tokenBuf.length === setupBuf.length && timingSafeEqual(tokenBuf, setupBuf);
+      const maxLen = Math.max(tokenBuf.length, setupBuf.length);
+      const paddedToken = Buffer.alloc(maxLen, tokenBuf);
+      const paddedSetup = Buffer.alloc(maxLen, setupBuf);
+      const valid = timingSafeEqual(paddedToken, paddedSetup);
       if (!valid) {
         return res.status(403).json({ error: "Invalid setup token" });
       }

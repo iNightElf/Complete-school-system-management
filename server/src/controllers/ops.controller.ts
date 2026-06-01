@@ -32,7 +32,7 @@ export const importTeachers = async (req: Request, res: Response) => {
         });
         created.push({ id: teacher.id, name: teacher.name, designation: teacher.designation });
       } catch (e: any) {
-        errors.push({ row: i + 1, error: e.message || "Create failed" });
+        errors.push({ row: i + 1, error: sanitizeError(e) });
       }
     }
 
@@ -173,7 +173,7 @@ export const importStaff = async (req: Request, res: Response) => {
         });
         created.push({ id: member.id, name: member.name, role: member.role });
       } catch (e: any) {
-        errors.push({ row: i + 1, error: e.message || "Create failed" });
+        errors.push({ row: i + 1, error: sanitizeError(e) });
       }
     }
 

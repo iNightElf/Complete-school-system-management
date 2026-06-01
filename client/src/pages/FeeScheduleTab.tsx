@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useSchoolStore } from '../store';
-import { Plus, Save, Trash2, BookOpen, ChevronDown, ChevronRight, Pencil } from 'lucide-react';
+import { Plus, Save, Trash2, BookOpen, ChevronDown, ChevronRight, Pencil, CalendarPlus, Copy } from 'lucide-react';
 import { toast } from '../components/Toast';
 
 const FREQUENCIES = ['MONTHLY', 'YEARLY', 'ONETIME'];
@@ -10,32 +10,42 @@ const APPLICABILITIES = ['AUTO', 'ASSIGNED_ONLY'];
 const FeeScheduleTab = () => {
   const { classes, fetchClasses } = useSchoolStore();
   const [schedules, setSchedules] = useState<any[]>([]);
+  const [years, setYears] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ academicYearId: '', classId: '', category: '', amount: '', frequency: 'MONTHLY', applicability: 'AUTO' });
+  const [form, setForm] = useState({ classId: '', category: '', amount: '', frequency: 'MONTHLY', applicability: 'AUTO' });
+  const [showYearForm, setShowYearForm] = useState(false);
+  const [yearForm, setYearForm] = useState({ name: '', startDate: '', endDate: '' });
+
+  const activeYear = years.find((y: any) => y.isActive);
+  const previousYear = years
+    .filter((y: any) => !y.isActive)
+    .sort((a: any, b: any) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+
+  const activeSchedules = schedules.filter((s: any) => s.academicYearId === activeYear?.id);
+  const previousYearSchedules = previousYear
+    ? schedules.filter((s: any) => s.academicYearId === previousYear.id)
+    : [];
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/finance/fee-schedules');
-      setSchedules(res.data);
-    } catch { toast('Failed to load fee schedules', 'error'); }
+      const [schedRes, yearsRes] = await Promise.all([
+        axios.get('/api/finance/fee-schedules', { withCredentials: true }),
+        axios.get('/api/academic-years'),
+      ]);
+      setSchedules(schedRes.data);
+      setYears(yearsRes.data);
+    } catch { toast('Failed to load data', 'error'); }
     finally { setLoading(false); }
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchClasses(); load(); }, []);
-
-  const activeYear = '2025-2026';
-
-  // Get academicYearId — we need to fetch it or derive it
-  // For now use 2025-2026 hardcoded name
 
   const handleEdit = (s: any) => {
     setEditingId(s.id);
     setForm({
-      academicYearId: s.academicYearId || '',
       classId: s.classId || '',
       category: s.category,
       amount: String(s.amount),
@@ -47,11 +57,8 @@ const FeeScheduleTab = () => {
 
   const handleSave = async () => {
     if (!form.category || !form.amount) { toast('Category and amount required', 'error'); return; }
+    if (!activeYear) { toast('No active academic year. Create one first.', 'error'); return; }
     try {
-      const yearRes = await axios.get('/api/academic-years');
-      const years: any[] = yearRes.data;
-      const year = years.find((y: any) => y.name === activeYear);
-      if (!year) { toast('No active academic year found', 'error'); return; }
       const payload = {
         classId: form.classId || null,
         category: form.category,
@@ -61,14 +68,14 @@ const FeeScheduleTab = () => {
       };
       if (editingId) {
         await axios.put(`/api/finance/fee-schedules/${editingId}`, payload);
-        toast('Fee schedule updated ✓', 'success');
+        toast('Fee schedule updated', 'success');
       } else {
-        await axios.post('/api/finance/fee-schedules', { ...payload, academicYearId: year.id });
-        toast('Fee schedule created ✓', 'success');
+        await axios.post('/api/finance/fee-schedules', { ...payload, academicYearId: activeYear.id });
+        toast('Fee schedule created', 'success');
       }
       setShowForm(false);
       setEditingId(null);
-      setForm({ academicYearId: '', classId: '', category: '', amount: '', frequency: 'MONTHLY', applicability: 'AUTO' });
+      setForm({ classId: '', category: '', amount: '', frequency: 'MONTHLY', applicability: 'AUTO' });
       load();
     } catch { toast(editingId ? 'Failed to update' : 'Failed to create', 'error'); }
   };
@@ -76,9 +83,45 @@ const FeeScheduleTab = () => {
   const handleDelete = async (id: string) => {
     try {
       await axios.delete(`/api/finance/fee-schedules/${id}`);
-      toast('Fee schedule deleted ✓', 'success');
+      toast('Fee schedule deleted', 'success');
       load();
     } catch { toast('Failed to delete', 'error'); }
+  };
+
+  const handleCreateYear = async () => {
+    if (!yearForm.name || !yearForm.startDate || !yearForm.endDate) {
+      toast('Name, start date, and end date required', 'error');
+      return;
+    }
+    try {
+      await axios.post('/api/academic-years', { ...yearForm, isActive: true });
+      toast('Academic year created', 'success');
+      setShowYearForm(false);
+      setYearForm({ name: '', startDate: '', endDate: '' });
+      load();
+    } catch (e: any) {
+      toast(e?.response?.data?.error || 'Failed to create academic year', 'error');
+    }
+  };
+
+  const handleCopyFromPreviousYear = async () => {
+    if (!activeYear || !previousYear) return;
+    try {
+      const res = await axios.post('/api/finance/fee-schedules/copy-from-year', {
+        sourceAcademicYearId: previousYear.id,
+        targetAcademicYearId: activeYear.id,
+      });
+      toast(`${res.data.copied} schedules copied from ${previousYear.name} to ${activeYear.name}${res.data.skipped ? ` (${res.data.skipped} skipped)` : ''}`, 'success');
+      load();
+    } catch { toast('Failed to copy schedules', 'error'); }
+  };
+
+  const handleSetActive = async (id: string) => {
+    try {
+      await axios.put(`/api/academic-years/${id}`, { isActive: true });
+      toast('Active year changed', 'success');
+      load();
+    } catch { toast('Failed to update', 'error'); }
   };
 
   const grouped = schedules.reduce((acc: Record<string, any[]>, s: any) => {
@@ -100,19 +143,70 @@ const FeeScheduleTab = () => {
         return next;
       });
     }
-  }, [groupOrder.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [groupOrder.length]);
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h3 className="font-bold text-sm text-school-primary flex items-center gap-2"><BookOpen size={16} /> Fee Schedules</h3>
-        <button onClick={() => { setShowForm(!showForm); setEditingId(null); setForm({ academicYearId: '', classId: '', category: '', amount: '', frequency: 'MONTHLY', applicability: 'AUTO' }); }} className="flex items-center gap-1.5 px-3 py-2 bg-school-primary text-white rounded-xl text-xs font-bold">
-          <Plus size={14} /> {showForm ? 'Cancel' : 'Add Schedule'}
-        </button>
+        <div className="flex items-center gap-2">
+          <h3 className="font-bold text-sm text-school-primary flex items-center gap-2"><BookOpen size={16} /> Fee Schedules</h3>
+          {activeYear && (
+            <span className="text-[10px] bg-school-primary/10 text-school-primary px-2 py-0.5 rounded font-bold">
+              {activeYear.name}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => { setShowYearForm(!showYearForm); setShowForm(false); }} className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold">
+            <CalendarPlus size={14} /> {showYearForm ? 'Cancel' : 'Manage Years'}
+          </button>
+          <button onClick={() => { setShowForm(!showForm); setEditingId(null); setForm({ classId: '', category: '', amount: '', frequency: 'MONTHLY', applicability: 'AUTO' }); }} className="flex items-center gap-1.5 px-3 py-2 bg-school-primary text-white rounded-xl text-xs font-bold">
+            <Plus size={14} /> {showForm ? 'Cancel' : 'Add Schedule'}
+          </button>
+        </div>
       </div>
+
+      {showYearForm && (
+        <div className="bg-white rounded-xl border border-school-border p-4 space-y-3">
+          <h4 className="font-bold text-xs text-school-primary">Academic Years</h4>
+          {years.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {years.map((y: any) => (
+                <button
+                  key={y.id}
+                  onClick={() => handleSetActive(y.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${y.isActive ? 'bg-school-primary text-white border-school-primary' : 'bg-white text-school-muted border-school-border hover:border-school-accent'}`}
+                >
+                  {y.name} {y.isActive ? '✓' : '(set active)'}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] font-bold uppercase text-school-muted block mb-1">Year Name</label>
+              <input value={yearForm.name} onChange={e => setYearForm({ ...yearForm, name: e.target.value })} placeholder="e.g. 2026-2027" className="w-full border border-school-border rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase text-school-muted block mb-1">Start Date</label>
+              <input type="date" value={yearForm.startDate} onChange={e => setYearForm({ ...yearForm, startDate: e.target.value })} className="w-full border border-school-border rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase text-school-muted block mb-1">End Date</label>
+              <input type="date" value={yearForm.endDate} onChange={e => setYearForm({ ...yearForm, endDate: e.target.value })} className="w-full border border-school-border rounded-xl px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <button onClick={handleCreateYear} className="flex items-center gap-1.5 px-4 py-2 bg-school-primary text-white rounded-xl text-sm font-bold">
+            <Plus size={14} /> Create Academic Year
+          </button>
+        </div>
+      )}
 
       {showForm && (
         <div className="bg-white rounded-xl border border-school-border p-4 space-y-3">
+          {!activeYear && (
+            <p className="text-xs text-rose-600 font-bold">Create an academic year first using "Manage Years"</p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-bold uppercase text-school-muted block mb-1">Category</label>
@@ -150,6 +244,18 @@ const FeeScheduleTab = () => {
 
       {loading ? (
         <div className="text-sm text-school-muted">Loading...</div>
+      ) : activeYear && activeSchedules.length === 0 && previousYear && previousYearSchedules.length > 0 ? (
+        <div className="bg-white rounded-xl border border-amber-200 p-6 text-center space-y-3">
+          <p className="text-sm text-school-muted">
+            No schedules for <span className="font-bold text-school-primary">{activeYear.name}</span> yet.
+            <br />
+            <span className="text-[11px]">{previousYear.name} has {previousYearSchedules.length} schedule{previousYearSchedules.length > 1 ? 's' : ''}.</span>
+          </p>
+          <button onClick={handleCopyFromPreviousYear} className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-600 transition-colors">
+            <Copy size={14} /> Copy from {previousYear.name}
+          </button>
+          <p className="text-[10px] text-school-muted">You can edit amounts after copying</p>
+        </div>
       ) : schedules.length === 0 ? (
         <div className="bg-white rounded-xl border border-school-border p-8 text-center text-school-muted text-sm">
           No fee schedules defined. Add one to get started.

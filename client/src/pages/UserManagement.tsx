@@ -27,7 +27,7 @@ const UserManagement: React.FC = () => {
       await updateRole(userId, newRole);
       toast('Role updated', 'success');
     } catch (err: any) {
-      toast(err.response?.data?.error || 'Failed to update role', 'error');
+      toast(typeof err.response?.data?.error === 'string' ? err.response.data.error : 'Failed to update role', 'error');
     }
   };
 
@@ -37,7 +37,7 @@ const UserManagement: React.FC = () => {
       setConfirmDelete(null);
       toast('User deleted', 'success');
     } catch (err: any) {
-      toast(err.response?.data?.error || 'Failed to delete user', 'error');
+      toast(typeof err.response?.data?.error === 'string' ? err.response.data.error : 'Failed to delete user', 'error');
     }
   };
 

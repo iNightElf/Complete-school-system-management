@@ -5,7 +5,7 @@ import { useSchoolStore } from '../store';
 import axios from 'axios';
 import { API_URL } from '../lib/config';
 
-const EXPENSE_CATEGORIES = ['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense'];
+
 
 interface ImportRow {
   _id: number;
@@ -66,6 +66,7 @@ export default function ExcelImportTab() {
   const [editData, setEditData] = useState<Partial<ImportRow>>({});
   const [importing, setImporting] = useState(false);
   const [feeScheduleCategories, setFeeScheduleCategories] = useState<string[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<string[]>(['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense']);
 
   const incomeCategories = useMemo(() => [...feeScheduleCategories, 'Other Fee'], [feeScheduleCategories]);
 
@@ -73,6 +74,9 @@ export default function ExcelImportTab() {
     axios.get('/api/finance/fee-schedules', { withCredentials: true }).then(res => {
       const cats = [...new Set(res.data.map((fs: any) => fs.category))] as string[];
       setFeeScheduleCategories(cats);
+    }).catch(() => {});
+    axios.get('/api/categories?type=EXPENSE').then(res => {
+      if (res.data.length) setExpenseCategories(res.data.map((c: any) => c.name));
     }).catch(() => {});
   }, []);
 
@@ -359,7 +363,7 @@ export default function ExcelImportTab() {
                             <select value={editData.category || ''} onChange={e => setEditData({ ...editData, category: e.target.value })} className="w-full px-2 py-1 border border-school-border rounded text-xs">
                               <option value="">—</option>
                               <optgroup label="Income">{incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
-                              <optgroup label="Expense">{EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
+                              <optgroup label="Expense">{expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
                             </select>
                           </td>
                           <td className="px-2 py-1 text-center" data-label="Type">
@@ -369,8 +373,8 @@ export default function ExcelImportTab() {
                             </select>
                           </td>
                           <td className="px-2 py-1" data-label="Amount"><input type="number" value={editData.amount || ''} onChange={e => setEditData({ ...editData, amount: e.target.value })} className="w-20 px-2 py-1 border border-school-border rounded text-xs text-right" /></td>
-                          <td className="px-2 py-1" data-label="Roll"><input value={editData.className || ''} onChange={e => setEditData({ ...editData, className: e.target.value })} className="w-20 px-2 py-1 border border-school-border rounded text-xs" /></td>
-                          <td className="px-2 py-1" data-label="Class"><input value={editData.roll || ''} onChange={e => setEditData({ ...editData, roll: e.target.value })} className="w-16 px-2 py-1 border border-school-border rounded text-xs" /></td>
+                          <td className="px-2 py-1" data-label="Roll"><input value={editData.roll || ''} onChange={e => setEditData({ ...editData, roll: e.target.value })} className="w-20 px-2 py-1 border border-school-border rounded text-xs" /></td>
+                          <td className="px-2 py-1" data-label="Class"><input value={editData.className || ''} onChange={e => setEditData({ ...editData, className: e.target.value })} className="w-16 px-2 py-1 border border-school-border rounded text-xs" /></td>
                           <td className="px-2 py-1" data-label="Fee Month"><input type="month" value={editData.feeMonth || ''} onChange={e => setEditData({ ...editData, feeMonth: e.target.value })} className="w-full px-2 py-1 border border-school-border rounded text-xs" /></td>
                           <td className="px-2 py-1 text-center" data-label="Actions">
                             <button onClick={() => saveEdit(row._id)} className="p-1 text-green-600 hover:bg-green-50 rounded" aria-label="Save edit"><Check size={14} /></button>

@@ -143,9 +143,72 @@ app.get("/api/academic-years", authenticate, async (_req, res) => {
   res.json(years);
 });
 
+app.post("/api/academic-years", authenticate, async (req, res) => {
+  const { name, startDate, endDate, isActive } = req.body;
+  if (!name || !startDate || !endDate) {
+    return res.status(400).json({ error: "name, startDate, and endDate are required" });
+  }
+  const existing = await prisma.academicYear.findUnique({ where: { name } });
+  if (existing) return res.status(409).json({ error: "Academic year with this name already exists" });
+  if (isActive) {
+    await prisma.academicYear.updateMany({ where: { isActive: true }, data: { isActive: false } });
+  }
+  const year = await prisma.academicYear.create({ data: { name, startDate: new Date(startDate), endDate: new Date(endDate), isActive: !!isActive } });
+  res.status(201).json(year);
+});
+
+app.put("/api/academic-years/:id", authenticate, async (req, res) => {
+  const id = String(req.params.id);
+  const { name, startDate, endDate, isActive } = req.body;
+  const data: any = {};
+  if (name !== undefined) data.name = name;
+  if (startDate !== undefined) data.startDate = new Date(startDate);
+  if (endDate !== undefined) data.endDate = new Date(endDate);
+  if (isActive !== undefined) {
+    if (isActive) {
+      await prisma.academicYear.updateMany({ where: { isActive: true }, data: { isActive: false } });
+    }
+    data.isActive = isActive;
+  }
+  const year = await prisma.academicYear.update({ where: { id }, data });
+  res.json(year);
+});
+
+// ── Categories ──
+app.get("/api/categories", authenticate, async (req, res) => {
+  const type = req.query.type as string | undefined;
+  const where = type ? { type: type.toUpperCase() } : {};
+  const cats = await prisma.category.findMany({ where, orderBy: { name: "asc" } });
+  res.json(cats);
+});
+
+app.post("/api/categories", authenticate, authorizePermission("finance:write"), async (req, res) => {
+  const { type, name } = req.body;
+  if (!type || !name) return res.status(400).json({ error: "type and name are required" });
+  const existing = await prisma.category.findUnique({ where: { type_name: { type: type.toUpperCase(), name } } });
+  if (existing) return res.status(409).json({ error: "Category already exists" });
+  const cat = await prisma.category.create({ data: { type: type.toUpperCase(), name } });
+  res.status(201).json(cat);
+});
+
+app.put("/api/categories/:id", authenticate, authorizePermission("finance:write"), async (req, res) => {
+  const id = String(req.params.id);
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: "name is required" });
+  const cat = await prisma.category.update({ where: { id }, data: { name } });
+  res.json(cat);
+});
+
+app.delete("/api/categories/:id", authenticate, authorizePermission("finance:write"), async (req, res) => {
+  const id = String(req.params.id);
+  await prisma.category.delete({ where: { id } });
+  res.json({ message: "Category deleted" });
+});
+
 // ── Fee Schedules ──
 app.get("/api/finance/fee-schedules", authenticate, authorizePermission("finance:read"), feeSchedule.getFeeSchedules);
 app.post("/api/finance/fee-schedules", authenticate, authorizePermission("finance:write"), feeSchedule.createFeeSchedule);
+app.post("/api/finance/fee-schedules/copy-from-year", authenticate, authorizePermission("finance:write"), feeSchedule.copyFeeSchedulesFromYear);
 app.put("/api/finance/fee-schedules/:id", authenticate, authorizePermission("finance:write"), feeSchedule.updateFeeSchedule);
 app.delete("/api/finance/fee-schedules/:id", authenticate, authorizePermission("finance:write"), feeSchedule.deleteFeeSchedule);
 
@@ -157,6 +220,7 @@ app.post("/api/finance/fee-waivers/:id/deactivate", authenticate, authorizePermi
 
 // ── Finance ──
 app.get("/api/finance/balances", authenticate, authorizePermission("finance:read"), finance.getBalances);
+app.get("/api/finance/ledger", authenticate, authorizePermission("finance:read"), finance.getLedger);
 app.get("/api/finance/transactions", authenticate, authorizePermission("finance:read"), finance.getTransactions);
 app.post("/api/finance/transactions", authenticate, authorizePermission("finance:write"), finance.createTransaction);
 app.post("/api/finance/transactions/:id/cancel", authenticate, authorizePermission("finance:write"), finance.cancelTransaction);

@@ -46,11 +46,10 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
       where: { studentId, feeScheduleId, active: true },
     });
 
-    const newActive = active !== undefined ? active : !existing;
-
-    if (existing) {
-      if (newActive === existing.active && startsAt === undefined && endsAt === undefined && note === undefined) {
-        // Toggle off — deactivate only (immutable)
+    // No active param = toggle mode. Explicit active = set to that state.
+    if (active === false) {
+      // Explicitly requested to deactivate
+      if (existing) {
         const updated = await prisma.studentFeeAssignment.update({
           where: { id: existing.id },
           data: { active: false },
@@ -58,18 +57,37 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
         logAudit({ userId: req.session?.user?.id, action: "DEACTIVATE", entityType: "StudentFeeAssignment", entityId: updated.id, details: JSON.stringify({ studentId, feeScheduleId }) });
         return res.json(updated);
       }
-      // Deactivate old (immutable history)
-      await prisma.studentFeeAssignment.update({
-        where: { id: existing.id },
-        data: { active: false },
-      });
+      return res.json({ message: "Already inactive" });
     }
 
-    const created = await prisma.studentFeeAssignment.create({
-      data: { studentId, feeScheduleId, active: true, startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null, note },
-    });
-    logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "StudentFeeAssignment", entityId: created.id, details: JSON.stringify({ studentId, feeScheduleId }) });
-    res.status(201).json(created);
+    if (active === true || active === undefined) {
+      if (existing && active === undefined && startsAt === undefined && endsAt === undefined && note === undefined) {
+        // Pure toggle (no params) with existing active record → deactivate
+        const updated = await prisma.studentFeeAssignment.update({
+          where: { id: existing.id },
+          data: { active: false },
+        });
+        logAudit({ userId: req.session?.user?.id, action: "DEACTIVATE", entityType: "StudentFeeAssignment", entityId: updated.id, details: JSON.stringify({ studentId, feeScheduleId }) });
+        return res.json(updated);
+      }
+
+      if (existing) {
+        // Deactivate old (immutable history)
+        await prisma.studentFeeAssignment.update({
+          where: { id: existing.id },
+          data: { active: false },
+        });
+      }
+
+      const created = await prisma.studentFeeAssignment.create({
+        data: { studentId, feeScheduleId, active: true, startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null, note },
+      });
+      logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "StudentFeeAssignment", entityId: created.id, details: JSON.stringify({ studentId, feeScheduleId }) });
+      return res.status(201).json(created);
+    }
+
+    // Shouldn't reach here
+    return res.status(400).json({ error: "Invalid active value" });
   } catch (error: any) {
     res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
@@ -94,8 +112,8 @@ export const bulkAssign = async (req: AuthRequest, res: Response) => {
             studentId: sid,
             feeScheduleId,
             active: active !== undefined ? active : true,
-            ...(startsAt ? { startsAt: new Date(startsAt) } : {}),
-            ...(endsAt ? { endsAt: new Date(endsAt) } : {}),
+            ...(startsAt?.trim() ? { startsAt: new Date(startsAt) } : {}),
+            ...(endsAt?.trim() ? { endsAt: new Date(endsAt) } : {}),
           },
         });
         done++;

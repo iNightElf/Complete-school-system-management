@@ -74,6 +74,33 @@ export const createBookSchema = z.object({
   classId: z.string().uuid("Invalid class ID"),
 });
 
+export const createSubjectSchema = z.object({
+  name: z.string().min(1, "Name is required").max(100).transform(s => s.trim()),
+  fullMarks: z.number().positive("Full marks must be positive").or(z.string().transform(Number)).pipe(z.number().positive()),
+});
+
+export const updateSubjectSchema = z.object({
+  name: z.string().min(1).max(100).transform(s => s.trim()).optional(),
+  fullMarks: z.number().positive().or(z.string().transform(Number)).pipe(z.number().positive()).optional(),
+});
+
+export const setOpeningBalancesSchema = z.object({
+  year: z.union([z.string(), z.number()]).optional(),
+  balances: z.record(z.string(), z.number()),
+});
+
+export const closePeriodSchema = z.object({
+  fiscalYear: z.number().refine(v => v > 0, "fiscalYear is required and must be a number"),
+  notes: z.string().max(500).optional().nullable(),
+});
+
+export const createReconciliationSchema = z.object({
+  account: z.string().min(1, "Account is required").max(100),
+  statementDate: z.string().min(1, "Statement date is required"),
+  closingBalance: z.number(),
+  notes: z.string().max(500).optional().nullable(),
+});
+
 export function validate<T>(schema: z.ZodSchema<T>, data: unknown): { success: true; data: T } | { success: false; error: string } {
   const result = schema.safeParse(data);
   if (result.success) return { success: true, data: result.data };

@@ -73,6 +73,50 @@ export const updateFeeSchedule = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const copyFeeSchedulesFromYear = async (req: AuthRequest, res: Response) => {
+  try {
+    const { sourceAcademicYearId, targetAcademicYearId } = req.body;
+    if (!sourceAcademicYearId || !targetAcademicYearId) {
+      return res.status(400).json({ error: "sourceAcademicYearId and targetAcademicYearId are required" });
+    }
+    const sourceSchedules = await prisma.feeSchedule.findMany({ where: { academicYearId: sourceAcademicYearId } });
+    if (sourceSchedules.length === 0) {
+      return res.status(404).json({ error: "No fee schedules found in the source year" });
+    }
+    let copied = 0;
+    let skipped = 0;
+    for (const s of sourceSchedules) {
+      try {
+        await prisma.feeSchedule.create({
+          data: {
+            academicYearId: targetAcademicYearId,
+            classId: s.classId,
+            category: s.category,
+            amount: s.amount,
+            frequency: s.frequency,
+            applicability: s.applicability,
+            effectiveFrom: s.effectiveFrom,
+            effectiveTo: s.effectiveTo,
+          },
+        });
+        copied++;
+      } catch (e: any) {
+        if (e.code === 'P2002') { skipped++; continue; }
+        throw e;
+      }
+    }
+    logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "FeeSchedule", details: `Copied ${copied} schedules from year ${sourceAcademicYearId} to ${targetAcademicYearId} (${skipped} skipped)` });
+    const targetSchedules = await prisma.feeSchedule.findMany({
+      where: { academicYearId: targetAcademicYearId },
+      include: { academicYear: { select: { name: true } }, classRel: { select: { name: true } } },
+      orderBy: [{ classId: "asc" }, { category: "asc" }],
+    });
+    res.json({ copied, skipped, schedules: targetSchedules });
+  } catch (error: any) {
+    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+  }
+};
+
 export const deleteFeeSchedule = async (req: AuthRequest, res: Response) => {
   try {
     const id = param(req, "id");

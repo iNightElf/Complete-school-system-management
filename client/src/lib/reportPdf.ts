@@ -45,7 +45,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
     const logoEl = document.getElementById('school-logo') as HTMLImageElement;
     if (logoEl?.src) {
       const raw = logoEl.src.includes(',') ? logoEl.src.split(',')[1] : logoEl.src;
-      doc.addImage(raw, 'JPEG', M, y, 22, 22);
+      doc.addImage(raw, 'UNKNOWN', M, y, 22, 22);
     }
   } catch { console.debug('Image add skipped'); }
   doc.text('AL RAWA English School', M + 26, y + 10);
@@ -59,7 +59,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
   y += 30;
 
   // STUDENT INFO
-  if (photoDataUri) { try { doc.addImage(photoDataUri, 'JPEG', W - M - 26, y, 26, 30, '', 'FAST'); } catch { console.debug('Photo add skipped'); } }
+  if (photoDataUri) { try { doc.addImage(photoDataUri, 'UNKNOWN', W - M - 26, y, 26, 30, '', 'FAST'); } catch { console.debug('Photo add skipped'); } }
   doc.setFontSize(9.5);
   const infoRows: [string, string][] = [['Student Name', student.name], ['Class', clsName]];
   if (student.roll) infoRows.push(['Roll No.', student.roll]);

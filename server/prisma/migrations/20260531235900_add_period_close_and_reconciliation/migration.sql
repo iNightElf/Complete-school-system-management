@@ -1,4 +1,4 @@
-﻿-- CreateTable
+-- CreateTable
 CREATE TABLE IF NOT EXISTS "period_closes" (
     "id" TEXT NOT NULL,
     "fiscal_year" INTEGER NOT NULL,

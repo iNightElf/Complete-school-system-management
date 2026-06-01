@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { ReactNode, FormEvent } from 'react';
 import { useSchoolStore, useAuthStore, useUserManagementStore, useUIStore } from '../store';
 import axios from 'axios';
@@ -20,40 +20,62 @@ const ACCOUNTS = [
   { id: 'CASH_IN_HAND', label: 'Cash in Hand', short: 'Cash', color: 'from-emerald-500 to-emerald-600', ring: 'ring-emerald-200' },
 ] as const;
 
-const EXPENSE_CATEGORIES = ['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense'];
+
 
 type MainTab = 'transactions' | 'reports' | 'optional-fees' | 'defaulter' | 'fee-schedule' | 'waivers' | 'period-close' | 'reconciliation';
 type TxTab = 'income' | 'expense' | 'transfer' | 'import';
 
 const PAGE_SIZE = 25;
 
-function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }: { transactions: any[]; fmt: (n: number) => string; fetchTransactions: () => void; fetchFinance: () => void; userMap: Record<string, string> }) {
+const ACCOUNTS_LEDGER = [
+  { id: 'CASH_IN_HAND' as const, label: 'Cash in Hand', short: 'Cash', color: 'bg-emerald-500' },
+  { id: 'AL_RAWA_BANK' as const, label: 'AL RAWA Bank', short: 'Bank', color: 'bg-blue-500' },
+];
+
+function Ledger({ fmt, fetchFinance, userMap }: { fmt: (n: number) => string; fetchFinance: () => void; userMap: Record<string, string> }) {
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
+  const [ledgerAccount, setLedgerAccount] = useState<'AL_RAWA_BANK' | 'CASH_IN_HAND'>('CASH_IN_HAND');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
 
-  const filtered = useMemo(() => {
-    return transactions
-      .filter((tx: any) => {
-        const d = new Date(tx.transactionDate).toISOString().split('T')[0];
-        if (dateFrom && d < dateFrom) return false;
-        if (dateTo && d > dateTo) return false;
-        if (typeFilter !== 'all' && tx.transactionType !== typeFilter) return false;
-        return true;
-      })
-      .sort((a: any, b: any) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime() || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [transactions, dateFrom, dateTo, typeFilter]);
+  const [data, setData] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [openingBalance, setOpeningBalance] = useState(0);
+  const [closingBalance, setClosingBalance] = useState(0);
+  const [totalDebits, setTotalDebits] = useState(0);
+  const [totalCredits, setTotalCredits] = useState(0);
+  const [loading, setLoading] = useState(false);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const fetchData = useCallback(async (p: number) => {
+    setLoading(true);
+    try {
+      const params: Record<string, string> = { account: ledgerAccount };
+      if (dateFrom) params.dateFrom = dateFrom;
+      if (dateTo) params.dateTo = dateTo;
+      params.page = String(p);
+      params.limit = String(PAGE_SIZE);
+      const res = await axios.get('/api/finance/ledger', { params, withCredentials: true });
+      if (res.data?.data) {
+        setData(res.data.data);
+        setTotal(res.data.total);
+        setTotalPages(res.data.totalPages);
+        setOpeningBalance(res.data.openingBalance);
+        setClosingBalance(res.data.closingBalance);
+        setTotalDebits(res.data.totalDebits);
+        setTotalCredits(res.data.totalCredits);
+      }
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [ledgerAccount, dateFrom, dateTo]);
 
-  useEffect(() => { setPage(1); }, [dateFrom, dateTo, typeFilter]);
+  useEffect(() => { setPage(1); fetchData(1); }, [ledgerAccount, dateFrom, dateTo]);
+  useEffect(() => { fetchData(page); }, [page, fetchData]);
 
   const handleCancel = async () => {
     if (!cancelId || !canWrite) return;
@@ -63,7 +85,7 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
       toast('Transaction cancelled', 'success');
       setCancelId(null);
       setCancelReason('');
-      fetchTransactions();
+      fetchData(page);
       fetchFinance();
     } catch {
       toast('Failed to cancel', 'error');
@@ -72,14 +94,55 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
     }
   };
 
-  const cancelled = transactions.filter((tx: any) => tx.isCancelled);
+  const handleDownloadPdf = async () => {
+    try {
+      const params: Record<string, string> = { account: ledgerAccount };
+      if (dateFrom) params.dateFrom = dateFrom;
+      if (dateTo) params.dateTo = dateTo;
+      const res = await axios.get('/api/finance/ledger', { params, withCredentials: true });
+      const allEntries = res.data?.data || [];
+      const { pdfLedger } = await import('../lib/financeReportPdf');
+      pdfLedger(allEntries, ledgerAccount, dateFrom, dateTo, res.data.openingBalance, res.data.closingBalance);
+      toast('PDF downloaded ✓', 'success');
+    } catch { toast('PDF generation failed', 'error'); }
+  };
+
+  const handlePrint = async () => {
+    try {
+      const params: Record<string, string> = { account: ledgerAccount };
+      if (dateFrom) params.dateFrom = dateFrom;
+      if (dateTo) params.dateTo = dateTo;
+      const res = await axios.get('/api/finance/ledger', { params, withCredentials: true });
+      const allEntries = res.data?.data || [];
+      const { buildLedgerPrintHtml } = await import('../lib/financeReportPdf');
+      const html = buildLedgerPrintHtml(allEntries, ledgerAccount, dateFrom, dateTo, res.data.openingBalance, res.data.closingBalance, fmt);
+      const w = window.open('', '_blank');
+      if (!w) { toast('Please allow pop-ups for printing', 'error'); return; }
+      w.document.write(html);
+      w.document.close();
+      w.print();
+    } catch { toast('Print failed', 'error'); }
+  };
+
+  const accLabel = ACCOUNTS_LEDGER.find(a => a.id === ledgerAccount)?.label || ledgerAccount;
 
   return (
     <div className="bg-white rounded-xl border border-school-border overflow-hidden">
-      <div className="px-5 py-4 border-b border-school-border flex items-center gap-2">
-        <Clock size={18} className="text-school-muted" />
-        <h4 className="font-serif text-sm text-school-primary">Ledger</h4>
-        <span className="text-[10px] text-school-muted">({filtered.length} rows{cancelled.length ? `, ${cancelled.length} cancelled` : ''})</span>
+      <div className="px-5 py-4 border-b border-school-border flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Clock size={18} className="text-school-muted" />
+          <h4 className="font-serif text-sm text-school-primary">{accLabel} Ledger</h4>
+          {!loading && <span className="text-[10px] text-school-muted">({total} rows{totalPages > 1 ? `, p.${page}/${totalPages}` : ''})</span>}
+          {loading && <span className="text-[10px] text-school-muted animate-pulse">Loading...</span>}
+        </div>
+        <div className="flex gap-1 bg-school-paper/50 rounded-lg p-0.5">
+          {ACCOUNTS_LEDGER.map(a => (
+            <button key={a.id} onClick={() => setLedgerAccount(a.id)}
+              className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${ledgerAccount === a.id ? 'bg-white shadow-sm text-school-primary' : 'text-school-muted hover:text-school-primary'}`}>
+              {a.short}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Filters */}
@@ -92,90 +155,65 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
           <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">To</label>
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border border-school-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-school-accent" />
         </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Type</label>
-          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="border border-school-border rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:border-school-accent">
-            <option value="all">All</option>
-            <option value="INCOME">Income</option>
-            <option value="EXPENSE">Expense</option>
-            <option value="INTERNAL_TRANSFER">Transfer</option>
-          </select>
-        </div>
-        {(dateFrom || dateTo || typeFilter !== 'all') && (
-          <button onClick={() => { setDateFrom(''); setDateTo(''); setTypeFilter('all'); }} className="text-xs text-school-accent hover:underline">Clear filters</button>
+        {(dateFrom || dateTo) && (
+          <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-xs text-school-accent hover:underline">Clear</button>
         )}
+        <div className="flex-1" />
+        <button onClick={handleDownloadPdf} disabled={loading} className="px-3 py-1.5 border border-school-border rounded-lg text-[10px] font-bold uppercase tracking-wider text-school-primary hover:bg-school-paper disabled:opacity-40 flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          PDF
+        </button>
+        <button onClick={handlePrint} disabled={loading} className="px-3 py-1.5 border border-school-border rounded-lg text-[10px] font-bold uppercase tracking-wider text-school-primary hover:bg-school-paper disabled:opacity-40 flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print
+        </button>
       </div>
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm mobile-card-table">
+        <table className="w-full text-sm">
           <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
             <tr>
-              <th className="px-4 py-3 text-left">Date</th>
-              <th className="px-4 py-3 text-left">Category</th>
-              <th className="px-4 py-3 text-left hidden sm:table-cell">Class</th>
-              <th className="px-4 py-3 text-left hidden sm:table-cell">Student</th>
-              <th className="px-4 py-3 text-left hidden sm:table-cell">Accounts</th>
-              <th className="px-4 py-3 text-right">Amount</th>
-              <th className="px-4 py-3 text-center hidden sm:table-cell">Type</th>
-              {canWrite && <th className="px-4 py-3 text-center">Actions</th>}
+              <th className="px-4 py-3 text-left w-[110px]">Date</th>
+              <th className="px-4 py-3 text-left w-[60px]">Type</th>
+              <th className="px-4 py-3 text-left">Description</th>
+              <th className="px-4 py-3 text-right w-[100px]">Debit (৳)</th>
+              <th className="px-4 py-3 text-right w-[100px]">Credit (৳)</th>
+              <th className="px-4 py-3 text-right w-[110px]">Balance (৳)</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-school-border/50">
-            {paged.length > 0 ? paged.map((tx: any) => {
-              const isCancelled = tx.isCancelled;
-              const isReversal = !!tx.reversalOfId;
-              return (
-              <tr key={tx.id} className={`border-t border-school-border/50 transition-colors ${isCancelled ? 'bg-gray-50 line-through opacity-60' : isReversal ? 'bg-violet-50/50 border-l-2 border-l-violet-400' : 'hover:bg-school-paper/30'}`}>
-                <td data-label="Date" className="px-4 py-3 whitespace-nowrap text-xs font-mono font-bold">
-                  {new Date(tx.transactionDate).toLocaleDateString()}
+            <tr className="bg-school-paper/30 text-xs font-bold text-school-muted">
+              <td className="px-4 py-2" colSpan={3}>Opening Balance</td>
+              <td className="px-4 py-2 text-right" colSpan={3}>{fmt(openingBalance)}</td>
+            </tr>
+            {data.length > 0 ? data.map((entry: any) => (
+              <tr key={entry.id} className="hover:bg-school-paper/30 text-xs">
+                <td className="px-4 py-2.5 whitespace-nowrap font-mono font-bold">{new Date(entry.date).toLocaleDateString()}</td>
+                <td className="px-4 py-2.5">
+                  <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${entry.transactionType === 'INCOME' ? 'bg-emerald-50 text-emerald-700' : entry.transactionType === 'EXPENSE' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
+                    {entry.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : entry.transactionType}
+                  </span>
                 </td>
-                <td data-label="Category" className="px-4 py-3 font-bold text-xs">
-                  {tx.category || 'Uncategorized'}
-                  {isCancelled && <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-red-100 text-red-600 line-through-none">CANCELLED</span>}
-                  {isReversal && <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-violet-100 text-violet-700">REVERSAL</span>}
-                </td>
-                <td data-label="Class" className="px-4 py-3 text-xs hidden sm:table-cell">{tx.student?.class || tx.className || '—'}</td>
-                <td data-label="Student" className="px-4 py-3 text-xs hidden sm:table-cell">{tx.student?.name || '—'}</td>
-                <td data-label="Accounts" className="px-4 py-3 text-[10px] text-school-muted hidden sm:table-cell">
-                  {tx.sourceAccount ? tx.sourceAccount.replace(/_/g, ' ') : 'External'} → {tx.destinationAccount ? tx.destinationAccount.replace(/_/g, ' ') : 'External'}
-                </td>
-                <td data-label="Amount" className={`px-4 py-3 text-right font-bold ${isCancelled ? 'text-gray-400' : isReversal ? 'text-violet-600' : tx.transactionType === 'EXPENSE' ? 'text-rose-600' : tx.transactionType === 'INCOME' ? 'text-emerald-600' : 'text-blue-600'}`}>
-                  {tx.transactionType === 'EXPENSE' ? '−' : '+'} ৳{fmt(Number(tx.amount))}
-                </td>
-                <td data-label="Type" className="px-4 py-3 text-center hidden sm:table-cell">
-                  {isReversal ? (
-                    <span className="text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded bg-violet-50 text-violet-700">
-                      Reversal
-                    </span>
-                  ) : (
-                    <span className={`text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded ${tx.transactionType === 'INCOME' ? 'bg-emerald-50 text-emerald-700' : tx.transactionType === 'EXPENSE' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
-                      {tx.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : tx.transactionType}
-                    </span>
-                  )}
-                </td>
-                {canWrite && (
-                  <td data-label="Actions" className="px-4 py-3 text-center">
-                    {isCancelled ? (
-                      <span className="text-[9px] text-school-muted" title={`Cancelled by ${userMap[tx.cancelledBy] || tx.cancelledBy} on ${tx.cancelledAt ? new Date(tx.cancelledAt).toLocaleDateString() : ''}: ${tx.cancelReason || 'No reason'}`}>
-                        {userMap[tx.cancelledBy] || tx.cancelledBy || 'system'}
-                      </span>
-                    ) : isReversal ? (
-                      <span className="text-[9px] text-violet-500">auto</span>
-                    ) : (
-                      <button onClick={() => setCancelId(tx.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1" title="Cancel transaction" aria-label="Cancel transaction">
-                        <Ban size={14} />
-                      </button>
-                    )}
-                  </td>
-                )}
+                <td className="px-4 py-2.5 text-school-muted max-w-[200px] truncate">{entry.description}</td>
+                <td className="px-4 py-2.5 text-right font-bold text-emerald-600">{entry.debit ? fmt(entry.debit) : '—'}</td>
+                <td className="px-4 py-2.5 text-right font-bold text-rose-600">{entry.credit ? fmt(entry.credit) : '—'}</td>
+                <td className="px-4 py-2.5 text-right font-bold font-mono">{fmt(entry.runningBalance)}</td>
               </tr>
-              );
-            }) : (
-              <tr><td colSpan={canWrite ? 8 : 7} className="px-4 py-12 text-center text-sm text-school-muted italic">
-                {transactions.length ? 'No transactions match filters.' : 'No transactions yet.'}
+            )) : (
+              <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-school-muted italic">
+                {loading ? 'Loading...' : total > 0 ? 'No entries match filters.' : 'No entries yet.'}
               </td></tr>
             )}
+            <tr className="bg-school-primary/5 text-xs font-bold border-t-2 border-school-primary/20">
+              <td className="px-4 py-2.5" colSpan={3}>
+                <span className="text-school-muted font-normal">Total Dr:</span> {fmt(totalDebits)}
+                <span className="mx-2 text-school-muted">│</span>
+                <span className="text-school-muted font-normal">Total Cr:</span> {fmt(totalCredits)}
+              </td>
+              <td className="px-4 py-2.5 text-right font-bold text-school-primary">{fmt(closingBalance)}</td>
+              <td className="px-4 py-2.5 text-right text-[9px] text-school-muted">Closing</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -184,7 +222,7 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
       {totalPages > 1 && (
         <div className="px-5 py-3 border-t border-school-border flex items-center justify-between">
           <span className="text-xs text-school-muted">
-            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
           </span>
           <div className="flex items-center gap-2">
             <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 rounded-lg border border-school-border hover:bg-school-paper disabled:opacity-30" aria-label="Previous page">
@@ -246,6 +284,9 @@ const FinanceSection = () => {
     axios.get('/api/finance/fee-schedules', { withCredentials: true }).then(res => {
       setFeeSchedules(res.data);
     }).catch(() => {});
+    axios.get('/api/categories?type=EXPENSE').then(res => {
+      setExpenseCategories(res.data.map((c: any) => c.name));
+    }).catch(() => {});
   }, []);
 
   // Form state
@@ -259,7 +300,16 @@ const FinanceSection = () => {
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');
   const [feeMonth, setFeeMonth] = useState('');
+  const [expenseCategories, setExpenseCategories] = useState<string[]>([]);
+  const [showManageCategories, setShowManageCategories] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
   const [selectedFeeScheduleId, setSelectedFeeScheduleId] = useState('');
+
+  const matchedSchedule = selectedFeeScheduleId
+    ? feeSchedules.find((f: any) => f.id === selectedFeeScheduleId)
+    : feeSchedules.find((f: any) => f.category === category && (!f.classId || f.classRel?.name === selectedClass));
+  const isMonthlyFee = matchedSchedule?.frequency === 'MONTHLY';
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); fetchUsers(); }, []);
@@ -316,7 +366,7 @@ const FinanceSection = () => {
   const activeTransactions = transactions.filter((t: any) => !t.isCancelled);
 
   const totalIncome = activeTransactions
-    .filter((t: any) => t.transactionType === 'INCOME' && t.destinationAccount === 'CASH_IN_HAND')
+    .filter((t: any) => t.transactionType === 'INCOME' && (t.destinationAccount === 'CASH_IN_HAND' || t.destinationAccount === 'AL_RAWA_BANK'))
     .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
 
   const totalDepositedToBank = activeTransactions
@@ -400,24 +450,24 @@ const FinanceSection = () => {
         </div>
       </div>
 
-      {/* Target & Deposit Remaining */}
+      {/* Income Collected & Undeposited Income */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="bg-white rounded-xl border border-school-border p-3 sm:p-4">
-          <p className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-school-muted mb-1">Target Deposit</p>
+          <p className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-school-muted mb-1">Income Collected</p>
           <h3 className="text-base sm:text-xl font-serif text-school-primary">৳ {fmt(totalIncome)}</h3>
         </div>
         <div className="bg-white rounded-xl border border-school-border p-3 sm:p-4">
-          <p className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-school-muted mb-1">Deposit Remaining</p>
-          <h3 className={`text-base sm:text-xl font-serif ${depositRemaining > 0 ? 'text-red-600' : 'text-emerald-600'}`}>৳ {fmt(depositRemaining)}</h3>
+          <p className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-school-muted mb-1">Undeposited Income</p>
+          <h3 className={`text-base sm:text-xl font-serif ${depositRemaining > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>৳ {fmt(depositRemaining)}</h3>
         </div>
       </div>
 
-      {/* Deposit Alert */}
+      {/* Undeposited Alert */}
       {depositRemaining > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-3 flex items-center gap-3">
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 flex items-center gap-3">
           <AlertTriangle size={16} className="text-amber-500 flex-shrink-0" />
-          <p className="text-sm text-red-700 font-medium">
-            <strong>৳ {fmt(depositRemaining)}</strong> still in Cash in Hand waiting to be deposited to AL RAWA Bank.
+          <p className="text-sm text-amber-800 font-medium">
+            <strong>৳ {fmt(depositRemaining)}</strong> in cash not yet deposited to AL RAWA Bank.
           </p>
         </div>
       )}
@@ -543,13 +593,15 @@ const FinanceSection = () => {
                 {selectedStudent && (
                   <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee for Month</label>
-                      <div className="relative cursor-pointer" onClick={e => { const input = e.currentTarget.querySelector<HTMLInputElement>('input[type="month"]'); if (input) { if (typeof input.showPicker === 'function') input.showPicker(); else input.focus(); } }}>
-                        <input type="month" value={feeMonth} onChange={e => setFeeMonth(e.target.value)}
-                          className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent cursor-pointer" />
+                    {isMonthlyFee && (
+                      <div>
+                        <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee for Month</label>
+                        <div className="relative cursor-pointer" onClick={e => { const input = e.currentTarget.querySelector<HTMLInputElement>('input[type="month"]'); if (input) { if (typeof input.showPicker === 'function') input.showPicker(); else input.focus(); } }}>
+                          <input type="month" value={feeMonth} onChange={e => setFeeMonth(e.target.value)}
+                            className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent cursor-pointer" />
+                        </div>
                       </div>
-                    </div>
+                    )}
                     <div>
                       <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee Schedule</label>
                       <select value={selectedFeeScheduleId} onChange={e => {
@@ -560,7 +612,7 @@ const FinanceSection = () => {
                         className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
                         <option value="">Auto-detect</option>
                         {feeSchedules
-                          .filter((fs: any) => !fs.classId || fs.classRel?.name === selectedClass || (selectedStudent && students.find((s: any) => s.id === selectedStudent)?.classId === fs.classId))
+                          .filter((fs: any) => !fs.classId || fs.classRel?.name === selectedClass || (selectedStudent && students.length > 0 && students.find((s: any) => s.id === selectedStudent)?.classId === fs.classId))
                           .map((fs: any) => (
                             <option key={fs.id} value={fs.id}>
                               {fs.category} ({fs.frequency}) — {Number(fs.amount).toLocaleString()} ৳
@@ -585,12 +637,56 @@ const FinanceSection = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Category</label>
+                  <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block flex items-center gap-2">
+                    Category
+                    <button type="button" onClick={() => setShowManageCategories(!showManageCategories)} className="text-[9px] text-blue-600 hover:text-blue-800 font-bold">
+                      {showManageCategories ? 'Done' : 'Manage'}
+                    </button>
+                  </label>
                   <select value={category} onChange={e => setCategory(e.target.value)}
                     className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
                     <option value="">Select...</option>
-                    {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
+                  {showManageCategories && (
+                    <div className="mt-2 p-3 bg-gray-50 rounded-xl border border-school-border space-y-2">
+                      <div className="flex gap-2">
+                        <input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)}
+                          placeholder="New category name"
+                          className="flex-1 border border-school-border rounded-lg px-3 py-1.5 text-xs" />
+                        <button onClick={async () => {
+                          if (!newCategoryName.trim()) return;
+                          try {
+                            await axios.post('/api/categories', { type: 'EXPENSE', name: newCategoryName.trim() });
+                            const res = await axios.get('/api/categories?type=EXPENSE');
+                            setExpenseCategories(res.data.map((c: any) => c.name));
+                            setNewCategoryName('');
+                            toast('Category added', 'success');
+                          } catch { toast('Failed to add category', 'error'); }
+                        }} className="px-3 py-1.5 bg-school-primary text-white rounded-lg text-xs font-bold">
+                          Add
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {expenseCategories.map(c => (
+                          <div key={c} className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-school-border text-[10px]">
+                            <span>{c}</span>
+                            <button onClick={async () => {
+                              try {
+                                const res = await axios.get('/api/categories?type=EXPENSE');
+                                const cat = res.data.find((x: any) => x.name === c);
+                                if (cat) await axios.delete(`/api/categories/${cat.id}`);
+                                setExpenseCategories(expenseCategories.filter(x => x !== c));
+                                toast('Category deleted', 'success');
+                              } catch { toast('Failed to delete', 'error'); }
+                            }} className="text-rose-500 hover:text-rose-700 ml-1" title="Delete">
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -628,7 +724,7 @@ const FinanceSection = () => {
           )}
 
       {/* Ledger */}
-      <Ledger transactions={transactions} fmt={fmt} fetchTransactions={fetchTransactions} fetchFinance={fetchFinance} userMap={userMap} />
+      <Ledger fmt={fmt} fetchFinance={fetchFinance} userMap={userMap} />
       </div>)}
 
     </div>

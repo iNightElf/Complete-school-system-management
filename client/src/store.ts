@@ -138,6 +138,9 @@ interface SchoolState {
   teacherTotal: number;
   staffTotal: number;
   bookTotal: number;
+  transactionTotal: number;
+  transactionPage: number;
+  transactionTotalPages: number;
   lastFetched: number | null;
   loading: { classes: boolean; students: boolean; teachers: boolean; staff: boolean; books: boolean; finance: boolean; transactions: boolean };
 
@@ -182,6 +185,9 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   teacherTotal: 0,
   staffTotal: 0,
   bookTotal: 0,
+  transactionTotal: 0,
+  transactionPage: 1,
+  transactionTotalPages: 1,
   lastFetched: null,
   loading: { classes: false, students: false, teachers: false, staff: false, books: false, finance: false, transactions: false },
 
@@ -220,7 +226,14 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   },
   fetchTransactions: async (params?: Record<string, string>) => {
     set((s) => ({ loading: { ...s.loading, transactions: true } }));
-    try { const res = await api.get('/finance/transactions', { params }); set({ transactions: res.data, lastFetched: Date.now() }); } catch { /* silent */ }
+    try {
+      const res = await api.get('/finance/transactions', { params });
+      if (Array.isArray(res.data)) {
+        set({ transactions: res.data, lastFetched: Date.now() });
+      } else if (res.data?.data) {
+        set({ transactions: res.data.data, transactionTotal: res.data.total, transactionPage: res.data.page, transactionTotalPages: res.data.totalPages, lastFetched: Date.now() });
+      }
+    } catch { /* silent */ }
     finally { set((s) => ({ loading: { ...s.loading, transactions: false } })); }
   },
 

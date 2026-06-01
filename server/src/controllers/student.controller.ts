@@ -97,7 +97,6 @@ export const updateStudent = async (req: Request, res: Response) => {
     const student = await prisma.student.update({
       where: { id },
       data,
-      include: { results: true },
     });
 
     logAudit({ action: "UPDATE", entityType: "Student", entityId: id, details: JSON.stringify({ changes: Object.keys(data) }) });
@@ -209,7 +208,7 @@ export const importStudents = async (req: Request, res: Response) => {
         });
         created.push({ id: student.id, name: student.name, class: student.class, roll: student.roll });
       } catch (e: any) {
-        errors.push({ row: i + 1, error: e.message || "Create failed" });
+        errors.push({ row: i + 1, error: sanitizeError(e) });
       }
     }
 

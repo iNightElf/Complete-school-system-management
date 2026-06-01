@@ -76,6 +76,7 @@ export interface Transaction {
   date: string;
   transactionDate?: string;
   type: 'INCOME' | 'EXPENSE' | 'INTERNAL_TRANSFER';
+  transactionType?: string;
   description: string;
   category: string | null;
   amount: number;
@@ -86,6 +87,9 @@ export interface Transaction {
   className?: string | null;
   feeMonth: string | null;
   feeScheduleId: string | null;
+  affectsIncomeLedger?: boolean;
+  affectsExpenseLedger?: boolean;
+  isCancelled?: boolean;
   reversalOfId: string | null;
   createdAt: string;
 }

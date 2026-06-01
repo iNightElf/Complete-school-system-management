@@ -77,13 +77,14 @@ export default function TeacherSection() {
 
   const confirmDelete = async () => {
     if (!deleteId) return;
+    const idToRestore = deleteId;
     setDeleteLoading(true);
     try {
       const res = await fetch(`${API_URL}/teachers/${deleteId}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Delete failed'); }
       toast('Teacher deleted', '', { label: 'Undo', onClick: async () => {
         try {
-          await fetch(`${API_URL}/teachers/${deleteId}/restore`, { method: 'POST', credentials: 'include' });
+          await fetch(`${API_URL}/teachers/${idToRestore}/restore`, { method: 'POST', credentials: 'include' });
           toast('Teacher restored ✓', 'success');
           fetchTeachers();
         } catch { toast('Could not undo', 'error'); }

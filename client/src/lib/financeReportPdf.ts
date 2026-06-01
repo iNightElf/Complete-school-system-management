@@ -18,7 +18,7 @@ export function addLogo(doc: jsPDF, y: number) {
     const el = document.getElementById('school-logo') as HTMLImageElement;
     if (!el?.src) return;
     const raw = el.src.includes(',') ? el.src.split(',')[1] : el.src;
-    doc.addImage(raw, 'JPEG', 12, y, 18, 18);
+    doc.addImage(raw, 'UNKNOWN', 12, y, 18, 18);
   } catch { console.debug('Photo load skipped'); }
 }
 
@@ -436,4 +436,137 @@ export function pdfYearlyAGM(
   });
 
   doc.save(`AGM_Report_${fyLabel.replace('-', '_')}.pdf`);
+}
+
+export function pdfLedger(entries: any[], account: string, dateFrom: string, dateTo: string, openingBalance: number, closingBalance: number) {
+  const doc = new jsPDF({ format: 'a4', unit: 'mm' });
+  const accLabel = account === 'AL_RAWA_BANK' ? 'AL RAWA Bank' : 'Cash in Hand';
+  const rangeStr = dateFrom || dateTo ? `${dateFrom || 'earliest'} — ${dateTo || 'latest'}` : 'All dates';
+  let y = addHeader(doc, `${accLabel} Ledger`, rangeStr, 10);
+
+  const M = 12, PW = 186;
+  const dateW = 28, typeW = 20, descW = 62, debitW = 38, creditW = 38, balW = 0;
+  const headerH = 7, rowH = 5;
+
+  function drawTableHeader() {
+    doc.setFillColor(26, 26, 46);
+    doc.rect(M, y, PW, headerH, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6); doc.setTextColor(255, 255, 255);
+    doc.text('Date', M + 2, y + 4.5);
+    doc.text('Type', M + dateW + 2, y + 4.5);
+    doc.text('Description', M + dateW + typeW + 2, y + 4.5);
+    doc.text('Debit', M + PW - debitW - creditW - balW - 2, y + 4.5, { align: 'right' });
+    doc.text('Credit', M + PW - creditW - balW - 2, y + 4.5, { align: 'right' });
+    doc.text('Balance', M + PW - balW - 2, y + 4.5, { align: 'right' });
+    y += headerH;
+  }
+
+  if (!entries.length) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(130, 124, 114);
+    doc.text('No entries for this period.', M, y + 10);
+    doc.save(`${accLabel.replace(/\s+/g, '_')}_Ledger_${dateFrom || 'all'}_to_${dateTo || 'all'}.pdf`);
+    return;
+  }
+
+  let totalDebits = 0, totalCredits = 0;
+
+  function drawOpeningRow() {
+    doc.setFillColor(244, 244, 244);
+    doc.rect(M, y, PW, rowH, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(100, 100, 100);
+    doc.text('Opening Balance', M + 2, y + 3.5);
+    doc.text(fmt(openingBalance) + ' /-', M + PW - 2, y + 3.5, { align: 'right' });
+    y += rowH;
+  }
+
+  drawTableHeader();
+  drawOpeningRow();
+
+  entries.forEach((e: any, i: number) => {
+    if (y > 270) { doc.addPage(); y = 14; drawTableHeader(); drawOpeningRow(); }
+    if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(M, y, PW, rowH, 'F'); }
+
+    const dateStr = new Date(e.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const typeLabel = e.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : e.transactionType;
+    const debit = e.debit || 0;
+    const credit = e.credit || 0;
+    totalDebits += debit;
+    totalCredits += credit;
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+    doc.setTextColor(80, 80, 80);
+    doc.text(dateStr, M + 2, y + 3.5);
+    doc.setTextColor(26, 26, 46);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6);
+    doc.text(typeLabel, M + dateW + 2, y + 3.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
+    doc.setTextColor(130, 124, 114);
+    doc.text((e.description || '').substring(0, 42), M + dateW + typeW + 2, y + 3.5);
+    if (debit) {
+      doc.setTextColor(22, 101, 52); doc.setFont('helvetica', 'bold');
+      doc.text(fmt(debit) + ' /-', M + PW - debitW - creditW - balW - 2, y + 3.5, { align: 'right' });
+    }
+    if (credit) {
+      doc.setTextColor(185, 28, 28); doc.setFont('helvetica', 'bold');
+      doc.text(fmt(credit) + ' /-', M + PW - creditW - balW - 2, y + 3.5, { align: 'right' });
+    }
+    doc.setTextColor(26, 26, 46); doc.setFont('helvetica', 'bold');
+    doc.text(fmt(e.runningBalance) + ' /-', M + PW - 2, y + 3.5, { align: 'right' });
+    y += rowH;
+  });
+
+  if (y > 260) { doc.addPage(); y = 14; }
+  doc.setFillColor(26, 26, 46);
+  doc.rect(M, y, PW, 8, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(255, 255, 255);
+  doc.text(`Total Dr: ${fmt(totalDebits)}  /  Total Cr: ${fmt(totalCredits)}`, M + 2, y + 5.5);
+  doc.text(`Closing: ${fmt(closingBalance)} /-`, M + PW - 2, y + 5.5, { align: 'right' });
+
+  doc.save(`${accLabel.replace(/\s+/g, '_')}_Ledger_${dateFrom || 'all'}_to_${dateTo || 'all'}.pdf`);
+}
+
+export function buildLedgerPrintHtml(entries: any[], account: string, dateFrom: string, dateTo: string, openingBalance: number, closingBalance: number, fmt: (n: number) => string) {
+  const accLabel = account === 'AL_RAWA_BANK' ? 'AL RAWA Bank' : 'Cash in Hand';
+  const rangeStr = dateFrom || dateTo ? `${dateFrom || 'earliest'} — ${dateTo || 'latest'}` : 'All dates';
+  const rows = entries.map((e: any) => {
+    const typeLabel = e.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : e.transactionType;
+    const debit = e.debit || 0;
+    const credit = e.credit || 0;
+    return `<tr>
+      <td>${new Date(e.date).toLocaleDateString()}</td>
+      <td><span class="type-${e.transactionType.toLowerCase()}">${typeLabel}</span></td>
+      <td>${e.description || '—'}</td>
+      <td class="debit">${debit ? fmt(debit) : '—'}</td>
+      <td class="credit">${credit ? fmt(credit) : '—'}</td>
+      <td class="balance">${fmt(e.runningBalance)}</td>
+    </tr>`;
+  }).join('');
+  const totalDebits = entries.reduce((s: number, e: any) => s + (e.debit || 0), 0);
+  const totalCredits = entries.reduce((s: number, e: any) => s + (e.credit || 0), 0);
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${accLabel} Ledger</title>
+<style>
+  body{font-family:system-ui,sans-serif;padding:30px;color:#1a1a2e;font-size:12px;max-width:1200px;margin:auto}
+  h1{font-size:18px;margin:0 0 2px}h2{font-size:12px;margin:0 0 16px;color:#827c72;font-weight:normal}
+  table{width:100%;border-collapse:collapse}
+  th{padding:8px 10px;border:1px solid #d7d2c8;background:#1a1a2e;color:#fff;font-size:9px;text-transform:uppercase;text-align:left}
+  td{padding:6px 10px;border:1px solid #d7d2c8;font-size:11px}
+  .opening{background:#f0f0f0;font-weight:bold;color:#666}
+  .opening td{font-size:11px}
+  .debit{color:#166634;font-weight:bold;text-align:right}.credit{color:#b91c1c;font-weight:bold;text-align:right}.balance{font-weight:bold;text-align:right}
+  .type-income{color:#166634;font-weight:bold;font-size:10px}.type-expense{color:#b91c1c;font-weight:bold;font-size:10px}.type-internal_transfer{color:#1e40af;font-weight:bold;font-size:10px}
+  .summary td{background:#1a1a2e;color:#fff;font-weight:bold;font-size:11px;padding:8px 10px}
+  .summary .right{text-align:right}
+  @media print{body{padding:15px}@page{size:landscape;margin:10mm}}
+</style></head><body>
+  <h1>AL RAWA English School</h1>
+  <h2>${accLabel} Ledger — ${rangeStr}</h2>
+  <table><thead><tr>
+    <th>Date</th><th>Type</th><th>Description</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th>
+  </tr></thead><tbody>
+    <tr class="opening"><td colspan="3">Opening Balance</td><td colspan="3" style="text-align:right">${fmt(openingBalance)}</td></tr>
+    ${rows}
+  </tbody><tfoot>
+    <tr class="summary"><td colspan="3">Total Dr: ${fmt(totalDebits)}  |  Total Cr: ${fmt(totalCredits)}</td><td class="right" colspan="3">Closing: ${fmt(closingBalance)}</td></tr>
+  </tfoot></table>
+</body></html>`;
 }

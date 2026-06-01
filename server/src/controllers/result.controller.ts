@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
 import { sanitizeError, errorStatus } from "../lib/errors.js";
-import { validate, saveStudentResultSchema } from "../lib/validate.js";
+import { validate, saveStudentResultSchema, createSubjectSchema, updateSubjectSchema } from "../lib/validate.js";
 
 export const getSubjectsByClass = async (req: Request, res: Response) => {
   try {
@@ -24,19 +24,18 @@ export const getSubjectsByClass = async (req: Request, res: Response) => {
 export const createSubject = async (req: Request, res: Response) => {
   try {
     const classId = param(req, "classId");
-    const { name, fullMarks } = req.body;
+    const v = validate(createSubjectSchema, req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
+    const { name, fullMarks } = v.data;
 
     const cls = await prisma.schoolClass.findUnique({ where: { id: classId } });
     if (!cls) return res.status(404).json({ error: "Class not found" });
-    if (!name?.trim() || !fullMarks) {
-      return res.status(400).json({ error: "Name and fullMarks are required" });
-    }
 
     const maxOrder = await prisma.subject.aggregate({ where: { classId }, _max: { order: true } });
     const nextOrder = (maxOrder._max.order ?? -1) + 1;
 
     const subject = await prisma.subject.create({
-      data: { name: name.trim(), fullMarks: Number(fullMarks), classId, order: nextOrder },
+      data: { name, fullMarks, classId, order: nextOrder },
     });
 
     res.status(201).json(subject);
@@ -48,14 +47,12 @@ export const createSubject = async (req: Request, res: Response) => {
 export const updateSubject = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const { name, fullMarks } = req.body;
+    const v = validate(updateSubjectSchema, req.body);
+    if (!v.success) return res.status(400).json({ error: v.error });
 
     const subject = await prisma.subject.update({
       where: { id },
-      data: {
-        ...(name !== undefined && { name: name.trim() }),
-        ...(fullMarks !== undefined && { fullMarks: Number(fullMarks) }),
-      },
+      data: v.data,
     });
 
     res.json(subject);

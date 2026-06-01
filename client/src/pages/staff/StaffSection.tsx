@@ -74,13 +74,14 @@ export default function StaffSection() {
 
   const confirmDelete = async () => {
     if (!deleteId) return;
+    const idToRestore = deleteId;
     setDeleteLoading(true);
     try {
       const res = await fetch(`${API_URL}/staff/${deleteId}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Delete failed'); }
       toast('Staff deleted', '', { label: 'Undo', onClick: async () => {
         try {
-          await fetch(`${API_URL}/staff/${deleteId}/restore`, { method: 'POST', credentials: 'include' });
+          await fetch(`${API_URL}/staff/${idToRestore}/restore`, { method: 'POST', credentials: 'include' });
           toast('Staff restored ✓', 'success');
           fetchStaff();
         } catch { toast('Could not undo', 'error'); }

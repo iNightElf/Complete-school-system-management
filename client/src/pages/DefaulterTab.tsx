@@ -8,6 +8,8 @@ import { API_URL } from '../lib/config';
 
 function getMonthName(m: number) { return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m]; }
 
+function shortName(s: string) { const p = s.trim().split(/\s+/); return p.length > 2 ? p.slice(0, 2).join(' ') : s; }
+
 function getMonthOptions(): { value: string; label: string }[] {
   const now = new Date();
   const months: { value: string; label: string }[] = [];
@@ -62,21 +64,20 @@ const DefaulterTab: React.FC = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchClasses(); fetchStudents(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchClasses(); fetchStudents(); }, []);
   useEffect(() => {
     const controller = new AbortController();
     fetchDefaulter(controller.signal);
     return () => controller.abort();
-  }, [filterClass, filterStudent, filterFee, monthFrom, monthTo, yearFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterClass, filterStudent, filterFee, monthFrom, monthTo, yearFilter]);
 
   const displayData = filterFee
     ? defaulterData.filter(r => r.fees.some((f: any) => f.name === filterFee))
     : defaulterData;
 
-  const totalDueAll = displayData.reduce((s: number, r: any) => s + Math.max(0, r.balance), 0);
+  const totalDueAll = displayData.reduce((s: number, r: any) => s + r.totalDue, 0);
   const totalPaidAll = displayData.reduce((s: number, r: any) => s + r.totalPaid, 0);
 
-  // Get month range for column headers
   const monthRange: string[] = [];
   if (monthFrom && monthTo) {
     let [y, m] = monthFrom.split('-').map(Number);
@@ -85,6 +86,23 @@ const DefaulterTab: React.FC = () => {
       monthRange.push(`${y}-${String(m).padStart(2, '0')}`);
       m++; if (m > 12) { m = 1; y++; }
     }
+  }
+
+  const yearlyFeeNames = [...new Set(displayData.flatMap((r: any) =>
+    r.fees.filter((f: any) => f.type === 'onetime' || f.type === 'global').map((f: any) => f.name)
+  ))];
+  const monthlyFeeNames = [...new Set(displayData.flatMap((r: any) =>
+    r.fees.filter((f: any) => f.type === 'recurring' || f.type === 'special').map((f: any) => f.name)
+  ))];
+
+  function getStudentFee(row: any, name: string): any {
+    return row.fees.find((f: any) => f.name === name) || null;
+  }
+
+  function getMonthlyFeeValue(row: any, feeName: string, month: string): any {
+    const fee = row.fees.find((f: any) => f.name === feeName && (f.type === 'recurring' || f.type === 'special'));
+    if (!fee?.months) return null;
+    return fee.months.find((m: any) => m.month === month) || null;
   }
 
   const classLabel = filterClass || 'All Classes';
@@ -96,12 +114,15 @@ const DefaulterTab: React.FC = () => {
     const w = window.open('', '_blank');
     if (!w) return;
     w.document.write(`<html><head><title>Defaulter Report</title><style>
+      @page{size:landscape;margin:10mm}
       body{font-family:system-ui,sans-serif;padding:20px;color:#1a1a2e;font-size:12px}
       table{width:100%;border-collapse:collapse;margin-top:8px}
-      th,td{padding:4px 6px;border:1px solid #d7d2c8;text-align:left;font-size:10px}
+      th,td{padding:4px 6px;border:1px solid #d7d2c8;text-align:center;vertical-align:middle;font-size:10px}
       th{background:#1a1a2e;color:#fff;font-size:9px;text-transform:uppercase}
+      td:first-child{text-align:left}
       .paid{color:#059669;font-weight:bold}.unpaid{color:#dc2626;font-weight:bold}
       h2{font-size:14px;margin:0}h3{font-size:11px;margin:2px 0 8px;color:#827c72}
+      tfoot td{background:#1a1a2e;color:#fff;font-weight:bold;font-size:11px}
       @media print{body{padding:10px}}
     </style></head><body><h2>AL RAWA English School</h2><h3>Fee Defaulter Report — ${subtitle}</h3>${el.innerHTML}</body></html>`);
     w.document.close(); w.print();
@@ -109,10 +130,19 @@ const DefaulterTab: React.FC = () => {
 
   function handlePdfDefaulter() {
     try {
-      defaulterPDF({ displayData, monthRange, classLabel, subtitle, totalDueAll, totalPaidAll, filterClass, monthFrom, monthTo });
+      defaulterPDF({ displayData, monthRange, classLabel, subtitle, totalDueAll, totalPaidAll, filterClass, monthFrom, monthTo, yearlyFeeNames, monthlyFeeNames });
       toast('PDF downloaded', 'success');
     } catch { toast('PDF failed', 'error'); }
   }
+
+  const hasMonthly = monthlyFeeNames.length > 0 && monthRange.length > 0;
+  const colCount = 1 + yearlyFeeNames.length + (hasMonthly ? monthRange.length * monthlyFeeNames.length : 0) + 3;
+
+  const renderFeeCell = (amount: number, paid: boolean) => (
+    <span className={`font-bold text-[10px] ${paid ? 'text-emerald-600' : 'text-rose-600'}`}>
+      {fmt(amount)}/- {paid ? <Check size={10} className="inline" /> : <X size={10} className="inline" />}
+    </span>
+  );
 
   return (
     <div className="space-y-5">
@@ -215,87 +245,87 @@ const DefaulterTab: React.FC = () => {
           <table className="w-full text-sm mobile-card-table">
             <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
               <tr>
-                <th className="px-4 py-3 text-left sticky left-0 bg-school-paper/50 z-10">Student</th>
-                <th className="px-3 py-3 text-left sticky left-[140px] bg-school-paper/50 z-10">Class</th>
-                <th className="px-3 py-3 text-left">Fee</th>
-                {monthRange.map(m => {
+                <th className="px-4 py-3 text-left sticky left-0 bg-school-paper/50 z-10" rowSpan={2}>Student<br/><span className="text-[9px] font-normal">Class</span></th>
+                {yearlyFeeNames.map(name => (
+                  <th key={name} className="px-2 py-3 text-center" rowSpan={2}>{shortName(name)}</th>
+                ))}
+                {hasMonthly && monthRange.map(m => {
                   const [yr, mn] = m.split('-');
-                  return <th key={m} className="px-2 py-3 text-center">{getMonthName(Number(mn) - 1)}<br/>'{yr.slice(2)}</th>;
+                  return <th key={m} className="px-2 py-3 text-center" colSpan={monthlyFeeNames.length}>
+                    {getMonthName(Number(mn) - 1)}<br/>'{yr.slice(2)}
+                  </th>;
                 })}
-                <th className="px-3 py-3 text-right">Due</th>
-                <th className="px-3 py-3 text-right">Paid</th>
-                <th className="px-3 py-3 text-right">Balance</th>
+                <th className="px-3 py-3 text-right" rowSpan={2}>Due</th>
+                <th className="px-3 py-3 text-right" rowSpan={2}>Paid</th>
+                <th className="px-3 py-3 text-right" rowSpan={2}>Balance</th>
               </tr>
+              {hasMonthly && (
+                <tr>
+                  {monthRange.flatMap(m => monthlyFeeNames.map(name => (
+                    <th key={`${m}_${name}`} className="px-1 py-2 text-center text-[9px] font-semibold tracking-normal">{shortName(name)}</th>
+                  )))}
+                </tr>
+              )}
             </thead>
             <tbody className="divide-y divide-school-border/50">
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <tr key={i}>
-                    {[1,2,3,4,5,6].map(j => (
-                      <td key={j} className="px-4 py-3"><div className="h-4 bg-school-paper rounded animate-pulse w-3/4" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-school-paper rounded animate-pulse w-24" /></td>
+                    {yearlyFeeNames.map(name => (
+                      <td key={name} className="px-2 py-3"><div className="h-4 bg-school-paper rounded animate-pulse w-12 mx-auto" /></td>
                     ))}
-                    {monthRange.map(m => <td key={m} className="px-2 py-3"><div className="h-4 w-4 bg-school-paper rounded animate-pulse mx-auto" /></td>)}
-                    {[1,2,3].map(j => <td key={j} className="px-3 py-3"><div className="h-4 bg-school-paper rounded animate-pulse w-12 ml-auto" /></td>)}
+                    {hasMonthly && monthRange.flatMap(m => monthlyFeeNames.map(name => (
+                      <td key={`sk_${m}_${name}`} className="px-1 py-3"><div className="h-4 w-8 bg-school-paper rounded animate-pulse mx-auto" /></td>
+                    )))}
+                    <td className="px-3 py-3"><div className="h-4 bg-school-paper rounded animate-pulse w-16 ml-auto" /></td>
+                    <td className="px-3 py-3"><div className="h-4 bg-school-paper rounded animate-pulse w-16 ml-auto" /></td>
+                    <td className="px-3 py-3"><div className="h-4 bg-school-paper rounded animate-pulse w-16 ml-auto" /></td>
                   </tr>
                 ))
-              ) : displayData.length > 0 ? displayData.map((row: any) => {
-                const recurring = row.fees.filter((f: any) => f.type === 'recurring' || f.type === 'special');
-                const onetime = row.fees.filter((f: any) => f.type === 'onetime' || f.type === 'global');
-                const allFees = [...recurring, ...onetime];
-                return allFees.map((fee: any, idx: number) => (
-                  <tr key={`${row.studentId}_${fee.name}_${idx}`} className="hover:bg-school-paper/30 transition-colors">
-                    {idx === 0 ? (
-                      <>
-                        <td className="px-4 py-2 sticky left-0 bg-white z-10" rowSpan={allFees.length} data-label="Student">
-                          <p className="font-bold text-xs">{row.name}</p>
-                          {row.fatherName && <p className="text-[10px] text-school-muted">{row.fatherName}</p>}
-                        </td>
-                        <td className="px-3 py-2 sticky left-[140px] bg-white z-10 text-xs" rowSpan={allFees.length} data-label="Class">
-                          {row.class}{row.roll ? ` - ${row.roll}` : ''}
-                        </td>
-                      </>
-                    ) : <td data-label="Student" className="hidden"></td>}
-                    <td className="px-3 py-2" data-label="Fee">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-blue-50 text-blue-700">{fee.name}</span>
-                      <span className="text-[9px] text-school-muted ml-1">{fmt(fee.amount)} /-</span>
-                    </td>
-                    {/* Monthly cells */}
-                    {monthRange.map(m => {
-                      const [yr, mn] = m.split('-');
-                      if (fee.months) {
-                        const md = fee.months.find((x: any) => x.month === m);
-                        if (md) {
-                          return <td key={m} className="px-1 py-2 text-center" data-label={`${getMonthName(Number(mn) - 1)} '${yr.slice(2)}`}>
-                            <span className={`inline-block w-4 h-4 rounded text-[8px] leading-4 font-bold ${md.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                              {md.paid ? <Check size={10} /> : <X size={10} />}
-                            </span>
-                          </td>;
-                        }
-                        return <td key={m} className="px-1 py-2 text-center text-[8px] text-school-muted" data-label={`${getMonthName(Number(mn) - 1)} '${yr.slice(2)}`}>—</td>;
-                      }
-                      if (idx === 0 && fee.paid !== undefined) {
-                        return <td key={m} className="px-1 py-2 text-center" data-label={`${getMonthName(Number(mn) - 1)} '${yr.slice(2)}`}></td>;
-                      }
-                      return <td key={m} className="px-1 py-2 text-center text-[8px] text-school-muted" data-label={`${getMonthName(Number(mn) - 1)} '${yr.slice(2)}`}>—</td>;
-                    })}
-                    {idx === 0 ? (
-                      <>
-                        <td className="px-3 py-2 text-right font-bold text-xs" rowSpan={allFees.length} data-label="Due">{fmt(row.totalDue)} /-</td>
-                        <td className="px-3 py-2 text-right text-xs font-bold text-emerald-600" rowSpan={allFees.length} data-label="Paid">{fmt(row.totalPaid)} /-</td>
-                        <td className="px-3 py-2 text-right font-bold text-xs" rowSpan={allFees.length} data-label="Balance">
-                          <span className={row.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}>{fmt(Math.abs(row.balance))} /-</span>
-                          {row.balance <= 0 && <span className="text-[9px] text-emerald-500 ml-1">(clear)</span>}
-                        </td>
-                      </>
-                    ) : <td data-label="Due" className="hidden"></td>}
-                  </tr>
-                ));
-              }) : (
-                <tr><td colSpan={8 + monthRange.length} className="px-4 py-12 text-center text-sm text-school-muted italic">
+              ) : displayData.length > 0 ? displayData.map((row: any) => (
+                <tr key={row.studentId} className="hover:bg-school-paper/30 transition-colors border-t-2 border-school-primary/20">
+                  <td className="px-4 py-2 sticky left-0 bg-white z-10 font-bold text-xs border-r border-school-border/30" data-label="Student">
+                    {row.name}<br/><span className="text-[10px] text-school-muted font-normal">{row.class}</span>
+                  </td>
+                  {yearlyFeeNames.map(name => {
+                    const fee = getStudentFee(row, name);
+                    if (!fee) return <td key={name} className="px-2 py-2 text-center text-[8px] text-school-muted">—</td>;
+                    return <td key={name} className="px-2 py-2 text-center">{renderFeeCell(fee.amount, fee.paid)}</td>;
+                  })}
+                  {hasMonthly && monthRange.flatMap(m => monthlyFeeNames.map(name => {
+                    const md = getMonthlyFeeValue(row, name, m);
+                    if (!md) return <td key={`${m}_${name}`} className="px-1 py-2 text-center"><span className="text-rose-500"><X size={12} className="inline" /></span></td>;
+                    return <td key={`${m}_${name}`} className="px-1 py-2 text-center">{renderFeeCell(md.amount, md.paid)}</td>;
+                  }))}
+                  <td className="px-3 py-2 text-right font-bold text-xs" data-label="Due">{fmt(row.totalDue)} /-</td>
+                  <td className="px-3 py-2 text-right text-xs font-bold text-emerald-600" data-label="Paid">{fmt(row.totalPaid)} /-</td>
+                  <td className="px-3 py-2 text-right font-bold text-xs" data-label="Balance">
+                    <span className={row.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}>{fmt(Math.abs(row.balance))} /-</span>
+                    {row.balance <= 0 && <span className="text-[9px] text-emerald-500 ml-1">(clear)</span>}
+                  </td>
+                </tr>
+              )) : (
+                <tr><td colSpan={colCount} className="px-4 py-12 text-center text-sm text-school-muted italic">
                   No defaulter data found.
                 </td></tr>
               )}
             </tbody>
+            {!loading && displayData.length > 0 && (
+            <tfoot>
+              <tr className="bg-school-primary/5 border-t-2 border-school-primary/20">
+                <td className="px-4 py-3 sticky left-0 bg-school-primary/5 text-xs font-bold" colSpan={1 + yearlyFeeNames.length}>Grand Total</td>
+                {hasMonthly && monthRange.flatMap(m => monthlyFeeNames.map(name => (
+                  <td key={`gt_${m}_${name}`} className="px-2 py-3"></td>
+                )))}
+                <td className="px-3 py-3 text-right font-bold text-xs">{fmt(totalDueAll)} /-</td>
+                <td className="px-3 py-3 text-right font-bold text-xs text-emerald-600">{fmt(totalPaidAll)} /-</td>
+                <td className={`px-3 py-3 text-right font-bold text-xs ${totalDueAll - totalPaidAll > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  {fmt(Math.abs(totalDueAll - totalPaidAll))} /-
+                </td>
+              </tr>
+            </tfoot>
+            )}
           </table>
         </div>
       </div>

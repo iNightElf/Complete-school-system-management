@@ -121,11 +121,28 @@ npm run dev  # runs both server (port 5000) and client (port 5173)
 ## Environment Variables
 
 See `server/.env.example` for all required variables:
-- `DATABASE_URL` — PostgreSQL connection string
+- `DATABASE_URL` — PostgreSQL connection string (Supabase, Neon, or any PostgreSQL)
 - `BETTER_AUTH_URL` — Frontend URL (e.g. `http://localhost:5173`)
 - `BETTER_AUTH_SECRET` — Auth signing secret
 - `RESEND_API_KEY` — Email verification (Resend)
 - `CORS_ORIGINS` — Comma-separated allowed origins
+
+---
+
+## Supabase Deployment
+
+This app runs on Supabase with **zero code changes**. See `MIGRATE-TO-SUPABASE.md` for full instructions.
+
+**What changes:**
+- `DATABASE_URL` — point to your Supabase direct connection string
+- `docker-compose.yml` — already configured without local PostgreSQL (uses Supabase cloud)
+- Everything else stays the same — Prisma, Better Auth, all features
+
+**Why Supabase:**
+- Managed PostgreSQL with automated backups
+- Free tier: 500 MB DB, 50k monthly active users
+- No cold starts (unlike Neon free tier)
+- Built-in dashboard for tables, SQL editor, user management
 
 ## Backup & Restore
 
