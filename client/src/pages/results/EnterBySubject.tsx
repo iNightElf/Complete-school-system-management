@@ -17,10 +17,19 @@ export default function EnterBySubject() {
   const [bulkMarks, setBulkMarks] = useState<Record<string, string>>({});
   const [bulkAtt, setBulkAtt] = useState<Record<string, { days: string; present: string }>>({});
   const [bulkComment, setBulkComment] = useState<Record<string, string>>({});
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const loadResults = async (clsId: string) => {
     try { const res = await fetch(`${API_URL}/classes/${clsId}/results`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
   };
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges]);
 
   const handleSelectClass = (c: any) => { setCls(c); setBulkSubject(''); fetchSubjects(c.id); loadResults(c.id); fetchStudents(); };
 
@@ -58,6 +67,7 @@ export default function EnterBySubject() {
       else delete marksData[bulkSubject];
       await saveStudentResult(s.id, bulkTerm, marksData, existing?.attendance || undefined);
     }
+    setHasUnsavedChanges(false);
     toast(`Marks saved for ${clsStudents.length} students ✓`, 'success');
     loadResults(cls.id);
   };
@@ -72,6 +82,7 @@ export default function EnterBySubject() {
       const attendanceData = days > 0 ? { days, present } : undefined;
       await saveStudentResult(s.id, bulkTerm, existing?.marks || {}, attendanceData);
     }
+    setHasUnsavedChanges(false);
     toast(`Attendance saved ✓`, 'success');
     loadResults(cls.id);
   };
@@ -82,6 +93,7 @@ export default function EnterBySubject() {
       const existing = allResults.find((x: any) => x.studentId === s.id && x.term === '3');
       await saveStudentResult(s.id, '3', existing?.marks || {}, existing?.attendance || undefined, bulkComment[s.id] || '');
     }
+    setHasUnsavedChanges(false);
     toast(`Comments saved ✓`, 'success');
     loadResults(cls.id);
   };
@@ -132,7 +144,7 @@ export default function EnterBySubject() {
                   if (isComment) {
                     return <tr key={s.id} className={`border-t border-school-border/50 ${i % 2 ? 'bg-school-paper/30' : ''}`}>
                       <td className="px-3 py-2">{i + 1}</td><td className="px-3 py-2 font-medium">{s.name}</td><td className="px-3 py-2">{s.roll || '—'}</td>
-                      <td className="px-3 py-2"><textarea value={bulkComment[s.id] || ''} onChange={(e) => setBulkComment({ ...bulkComment, [s.id]: e.target.value })} rows={2} className="w-full px-2 py-1 border border-school-border rounded text-xs focus:outline-none focus:border-school-accent resize-none" placeholder="Write about performance…" /></td>
+                      <td className="px-3 py-2"><textarea value={bulkComment[s.id] || ''} onChange={(e) => { setHasUnsavedChanges(true); setBulkComment({ ...bulkComment, [s.id]: e.target.value }); }} rows={2} className="w-full px-2 py-1 border border-school-border rounded text-xs focus:outline-none focus:border-school-accent resize-none" placeholder="Write about performance…" /></td>
                     </tr>;
                   }
                   if (isAttendance) {
@@ -140,8 +152,8 @@ export default function EnterBySubject() {
                     const pct = att.days && parseInt(att.days) > 0 ? ((parseInt(att.present) || 0) / parseInt(att.days) * 100).toFixed(1) + '%' : '—';
                     return <tr key={s.id} className={`border-t border-school-border/50 ${i % 2 ? 'bg-school-paper/30' : ''}`}>
                       <td className="px-3 py-2">{i + 1}</td><td className="px-3 py-2 font-medium">{s.name}</td><td className="px-3 py-2">{s.roll || '—'}</td>
-                      <td className="px-3 py-2 text-center"><input type="number" min="0" value={att.days} onChange={(e) => setBulkAtt({ ...bulkAtt, [s.id]: { ...att, days: e.target.value } })} className="w-16 px-2 py-1 border border-school-border rounded text-right text-xs focus:outline-none" /></td>
-                      <td className="px-3 py-2 text-center"><input type="number" min="0" value={att.present} onChange={(e) => setBulkAtt({ ...bulkAtt, [s.id]: { ...att, present: e.target.value } })} className="w-16 px-2 py-1 border border-school-border rounded text-right text-xs focus:outline-none" /></td>
+                      <td className="px-3 py-2 text-center"><input type="number" min="0" value={att.days} onChange={(e) => { setHasUnsavedChanges(true); setBulkAtt({ ...bulkAtt, [s.id]: { ...att, days: e.target.value } }); }} className="w-16 px-2 py-1 border border-school-border rounded text-right text-xs focus:outline-none" /></td>
+                      <td className="px-3 py-2 text-center"><input type="number" min="0" value={att.present} onChange={(e) => { setHasUnsavedChanges(true); setBulkAtt({ ...bulkAtt, [s.id]: { ...att, present: e.target.value } }); }} className="w-16 px-2 py-1 border border-school-border rounded text-right text-xs focus:outline-none" /></td>
                       <td className="px-3 py-2 text-center text-xs font-bold">{pct}</td>
                     </tr>;
                   }
@@ -150,7 +162,7 @@ export default function EnterBySubject() {
                   return <tr key={s.id} className={`border-t border-school-border/50 ${i % 2 ? 'bg-school-paper/30' : ''}`}>
                     <td className="px-3 py-2">{i + 1}</td><td className="px-3 py-2 font-medium">{s.name}</td><td className="px-3 py-2">{s.roll || '—'}</td>
                     <td className="px-3 py-2 text-center">{selectedSubj!.fullMarks}</td>
-                    <td className="px-3 py-2 text-center"><input type="number" min="0" max={selectedSubj!.fullMarks} value={v} onChange={(e) => { setBulkMarks({ ...bulkMarks, [s.id]: e.target.value }); }} className={`w-16 px-2 py-1 border rounded text-right text-xs focus:outline-none ${!isNaN(parseFloat(v)) && parseFloat(v) > selectedSubj!.fullMarks ? 'border-red-500' : 'border-school-border'}`} /></td>
+                    <td className="px-3 py-2 text-center"><input type="number" min="0" max={selectedSubj!.fullMarks} value={v} onChange={(e) => { setHasUnsavedChanges(true); setBulkMarks({ ...bulkMarks, [s.id]: e.target.value }); }} className={`w-16 px-2 py-1 border rounded text-right text-xs focus:outline-none ${!isNaN(parseFloat(v)) && parseFloat(v) > selectedSubj!.fullMarks ? 'border-red-500' : 'border-school-border'}`} /></td>
                     <td className="px-3 py-2 text-center">{g ? gradeChip(g.grade) : '—'}</td>
                   </tr>;
                 })}

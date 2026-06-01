@@ -134,7 +134,8 @@ app.delete("/api/subjects/:id", authenticate, authorizePermission("subjects:writ
 app.get("/api/students/:id/results", authenticate, authorizePermission("results:read"), results.getStudentResults);
 app.post("/api/students/:id/results", authenticate, authorizePermission("results:write"), results.saveStudentResult);
 app.get("/api/classes/:classId/results", authenticate, authorizePermission("results:read"), results.getClassResults);
-app.delete("/api/classes/:classId/results", authenticate, authorizePermission("results:write"), results.deleteClassResults);
+app.delete("/api/classes/:classId/results", authenticate, authorizePermission("results:write"), results.deleteClassResultsOnly);
+app.delete("/api/classes/:classId/subjects", authenticate, authorizePermission("subjects:write"), results.deleteClassSubjects);
 
 // ── Academic Years ──
 app.get("/api/academic-years", authenticate, async (_req, res) => {

@@ -8,6 +8,21 @@ import { logAudit } from "../lib/audit.js";
 import { getFiscalYearForDate, getFiscalYearRange } from "../lib/fiscal-year.js";
 import { param } from "../lib/param.js";
 
+function accountBalancesSql(start: Date, end: Date): string {
+  return `
+    SELECT
+      COALESCE(SUM(CASE WHEN destination_account = 'AL_RAWA_BANK' THEN amount
+                       WHEN source_account = 'AL_RAWA_BANK' THEN -amount ELSE 0 END), 0) AS al_rawa,
+      COALESCE(SUM(CASE WHEN destination_account = 'GLOBAL_FORUM_BANK' THEN amount
+                       WHEN source_account = 'GLOBAL_FORUM_BANK' THEN -amount ELSE 0 END), 0) AS global_forum,
+      COALESCE(SUM(CASE WHEN destination_account = 'CASH_IN_HAND' THEN amount
+                       WHEN source_account = 'CASH_IN_HAND' THEN -amount ELSE 0 END), 0) AS cash
+    FROM transactions
+    WHERE is_cancelled = false AND reversal_of_id IS NULL
+      AND transaction_date >= '${start.toISOString()}' AND transaction_date <= '${end.toISOString()}'
+  `;
+}
+
 export const createTransaction = async (req: AuthRequest, res: Response) => {
   try {
     const validation = validate(createTransactionSchema, req.body);
@@ -151,20 +166,10 @@ export const getBalances = async (req: Request, res: Response) => {
     const fiscalYear = year ? Number(year) : new Date().getFullYear();
     const { start, end } = getFiscalYearRange(fiscalYear);
 
-    const rows = await prisma.$queryRaw<[{ al_rawa: string | null; global_forum: string | null; cash: string | null }]>`
-      SELECT
-        COALESCE(SUM(CASE WHEN destination_account = 'AL_RAWA_BANK' THEN amount
-                         WHEN source_account = 'AL_RAWA_BANK' THEN -amount ELSE 0 END), 0) AS al_rawa,
-        COALESCE(SUM(CASE WHEN destination_account = 'GLOBAL_FORUM_BANK' THEN amount
-                         WHEN source_account = 'GLOBAL_FORUM_BANK' THEN -amount ELSE 0 END), 0) AS global_forum,
-        COALESCE(SUM(CASE WHEN destination_account = 'CASH_IN_HAND' THEN amount
-                         WHEN source_account = 'CASH_IN_HAND' THEN -amount ELSE 0 END), 0) AS cash
-      FROM transactions WHERE is_cancelled = false AND reversal_of_id IS NULL
-        AND transaction_date >= ${start} AND transaction_date <= ${end}
-    `;
+    const rows = await prisma.$queryRawUnsafe<[{ al_rawa: string | null; global_forum: string | null; cash: string | null }]>(accountBalancesSql(start, end));
     const r = rows[0];
 
-    const openingRows = await prisma.openingBalance.findMany({ where: { fiscalYear: String(fiscalYear) } });
+    const openingRows = await prisma.openingBalance.findMany({ where: { fiscalYear } });
     const opening: Record<string, number> = { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 };
     openingRows.forEach(o => { opening[o.account] = Number(o.amount); });
 
@@ -184,7 +189,7 @@ export const getBalances = async (req: Request, res: Response) => {
 export const getOpeningBalances = async (req: Request, res: Response) => {
   try {
     const { year } = req.query;
-    const fiscalYear = year ? String(year) : String(new Date().getFullYear());
+    const fiscalYear = year ? Number(year) : new Date().getFullYear();
     const rows = await prisma.openingBalance.findMany({ where: { fiscalYear } });
     const result: Record<string, number> = { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 };
     rows.forEach(r => { result[r.account] = Number(r.amount); });
@@ -197,7 +202,7 @@ export const getOpeningBalances = async (req: Request, res: Response) => {
 export const setOpeningBalances = async (req: AuthRequest, res: Response) => {
   try {
     const { year, balances } = req.body;
-    const fiscalYear = year ? String(year) : String(new Date().getFullYear());
+    const fiscalYear = year ? Number(year) : new Date().getFullYear();
     if (!balances || typeof balances !== 'object') {
       return res.status(400).json({ error: 'balances object required' });
     }
@@ -236,7 +241,7 @@ export const getOpeningBalanceHistory = async (req: Request, res: Response) => {
   try {
     const { year, account } = req.query;
     const where: any = {};
-    if (year) where.fiscalYear = String(year);
+    if (year) where.fiscalYear = Number(year);
     if (account) where.account = String(account);
     const history = await prisma.openingBalanceHistory.findMany({
       where,
@@ -570,22 +575,11 @@ export const getAGMReport = async (req: Request, res: Response) => {
     const totalExpense = expense.reduce((s: number, t: any) => s + Number(t.amount), 0);
     const netSurplus = totalIncome - totalExpense;
 
-    const openingRows = await prisma.openingBalance.findMany({ where: { fiscalYear: String(year) } });
+    const openingRows = await prisma.openingBalance.findMany({ where: { fiscalYear: year } });
     const opening: Record<string, number> = { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 };
     openingRows.forEach(o => { opening[o.account] = Number(o.amount); });
 
-    const balancesRaw = await prisma.$queryRaw<[{ al_rawa: string; global_forum: string; cash: string }]>`
-      SELECT
-        COALESCE(SUM(CASE WHEN destination_account = 'AL_RAWA_BANK' THEN amount
-                         WHEN source_account = 'AL_RAWA_BANK' THEN -amount ELSE 0 END), 0) AS al_rawa,
-        COALESCE(SUM(CASE WHEN destination_account = 'GLOBAL_FORUM_BANK' THEN amount
-                         WHEN source_account = 'GLOBAL_FORUM_BANK' THEN -amount ELSE 0 END), 0) AS global_forum,
-        COALESCE(SUM(CASE WHEN destination_account = 'CASH_IN_HAND' THEN amount
-                         WHEN source_account = 'CASH_IN_HAND' THEN -amount ELSE 0 END), 0) AS cash
-      FROM transactions
-      WHERE is_cancelled = false AND reversal_of_id IS NULL
-        AND transaction_date >= ${start} AND transaction_date <= ${end}
-    `;
+    const balancesRaw = await prisma.$queryRawUnsafe<[{ al_rawa: string; global_forum: string; cash: string }]>(accountBalancesSql(start, end));
     const b = balancesRaw[0];
     const closing = {
       AL_RAWA_BANK: Number(b.al_rawa) + opening.AL_RAWA_BANK,
@@ -708,7 +702,7 @@ export const createReconciliation = async (req: AuthRequest, res: Response) => {
     statementEnd.setHours(23, 59, 59, 999);
 
     const openingRow = await prisma.openingBalance.findUnique({
-      where: { fiscalYear_account: { fiscalYear: String(getFiscalYearForDate(statementEnd)), account } },
+      where: { fiscalYear_account: { fiscalYear: getFiscalYearForDate(statementEnd), account } },
     });
     const openingAmount = openingRow ? Number(openingRow.amount) : 0;
 
@@ -761,7 +755,7 @@ export const getReconciliationDetail = async (req: Request, res: Response) => {
 
     const statementEnd = rec.statementDate;
     const openingRow = await prisma.openingBalance.findUnique({
-      where: { fiscalYear_account: { fiscalYear: String(getFiscalYearForDate(statementEnd)), account: rec.account } },
+      where: { fiscalYear_account: { fiscalYear: getFiscalYearForDate(statementEnd), account: rec.account } },
     });
     const openingAmount = openingRow ? Number(openingRow.amount) : 0;
 

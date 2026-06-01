@@ -1,4 +1,5 @@
-import React, { useRef, useCallback, useEffect, useState } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
+import type { ReactNode, TouchEvent } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore, useDarkMode, useSchoolStore } from '../store';
@@ -14,10 +15,10 @@ const ROLE_DISPLAY: Record<string, string> = {
 };
 
 interface LayoutProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children }) => {
+const Layout = ({ children }: LayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [, setSearchParams] = useSearchParams();
@@ -67,7 +68,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
   }, [swipeBack, setSearchParams]);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+  const handleTouchStart = useCallback((e: TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
   }, []);
@@ -140,8 +141,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <button
             onClick={logout}
             className="p-2 hover:bg-white/10 rounded-full transition-colors group"
-            title="Lock App"
-            aria-label="Lock App"
+            title="Logout"
+            aria-label="Logout"
           >
             <Lock size={20} className="group-hover:scale-110 transition-transform" />
           </button>

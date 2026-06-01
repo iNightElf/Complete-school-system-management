@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { useUIStore } from '../store';
 import EnterBySubject from './results/EnterBySubject';
 import EnterByStudent from './results/EnterByStudent';
@@ -8,14 +9,14 @@ import { PenLine, User, ClipboardList, FileSpreadsheet } from 'lucide-react';
 
 type Tab = 'subject' | 'student' | 'tabulation' | 'reports';
 
-const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
+const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
   { key: 'subject', label: 'Enter by Subject', icon: <PenLine size={14} /> },
   { key: 'student', label: 'Enter by Student', icon: <User size={14} /> },
   { key: 'tabulation', label: 'Tabulation', icon: <ClipboardList size={14} /> },
   { key: 'reports', label: 'Report Cards', icon: <FileSpreadsheet size={14} /> },
 ];
 
-const ResultSection: React.FC = () => {
+const ResultSection = () => {
   const [activeTab, setActiveTab] = useState<Tab>('subject');
   useEffect(() => { document.title = 'Results - AL RAWA English School'; }, []);
   useEffect(() => { useUIStore.getState().registerSwipeBack(() => setActiveTab('subject')); }, []);

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useUIStore, useSchoolStore, useAuthStore } from '../store';
 import Layout from '../components/Layout';
@@ -19,7 +19,7 @@ function TodaysGreeting() {
   return 'Good Evening';
 }
 
-const Dashboard: React.FC = () => {
+const Dashboard = () => {
   const { activeMode, setMode } = useUIStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const { students, teachers, staff, studentTotal, fetchClasses, fetchStudents, fetchTeachers, fetchStaff, fetchBooks } = useSchoolStore();

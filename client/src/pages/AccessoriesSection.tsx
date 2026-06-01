@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSchoolStore, useAuthStore } from '../store';
 import { toast } from '../components/Toast';
 import ClassManagerModal from '../components/ClassManagerModal';
@@ -18,7 +18,7 @@ function BookSkeleton() {
   );
 }
 
-const AccessoriesSection: React.FC = () => {
+const AccessoriesSection = () => {
   useEffect(() => { document.title = 'Accessories - AL RAWA English School'; }, []);
   const { classes, books, loading, fetchClasses, fetchBooks } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
@@ -91,12 +91,23 @@ const AccessoriesSection: React.FC = () => {
 
   const confirmDelete = async () => {
     if (!deleteId) return;
+    const book = books.find((b: any) => b.id === deleteId);
+    if (!book) return;
     setDeleteLoading(true);
-    await fetch(`${API_URL}/books/${deleteId}`, { method: 'DELETE', credentials: 'include' });
-    toast('Book deleted');
-    setDeleteId(null);
-    setDeleteLoading(false);
-    fetchBooks();
+    try {
+      const res = await fetch(`${API_URL}/books/${deleteId}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to delete');
+      toast('Book deleted', '', { label: 'Undo', onClick: async () => {
+        await fetch(`${API_URL}/books`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(book), credentials: 'include' });
+        fetchBooks();
+      }});
+      setDeleteId(null);
+      setDeleteLoading(false);
+      fetchBooks();
+    } catch {
+      toast('Failed to delete book', 'error');
+      setDeleteLoading(false);
+    }
   };
 
   return (

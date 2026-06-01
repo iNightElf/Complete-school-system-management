@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { MailCheck, ShieldAlert } from 'lucide-react';
 
-const VerifyEmail: React.FC = () => {
+const VerifyEmail = () => {
   useEffect(() => { document.title = 'Verify Email - AL RAWA English School'; }, []);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import axios from 'axios';
 import { useSchoolStore } from '../store';
 import { FileText, Calendar, BarChart3, Scale, Users, Loader } from 'lucide-react';
@@ -30,7 +31,7 @@ async function downloadExcel(filename: string, headers: string[], rows: any[][])
   XLSX.writeFile(wb, filename);
 }
 
-const REPORT_TABS: { key: ReportTab; label: string; icon: React.ReactNode }[] = [
+const REPORT_TABS: { key: ReportTab; label: string; icon: ReactNode }[] = [
   { key: 'headwise-income', label: 'Headwise Income', icon: <BarChart3 size={14} /> },
   { key: 'headwise-expense', label: 'Headwise Expense', icon: <BarChart3 size={14} /> },
   { key: 'monthly-income', label: 'Monthly Income', icon: <FileText size={14} /> },
@@ -67,7 +68,7 @@ function printDiv(id: string) {
   w.document.close(); w.print();
 }
 
-const FinanceReports: React.FC = () => {
+const FinanceReports = () => {
   useEffect(() => { document.title = 'Finance Reports - AL RAWA English School'; }, []);
   const { transactions, fetchTransactions, students, fetchStudents, fetchFinance, fetchOpeningBalances, setOpeningBalances, openingBalancesHistory, fetchOpeningBalanceHistory, revertOpeningBalance } = useSchoolStore();
   const [tab, setTab] = useState<ReportTab>('headwise-income');

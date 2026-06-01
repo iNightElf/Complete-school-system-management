@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import type { FormEvent } from 'react';
 import { useAuthStore } from '../store';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
@@ -6,7 +7,7 @@ import { LogIn, ShieldAlert, School, BookOpen } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
 import { API_URL } from '../lib/config';
 
-const Login: React.FC = () => {
+const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -15,7 +16,7 @@ const Login: React.FC = () => {
 
   useEffect(() => { document.title = 'Login - AL RAWA English School'; }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);

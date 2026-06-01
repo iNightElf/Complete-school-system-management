@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import type { ReactNode, FormEvent } from 'react';
 import { useSchoolStore, useAuthStore, useUserManagementStore, useUIStore } from '../store';
 import axios from 'axios';
 import { Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw, BookOpen, Shield, Lock, Scale } from 'lucide-react';
@@ -221,7 +222,7 @@ function Ledger({ transactions, fmt, fetchTransactions, fetchFinance, userMap }:
   );
 }
 
-const FinanceSection: React.FC = () => {
+const FinanceSection = () => {
   const { balances, transactions, fetchFinance, fetchTransactions, classes, students, fetchClasses, fetchStudents } = useSchoolStore();
   const { users, fetchUsers } = useUserManagementStore();
   const role = useAuthStore((s) => s.user?.role);
@@ -331,7 +332,7 @@ const FinanceSection: React.FC = () => {
     setDepositTo('CASH_IN_HAND');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
@@ -384,7 +385,7 @@ const FinanceSection: React.FC = () => {
   return (
     <div className="space-y-5">
       {/* Balance Cards — dedicated mobile card row */}
-      <div className="flex gap-3 overflow-x-auto pb-2 sm:hide-scrollbar sm:grid sm:grid-cols-3 snap-x snap-mandatory scrollbar-none">
+      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide sm:grid sm:grid-cols-3 snap-x snap-mandatory scrollbar-none">
         <div className="flex-shrink-0 w-[200px] sm:w-auto snap-start rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 shadow-md sm:flex-1">
           <p className="text-[9px] uppercase font-bold tracking-widest opacity-70 mb-1">AL RAWA Bank</p>
           <h3 className="text-xl sm:text-2xl font-serif">৳ {fmt(balances.AL_RAWA_BANK || 0)}</h3>
@@ -467,7 +468,7 @@ const FinanceSection: React.FC = () => {
               { k: 'expense' as TxTab, lbl: <><TrendingDown size={14} /> Expense</>, cls: 'text-rose-700 bg-rose-50 border-rose-200' },
               { k: 'transfer' as TxTab, lbl: <><RefreshCw size={14} /> Transfer</>, cls: 'text-blue-700 bg-blue-50 border-blue-200' },
               ...(canWrite ? [{ k: 'import' as TxTab, lbl: <><Upload size={14} /> Import Excel</>, cls: 'text-violet-700 bg-violet-50 border-violet-200' }] : []),
-            ] as { k: TxTab; lbl: React.ReactNode; cls: string }[]).map(({ k, lbl, cls }) => (
+            ] as { k: TxTab; lbl: ReactNode; cls: string }[]).map(({ k, lbl, cls }) => (
               <button key={k} onClick={() => { setActiveTab(k); if (k !== 'import') resetForm(); }}
                 className={`px-4 py-2.5 rounded-xl text-sm font-bold border transition-all flex items-center gap-1.5 ${activeTab === k ? cls + ' shadow-sm' : 'bg-white border-school-border text-school-muted hover:border-school-accent'}`}>
                 {lbl}

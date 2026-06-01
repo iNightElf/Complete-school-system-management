@@ -48,15 +48,6 @@ export const authenticate = async (
   }
 };
 
-export const authorize = (roles: string[]) => {
-  return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.session || !roles.includes(req.session.user.role)) {
-      return res.status(403).json({ error: "Unauthorized" });
-    }
-    next();
-  };
-};
-
 export const authorizePermission = (...permissions: Permission[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.session) {

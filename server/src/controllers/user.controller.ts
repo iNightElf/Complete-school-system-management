@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { prisma } from "../lib/auth.js";
+import { prisma } from "../lib/prisma.js";
 import { AuthRequest } from "../middleware/auth.middleware.js";
 import { ALL_ROLES, ROLE_LABELS, Role } from "../lib/permissions.js";
 

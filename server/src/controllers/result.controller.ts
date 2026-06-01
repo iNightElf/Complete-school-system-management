@@ -77,6 +77,8 @@ export const deleteSubject = async (req: Request, res: Response) => {
 export const getStudentResults = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
+    const student = await prisma.student.findUnique({ where: { id } });
+    if (!student) return res.status(404).json({ error: "Student not found" });
     const { session } = req.query;
     const where: any = { studentId: id };
     if (session) where.session = String(session);
@@ -165,7 +167,7 @@ export const getClassResults = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteClassResults = async (req: Request, res: Response) => {
+export const deleteClassResultsOnly = async (req: Request, res: Response) => {
   try {
     const classId = param(req, "classId");
     const cls = await prisma.schoolClass.findUnique({ where: { id: classId } });
@@ -182,9 +184,21 @@ export const deleteClassResults = async (req: Request, res: Response) => {
       where: { studentId: { in: studentIds } },
     });
 
+    res.json({ message: "All results for this class deleted" });
+  } catch (error: any) {
+    res.status(500).json({ error: sanitizeError(error) });
+  }
+};
+
+export const deleteClassSubjects = async (req: Request, res: Response) => {
+  try {
+    const classId = param(req, "classId");
+    const cls = await prisma.schoolClass.findUnique({ where: { id: classId } });
+    if (!cls) return res.status(404).json({ error: "Class not found" });
+
     await prisma.subject.deleteMany({ where: { classId } });
 
-    res.json({ message: "All results and subjects for this class deleted" });
+    res.json({ message: "All subjects for this class deleted" });
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
   }

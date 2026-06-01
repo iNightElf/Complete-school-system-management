@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSchoolStore } from '../store';
 import axios from 'axios';
 import { toast } from '../components/Toast';
@@ -25,7 +25,7 @@ interface StudentFeeAssignment {
   note: string | null;
 }
 
-const OptionalFeesTab: React.FC = () => {
+const OptionalFeesTab = () => {
   const { classes, students, fetchClasses, fetchStudents } = useSchoolStore();
   const [feeSchedules, setFeeSchedules] = useState<FeeSchedule[]>([]);
   const [assignments, setAssignments] = useState<StudentFeeAssignment[]>([]);

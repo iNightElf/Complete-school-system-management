@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { useSchoolStore } from '../store';
 import { X, Shield, Search } from 'lucide-react';
 import { toast } from '../components/Toast';
 import { API_URL } from '../lib/config';
 
-const StudentWaiversTab: React.FC = () => {
+const StudentWaiversTab = () => {
   const { classes, students, fetchClasses, fetchStudents } = useSchoolStore();
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');

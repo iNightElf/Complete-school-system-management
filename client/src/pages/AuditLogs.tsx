@@ -21,7 +21,7 @@ const ENTITY_COLORS: Record<string, string> = {
   StudentFeeAssignment: 'text-rose-600 bg-rose-50',
 };
 
-const AuditLogs: React.FC = () => {
+const AuditLogs = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);

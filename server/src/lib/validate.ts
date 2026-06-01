@@ -1,6 +1,5 @@
 import { z } from "zod";
-
-const INTERNAL_ACCOUNTS = ["AL_RAWA_BANK", "GLOBAL_FORUM_BANK", "CASH_IN_HAND"] as const;
+import { INTERNAL_ACCOUNTS } from "./finance-rules.js";
 
 function isValidAccount(acc: string | null | undefined): boolean {
   if (!acc) return true;

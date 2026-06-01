@@ -78,7 +78,7 @@ export const deleteFeeSchedule = async (req: AuthRequest, res: Response) => {
     const id = param(req, "id");
     await prisma.feeSchedule.delete({ where: { id } });
     logAudit({ userId: req.session?.user?.id, action: "DELETE", entityType: "FeeSchedule", entityId: id });
-    res.status(204).send();
+    res.json({ message: "Fee schedule deleted" });
   } catch (error: any) {
     res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }

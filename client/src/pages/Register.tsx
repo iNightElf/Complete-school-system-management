@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import type { FormEvent } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { UserPlus, ShieldAlert, MailCheck, School, KeyRound } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
 import { API_URL } from '../lib/config';
 
-const Register: React.FC = () => {
+const Register = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,7 +24,7 @@ const Register: React.FC = () => {
       .catch(() => setSetupMode(false));
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
 

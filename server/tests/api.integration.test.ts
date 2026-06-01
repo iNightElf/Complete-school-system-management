@@ -105,6 +105,7 @@ describe("API Integration Tests", () => {
     mockPrisma.user.findMany.mockResolvedValue([]);
     mockPrisma.periodClose.findFirst.mockResolvedValue(null);
     mockPrisma.$queryRaw.mockResolvedValue([{ al_rawa: "0", global_forum: "0", cash: "0" }]);
+    mockPrisma.$queryRawUnsafe.mockResolvedValue([{ al_rawa: "0", global_forum: "0", cash: "0" }]);
   });
 
   describe("Health Check (no auth)", () => {
@@ -401,7 +402,7 @@ describe("API Integration Tests", () => {
 
   describe("Finance — Balances", () => {
     it("returns balances with opening balances added", async () => {
-      mockPrisma.$queryRaw.mockResolvedValueOnce([{ al_rawa: "5000", global_forum: "3000", cash: "2000" }]);
+      mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ al_rawa: "5000", global_forum: "3000", cash: "2000" }]);
       mockPrisma.openingBalance.findMany.mockResolvedValueOnce([
         { id: "ob-1", fiscalYear: "2026", account: "AL_RAWA_BANK", amount: 10000 },
         { id: "ob-2", fiscalYear: "2026", account: "CASH_IN_HAND", amount: 5000 },
@@ -416,7 +417,7 @@ describe("API Integration Tests", () => {
     it("uses SQL with reversal_of_id IS NULL filter", async () => {
       const res = await request(app).get("/api/finance/balances");
       expect(res.status).toBe(200);
-      expect(mockPrisma.$queryRaw).toHaveBeenCalled();
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
     });
   });
 
@@ -499,7 +500,7 @@ describe("API Integration Tests", () => {
     it("returns AGM report for a fiscal year", async () => {
       mockPrisma.transaction.findMany.mockResolvedValueOnce([]);
       mockPrisma.openingBalance.findMany.mockResolvedValueOnce([]);
-      mockPrisma.$queryRaw.mockResolvedValueOnce([{ al_rawa: "0", global_forum: "0", cash: "0" }]);
+      mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ al_rawa: "0", global_forum: "0", cash: "0" }]);
       const res = await request(app).get("/api/finance/reports/agm?year=2026");
       expect(res.status).toBe(200);
       expect(res.body.fiscalYear).toBe(2026);
@@ -538,7 +539,7 @@ describe("API Integration Tests", () => {
     it("DELETE removes fee schedule", async () => {
       mockPrisma.feeSchedule.delete.mockResolvedValueOnce({ id: "fs-1" });
       const res = await request(app).delete("/api/finance/fee-schedules/fs-1");
-      expect(res.status).toBe(204);
+      expect(res.status).toBe(200);
     });
   });
 

@@ -20,6 +20,7 @@ export default function EnterByStudent() {
   const [allResults, setAllResults] = useState<any[]>([]);
   const [reportTerm, setReportTerm] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | ''>('');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const saveTimer = useRef<any>(null);
   const statusTimer = useRef<any>(null);
   const marksRef = useRef(marks);
@@ -30,6 +31,13 @@ export default function EnterByStudent() {
   useEffect(() => { attendanceRef.current = attendance; }, [attendance]);
   useEffect(() => { commentRef.current = comment; }, [comment]);
   useEffect(() => { return () => { clearTimeout(saveTimer.current); }; }, []);
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges]);
 
   const loadResults = async (clsId: string) => {
     try { const res = await fetch(`${API_URL}/classes/${clsId}/results`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
@@ -66,10 +74,12 @@ export default function EnterByStudent() {
     const present = parseInt(attendanceRef.current.present) || 0;
     const attendanceData = days > 0 ? { days, present } : undefined;
     await saveStudentResult(activeStudent.id, activeTerm, marksData, attendanceData, commentRef.current);
+    setHasUnsavedChanges(false);
     setSaveStatus('saved'); statusTimer.current = setTimeout(() => setSaveStatus(''), 2000);
   };
 
   const handleMarksChange = (subjName: string, value: string, fullMarks: number) => {
+    setHasUnsavedChanges(true);
     if (!isNaN(parseFloat(value)) && parseFloat(value) > fullMarks) toast(`Max marks is ${fullMarks}`, 'error');
     const next = { ...marks, [subjName]: value };
     setMarks(next);
@@ -160,14 +170,14 @@ export default function EnterByStudent() {
           <div className="bg-white rounded-2xl border border-school-border p-4">
             <h4 className="font-bold text-sm mb-3 flex items-center gap-1.5"><CalendarDays size={16} /> Attendance</h4>
             <div className="grid grid-cols-3 gap-3">
-              <div><label className="text-xs text-school-muted mb-1 block">Total Days</label><input type="number" min="0" value={attendance.days} onChange={(e) => setAttendance({ ...attendance, days: e.target.value })} placeholder="200" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" /></div>
-              <div><label className="text-xs text-school-muted mb-1 block">Days Present</label><input type="number" min="0" value={attendance.present} onChange={(e) => setAttendance({ ...attendance, present: e.target.value })} placeholder="185" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" /></div>
+              <div><label className="text-xs text-school-muted mb-1 block">Total Days</label><input type="number" min="0" value={attendance.days} onChange={(e) => { setAttendance({ ...attendance, days: e.target.value }); setHasUnsavedChanges(true); }} placeholder="200" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" /></div>
+              <div><label className="text-xs text-school-muted mb-1 block">Days Present</label><input type="number" min="0" value={attendance.present} onChange={(e) => { setAttendance({ ...attendance, present: e.target.value }); setHasUnsavedChanges(true); }} placeholder="185" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" /></div>
               <div><label className="text-xs text-school-muted mb-1 block">Attendance</label><div className="px-3 py-2 bg-school-paper rounded-xl text-sm font-bold text-center">{attendPct}</div></div>
             </div>
           </div>
           <div className="bg-white rounded-2xl border border-school-border p-4">
             <h4 className="font-bold text-sm mb-3 flex items-center gap-1.5"><MessageSquare size={16} /> Teacher's Comment</h4>
-            <textarea value={comment} onChange={(e) => { setComment(e.target.value); commentRef.current = e.target.value; clearTimeout(saveTimer.current); saveTimer.current = setTimeout(save, 500); }} rows={3} placeholder="Write about the student's performance…" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent resize-none" />
+            <textarea value={comment} onChange={(e) => { setHasUnsavedChanges(true); setComment(e.target.value); commentRef.current = e.target.value; clearTimeout(saveTimer.current); saveTimer.current = setTimeout(save, 500); }} rows={3} placeholder="Write about the student's performance…" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent resize-none" />
           </div>
         </div>
       )}

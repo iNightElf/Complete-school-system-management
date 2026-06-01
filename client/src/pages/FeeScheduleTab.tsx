@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useSchoolStore } from '../store';
 import { Plus, Save, Trash2, BookOpen, ChevronDown, ChevronRight, Pencil } from 'lucide-react';
@@ -7,7 +7,7 @@ import { toast } from '../components/Toast';
 const FREQUENCIES = ['MONTHLY', 'YEARLY', 'ONETIME'];
 const APPLICABILITIES = ['AUTO', 'ASSIGNED_ONLY'];
 
-const FeeScheduleTab: React.FC = () => {
+const FeeScheduleTab = () => {
   const { classes, fetchClasses } = useSchoolStore();
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
