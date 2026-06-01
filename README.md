@@ -18,27 +18,31 @@ A full-featured school management system for **AL RAWA English School** (Banglad
 - CRUD with inline card editing
 - Photo capture via camera
 - PDF list with photos
-- Search & filter by class/roll
-- Paginated API
+- Global search by name/roll/class
+- Soft delete with 7-second undo
+- Archive (graduate) per-student and per-class
+- Active/All toggle for archived students
+- Bulk CSV import
 
 ### Teachers & Staff
 - CRUD with inline card editing
 - Photo capture
 - PDF list with photos
-- Designation/role filtering
+- Soft delete with 7-second undo
+- Bulk CSV import
 
 ### Results
 - Enter marks **by Subject** (bulk) or **by Student** (individual)
-- Auto-save with 500ms debounce
+- Auto-save with 500ms debounce + `beforeunload` unsaved-changes warning
 - Live GPA, grade, and rank calculation
 - Term (1st, 2nd, Final) and **Annual Result** (averaged)
 - **Tabulation sheet** PDF (landscape A4)
-- **Report cards** — online preview + batch PDF download
+- **Report cards** — online preview + batch multi-page PDF download
 - Subjects with configurable full marks
 
 ### Finance
 - Double-entry accounting with 3 accounts: **AL RAWA Bank**, **Global Forum Bank**, **Cash in Hand**
-- Ledger with transaction history
+- Ledger with transaction history (all 3 account balances visible)
 - **6 Report tabs:** Headwise Income/Expense, Monthly Income/Expense, Audit, Yearly AGM
 - AGM report: Income/Expenditure Statement, Balance Sheet, Receipts & Payments
 - **Opening balances** per fiscal year (user-settable, full history with revert)
@@ -47,6 +51,7 @@ A full-featured school management system for **AL RAWA English School** (Banglad
 - **Excel import** with flexible column mapping
 - CSV + Excel + PDF export on all reports
 - **Transaction cancellation** with reversal entries
+- Configurable fiscal year start month
 
 ### ID Cards
 - Print ID cards for students, teachers, and staff
@@ -55,6 +60,14 @@ A full-featured school management system for **AL RAWA English School** (Banglad
 - Roles: admin, teacher, accountant, viewer
 - Role-based permissions (finance:read/write, students:read/write, etc.)
 - Email verification on registration
+- Audit log with entity/action filters
+
+### Error Handling
+- 404 page for unknown routes
+- ErrorBoundary wrapping entire app
+- P2025 → proper 404 responses (was 400)
+- 401 interceptor — auto-redirects to login on expired sessions
+- Neon DB cold start handled with retry endpoint
 
 ### PWA
 - Installable on mobile/desktop
@@ -66,9 +79,11 @@ A full-featured school management system for **AL RAWA English School** (Banglad
 - Full Tailwind dark variant support
 
 ### Mobile
-- Collapsible table → stacked card layout on small screens
+- Collapsible table → stacked card layout on small screens (`.mobile-card-table`)
 - Swipe-right gesture for back navigation
 - Responsive grid layouts throughout
+- Soft keyboard Enter submits edit forms
+- Escape closes modals
 
 ## Getting Started
 
@@ -149,20 +164,24 @@ docker exec -i schoolid-postgres psql -U schoolid schoolid < backup.sql
 
 ```
 schoolid/
-├── client/          # React frontend (Vite)
+├── client/                  # React frontend (Vite + TypeScript 6)
 │   └── src/
-│       ├── components/  # Shared UI (Toast, Skeleton, Camera, etc.)
-│       ├── lib/         # Utilities (grading, PDF, contacts, config)
-│       ├── pages/       # Route pages
-│       │   ├── results/ # Results sub-components
-│       │   ├── students/
-│       │   ├── teachers/
-│       │   └── staff/
-│       └── store.ts     # Zustand state management
-├── server/          # Express backend
+│       ├── components/      # Shared UI (Toast, Skeleton, Camera, ImportModal, etc.)
+│       ├── lib/             # Utilities (config, types, grading, PDF, contacts)
+│       ├── pages/           # Route pages
+│       │   ├── results/     # EnterBySubject, EnterByStudent, OnlineReportCard, etc.
+│       │   ├── students/    # StudentSection
+│       │   ├── teachers/    # TeacherSection
+│       │   └── staff/       # StaffSection
+│       ├── store.ts         # Zustand state management
+│       └── App.tsx          # Router + ErrorBoundary
+├── server/                  # Express backend (TypeScript + Prisma)
 │   └── src/
-│       ├── controllers/ # Route handlers
-│       ├── lib/         # Auth, validation, errors, permissions
-│       └── middleware/  # Auth middleware
-└── index.html
+│       ├── controllers/     # Route handlers (student, ops, result, finance, etc.)
+│       ├── lib/             # Auth, validation, errors, permissions, finance-rules
+│       ├── middleware/      # Auth middleware (authenticate, authorizePermission)
+│       └── server.ts        # Entry point
+├── DEPLOYMENT.md
+├── ROADMAP.md
+└── WHAT-TO-IMPROVE.md
 ```
