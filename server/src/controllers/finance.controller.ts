@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { classifyTransaction } from "../lib/finance-rules.js";
-import type { AuthRequest } from "../middleware/auth.middleware.js";
+import { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
 import { sanitizeError, errorStatus } from "../lib/errors.js";
 import { validate, createTransactionSchema, setOpeningBalancesSchema, closePeriodSchema, createReconciliationSchema } from "../lib/validate.js";
@@ -52,7 +52,29 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
     const { transactionType, affectsIncomeLedger, affectsExpenseLedger } =
       classifyTransaction(sourceAccount ?? undefined, destinationAccount ?? undefined);
 
-    if (studentId && feeMonth && category) {
+    const allocations = validation.data.allocations || [];
+
+    if (allocations.length > 0) {
+      for (const alloc of allocations) {
+        const fs = await prisma.feeSchedule.findUnique({ where: { id: alloc.feeScheduleId } });
+        if (!fs) return res.status(400).json({ error: `Fee schedule "${alloc.feeScheduleId}" not found` });
+        if (studentId && fs.applicability === 'ASSIGNED_ONLY') {
+          const assigned = await prisma.studentFeeAssignment.findFirst({
+            where: { studentId, feeScheduleId: fs.id, active: true },
+          });
+          if (!assigned) return res.status(400).json({ error: `Fee "${fs.category}" is assigned-only and this student has no active assignment` });
+        }
+        if (studentId) {
+          const dup = await prisma.paymentAllocation.findFirst({
+            where: { studentId, feeScheduleId: alloc.feeScheduleId, period: alloc.period },
+            include: { transaction: { select: { isCancelled: true, reversalOfId: true } } },
+          });
+          if (dup && !dup.transaction.isCancelled && !dup.transaction.reversalOfId) {
+            return res.status(409).json({ error: `${fs.category} for ${alloc.period} is already recorded for this student` });
+          }
+        }
+      }
+    } else if (studentId && feeMonth && category) {
       const existing = await prisma.transaction.findFirst({
         where: { studentId, category, feeMonth, isCancelled: false },
       });
@@ -115,7 +137,21 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    const hasMultipleAllocations = allocations.length > 0;
+
     const [transaction] = await prisma.$transaction(async (tx) => {
+      const tf = transactionType === 'INCOME' || transactionType === 'EXPENSE' ? transactionType : null;
+      let receiptNum: { fiscalYear: number; sequence: number } | null = null;
+      if (tf) {
+        const fy = getFiscalYearForDate(new Date(date));
+        const counter = await tx.receiptCounter.upsert({
+          where: { fiscalYear_receiptType: { fiscalYear: fy, receiptType: tf } },
+          update: { nextSequence: { increment: 1 } },
+          create: { fiscalYear: fy, receiptType: tf, nextSequence: 2 },
+        });
+        receiptNum = { fiscalYear: fy, sequence: counter.nextSequence - 1 };
+      }
+
       const t = await tx.transaction.create({
         data: {
           transactionDate: new Date(date),
@@ -123,7 +159,7 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
           transactionType,
           sourceAccount: sourceAccount || null,
           destinationAccount: destinationAccount || null,
-          category: category || null,
+          category: hasMultipleAllocations ? "STUDENT_FEES" : (category || null),
           description: note || null,
           studentId: studentId || null,
           className: className || null,
@@ -131,11 +167,25 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
           affectsExpenseLedger,
           referenceId: referenceId || null,
           feeMonth: feeMonth || null,
-          createdBy: req.session?.user?.id || "system",
+          fiscalYear: receiptNum?.fiscalYear ?? null,
+          receiptSequence: receiptNum?.sequence ?? null,
+          createdBy: req.user?.id || "system",
         },
       });
 
-      if (studentId) {
+      if (studentId && hasMultipleAllocations) {
+        for (const alloc of allocations) {
+          await tx.paymentAllocation.create({
+            data: {
+              transactionId: t.id,
+              studentId,
+              feeScheduleId: alloc.feeScheduleId,
+              period: alloc.period,
+              amount: alloc.amount,
+            },
+          });
+        }
+      } else if (studentId) {
         await tx.paymentAllocation.create({
           data: {
             transactionId: t.id,
@@ -150,7 +200,7 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
       return [t];
     });
 
-    logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "Transaction", entityId: transaction.id, details: JSON.stringify({ amount: finalAmount, transactionType, category, studentId }) });
+    logAudit({ userId: req.user?.id, action: "CREATE", entityType: "Transaction", entityId: transaction.id, details: JSON.stringify({ amount: finalAmount, transactionType, category, studentId }) });
 
     res.status(201).json(transaction);
   } catch (error: any) {
@@ -203,7 +253,7 @@ export const setOpeningBalances = async (req: AuthRequest, res: Response) => {
     if (!v.success) return res.status(400).json({ error: v.error });
     const { year, balances } = v.data;
     const fiscalYear = year ? Number(year) : new Date().getFullYear();
-    const userId = req.session?.user?.id || 'system';
+    const userId = req.user?.id || 'system';
     const accounts = ['AL_RAWA_BANK', 'GLOBAL_FORUM_BANK', 'CASH_IN_HAND'];
     const updates: any[] = [];
 
@@ -257,7 +307,7 @@ export const revertOpeningBalance = async (req: AuthRequest, res: Response) => {
     const entry = await prisma.openingBalanceHistory.findUnique({ where: { id: historyId } });
     if (!entry) return res.status(404).json({ error: 'History entry not found' });
 
-    const userId = req.session?.user?.id || 'system';
+    const userId = req.user?.id || 'system';
     await prisma.$transaction(async (tx) => {
       await tx.openingBalance.upsert({
         where: { fiscalYear_account: { fiscalYear: entry.fiscalYear, account: entry.account } },
@@ -293,8 +343,6 @@ export const getLedger = async (req: Request, res: Response) => {
     const dateToStr = dateTo ? String(dateTo) : end.toISOString().split('T')[0];
 
     const where: any = {
-      isCancelled: false,
-      reversalOfId: null,
       transactionDate: {
         gte: new Date(dateFromStr),
         lte: new Date(dateToStr + 'T23:59:59Z'),
@@ -308,7 +356,7 @@ export const getLedger = async (req: Request, res: Response) => {
     const [allRows, total] = await Promise.all([
       prisma.transaction.findMany({
         where,
-        orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
+        orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
         include: { student: { select: { id: true, name: true, class: true } } },
       }),
       prisma.transaction.count({ where }),
@@ -322,16 +370,19 @@ export const getLedger = async (req: Request, res: Response) => {
     let running = openingBalance;
     const entries = allRows.map((t: any) => {
       const isDebit = t.destinationAccount === account;
-      const debit = isDebit ? Number(t.amount) : 0;
-      const credit = !isDebit ? Number(t.amount) : 0;
+      const debit = !t.isCancelled && isDebit ? Number(t.amount) : 0;
+      const credit = !t.isCancelled && !isDebit ? Number(t.amount) : 0;
       running = running + debit - credit;
       return {
         id: t.id,
         date: t.transactionDate,
         transactionType: t.transactionType,
+        isCancelled: t.isCancelled,
+        receiptSequence: t.receiptSequence,
+        fiscalYear: t.fiscalYear,
         description: [
           t.category || '',
-          t.student?.name || '',
+          t.student?.name ? `${t.student.name}${t.student.class ? ` (${t.student.class})` : ''}` : '',
           t.description || '',
         ].filter(Boolean).join(' — ') || `${(t.sourceAccount || 'External').replace(/_/g, ' ')} → ${(t.destinationAccount || 'External').replace(/_/g, ' ')}`,
         debit: debit || null,
@@ -381,7 +432,7 @@ export const getTransactions = async (req: Request, res: Response) => {
           orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
           skip: (page - 1) * limit!,
           take: limit!,
-          include: { student: { select: { id: true, name: true, class: true, roll: true } } },
+          include: { student: { select: { id: true, name: true, class: true, studentId: true } } },
         }),
         prisma.transaction.count({ where }),
       ]);
@@ -390,7 +441,7 @@ export const getTransactions = async (req: Request, res: Response) => {
     const transactions = await prisma.transaction.findMany({
       where,
       orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
-      include: { student: { select: { id: true, name: true, class: true, roll: true } } },
+      include: { student: { select: { id: true, name: true, class: true, studentId: true } } },
     });
     res.json(transactions);
   } catch (error: any) {
@@ -404,7 +455,7 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
     const { reason } = req.body;
     if (!reason || !reason.trim()) return res.status(400).json({ error: "Reason is required to cancel a transaction" });
 
-    const tx = await prisma.transaction.findUnique({ where: { id }, include: { student: { select: { id: true, name: true, class: true, roll: true } } } });
+    const tx = await prisma.transaction.findUnique({ where: { id }, include: { student: { select: { id: true, name: true, class: true, studentId: true } } } });
     if (!tx) return res.status(404).json({ error: "Transaction not found" });
     if (tx.isCancelled) return res.status(400).json({ error: "Transaction already cancelled" });
 
@@ -416,7 +467,7 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ error: `Fiscal year ${fiscalYear} is closed. Transactions in this period cannot be cancelled.` });
     }
 
-    const userId = req.session?.user?.id || "system";
+    const userId = req.user?.id || "system";
     const studentName = (tx as any).student?.name || null;
     const studentClass = (tx as any).className || (tx as any).student?.class || null;
 
@@ -621,7 +672,7 @@ export const getDefaulterReport = async (req: Request, res: Response) => {
         name: student.name,
         fatherName: student.fatherName,
         class: student.class,
-        roll: student.roll,
+        studentIdNumber: student.studentId,
         fees,
         totalDue,
         totalPaid,
@@ -724,13 +775,13 @@ export const closePeriod = async (req: AuthRequest, res: Response) => {
     const period = await prisma.periodClose.create({
       data: {
         fiscalYear,
-        closedBy: req.session?.user?.id || "system",
+        closedBy: req.user?.id || "system",
         notes: notes || null,
       },
     });
 
     await logAudit({
-      userId: req.session?.user?.id || "unknown",
+      userId: req.user?.id || "unknown",
       action: "PERIOD_CLOSE",
       entityType: "PeriodClose",
       entityId: String(fiscalYear),
@@ -754,7 +805,7 @@ export const reopenPeriod = async (req: AuthRequest, res: Response) => {
     await prisma.periodClose.delete({ where: { id: period.id } });
 
     await logAudit({
-      userId: req.session?.user?.id || "unknown",
+      userId: req.user?.id || "unknown",
       action: "PERIOD_REOPEN",
       entityType: "PeriodClose",
       entityId: String(fiscalYear),
@@ -820,12 +871,12 @@ export const createReconciliation = async (req: AuthRequest, res: Response) => {
         difference,
         status: reconciled ? 'reconciled' : 'difference',
         notes: notes || null,
-        createdBy: req.session?.user?.id || "system",
+        createdBy: req.user?.id || "system",
       },
     });
 
     await logAudit({
-      userId: req.session?.user?.id || "unknown",
+      userId: req.user?.id || "unknown",
       action: "RECONCILIATION_CREATE",
       entityType: "Reconciliation",
       entityId: record.id,
@@ -865,6 +916,90 @@ export const getReconciliationDetail = async (req: Request, res: Response) => {
     `;
 
     res.json({ reconciliation: rec, openingBalance: openingAmount, transactions });
+  } catch (error: any) {
+    res.status(500).json({ error: sanitizeError(error) });
+  }
+};
+
+// ── Fee Status (for multi-fee payment form) ──
+
+export const getFeeStatus = async (req: Request, res: Response) => {
+  try {
+    const { studentId, feeMonth, classId } = req.query;
+    if (!studentId || !feeMonth) return res.status(400).json({ error: "studentId and feeMonth are required" });
+
+    const student = await prisma.student.findUnique({
+      where: { id: String(studentId) },
+      select: { classId: true, class: true },
+    });
+    if (!student) return res.status(404).json({ error: "Student not found" });
+
+    const feeSchedules = await prisma.feeSchedule.findMany({
+      where: {
+        OR: [{ classId: student.classId }, { classId: null }],
+      },
+    });
+
+    const feeAssignments = await prisma.studentFeeAssignment.findMany({
+      where: { studentId: String(studentId), active: true },
+    });
+    const assignedIds = new Set(feeAssignments.map(a => a.feeScheduleId));
+
+    // For monthly fees, check period = the given month or year
+    // For yearly/onetime fees, check any period for this student+schedule
+    const monthlyIds = feeSchedules.filter(f => f.frequency === 'MONTHLY').map(f => f.id);
+    const onetimeIds = feeSchedules.filter(f => f.frequency !== 'MONTHLY').map(f => f.id);
+
+    const period = String(feeMonth);
+    const year = period.split('-')[0];
+
+    const [monthlyPaid, onetimePaid] = await Promise.all([
+      prisma.paymentAllocation.findMany({
+        where: {
+          studentId: String(studentId),
+          period: { in: [period, year] },
+          feeScheduleId: { in: monthlyIds },
+        },
+        include: { transaction: { select: { isCancelled: true, reversalOfId: true } } },
+      }),
+      onetimeIds.length > 0 ? prisma.paymentAllocation.findMany({
+        where: {
+          studentId: String(studentId),
+          feeScheduleId: { in: onetimeIds },
+        },
+        include: { transaction: { select: { isCancelled: true, reversalOfId: true } } },
+      }) : [],
+    ]);
+
+    const paidSet = new Set([
+      ...monthlyPaid.filter(a => !a.transaction.isCancelled && !a.transaction.reversalOfId).map(a => a.feeScheduleId),
+      ...onetimePaid.filter(a => !a.transaction.isCancelled && !a.transaction.reversalOfId).map(a => a.feeScheduleId),
+    ]);
+
+    const activeWaivers = await prisma.feeWaiver.findMany({
+      where: { active: true, studentId: String(studentId) },
+    });
+    const waiverMap = new Map(activeWaivers.map(w => [w.feeScheduleId, w]));
+
+    const result = feeSchedules
+      .filter(fs => {
+        if (fs.applicability === 'ASSIGNED_ONLY') return assignedIds.has(fs.id);
+        return true;
+      })
+      .map(fs => {
+        const waiver = waiverMap.get(fs.id);
+        let amount = Number(fs.amount);
+        if (waiver && waiver.type === 'CUSTOM_AMOUNT') amount = Number(waiver.value);
+        return {
+          feeScheduleId: fs.id,
+          category: fs.category,
+          frequency: fs.frequency,
+          amount,
+          paid: paidSet.has(fs.id),
+        };
+      });
+
+    res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
   }

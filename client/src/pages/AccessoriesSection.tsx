@@ -1,266 +1,464 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSchoolStore, useAuthStore } from '../store';
 import { toast } from '../components/Toast';
-import ClassManagerModal from '../components/ClassManagerModal';
-import { Settings, RefreshCw, Plus, Pencil, ChevronUp, ChevronDown, Check, BookOpen, ArrowLeft } from 'lucide-react';
+import { Settings, RefreshCw, Plus, Pencil, Trash2, Printer, Download, BookOpen, Check, X, ChevronDown } from 'lucide-react';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
+import FeeStructureDocument from '../components/FeeStructureDocument';
+import BookListDocument from '../components/BookListDocument';
+import EditSchoolInfoModal from '../components/EditSchoolInfoModal';
+import { useReactToPrint } from 'react-to-print';
 import { API_URL } from '../lib/config';
 
-function BookSkeleton() {
-  return (
-    <div className="bg-white rounded-xl border border-school-border overflow-hidden">
-      <div className="overflow-x-auto p-4 space-y-3">
-        {[1,2,3].map(i => (
-          <div key={i} className="h-10 bg-school-paper rounded-lg animate-pulse" />
-        ))}
-      </div>
-    </div>
-  );
+function isHifz(cat: string) { return cat.toLowerCase().includes('hifz'); }
+
+function feeOrder(cat: string): number {
+  const lower = cat.trim().toLowerCase();
+  if (lower.includes('admission') && !lower.includes('hifz')) return 1;
+  if (lower.includes('tuition') && !lower.includes('hifz')) return 2;
+  if (lower.includes('books')) return 3;
+  if (lower.includes('copy')) return 4;
+  if (lower.includes('station')) return 5;
+  if (lower.includes('accessor')) return 6;
+  if (lower.includes('hifz') && lower.includes('admission')) return 1;
+  if (lower.includes('hifz') && lower.includes('tuition')) return 2;
+  return 99;
 }
 
+function fmt(n: number) { return n.toLocaleString('en-BD'); }
+
+const EMOJIS = ['👶', '🌸', '📚', '📖', '📘', '📗', '📕', '🎒', '🔬', '🌍', '⚡', '🎨', '🎵', '🏅'];
+
 const AccessoriesSection = () => {
-  useEffect(() => { document.title = 'Accessories - AL RAWA English School'; }, []);
-  const { classes, books, loading, fetchClasses, fetchBooks } = useSchoolStore();
+  useEffect(() => { document.title = 'Fees & Books - AL RAWA English School'; }, []);
+  const { classes, books, feeSchedules, settings, loading, fetchClasses, fetchBooks, fetchSettings, fetchFeeSchedules } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
-  const isAdmin = role === 'admin';
+  const isAdmin = role === 'admin' || role === 'accountant';
 
-  const [activeClass, setActiveClass] = useState<string | null>(null);
-  const [showClassManager, setShowClassManager] = useState(false);
-  const [formExpanded, setFormExpanded] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
-  const [form, setForm] = useState({ classId: '', name: '', publication: '', mrp: '', discounted: '', sell: '' });
+  const [editFee, setEditFee] = useState<{ category: string; amount: string } | null>(null);
+  const [editBook, setEditBook] = useState<{ id: string; name: string; sell: string } | null>(null);
+  const [newBook, setNewBook] = useState(false);
+  const [newBookData, setNewBookData] = useState({ name: '', sell: '' });
+  const [refreshing, setRefreshing] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [feeOpen, setFeeOpen] = useState(true);
+  const [booksOpen, setBooksOpen] = useState(true);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchClasses(); fetchBooks(); }, []);
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchBooks(), fetchFeeSchedules(), fetchSettings()]);
+    setRefreshing(false);
+  };
+  const feeDocRef = useRef<HTMLDivElement>(null);
+  const bookDocRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { fetchClasses(); fetchBooks(); fetchSettings(); fetchFeeSchedules(); }, []);
 
   const sorted = [...classes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const classBooks = books.filter((b: any) => activeClass && b.class?.name === activeClass);
-  const totalSell = classBooks.reduce((sum: number, b: any) => sum + Number(b.sell || 0), 0);
 
-  const resetForm = () => {
-    setForm({ classId: '', name: '', publication: '', mrp: '', discounted: '', sell: '' });
-    setEditId(null);
-    setFormExpanded(false);
-  };
+  const selectedClass = sorted.find(c => c.id === selectedClassId);
 
-  const handleEdit = (b: any) => {
-    setForm({
-      classId: b.classId,
-      name: b.name,
-      publication: b.publication || '',
-      mrp: String(b.mrp || ''),
-      discounted: String(b.discounted || ''),
-      sell: String(b.sell || ''),
-    });
-    setEditId(b.id);
-    setFormExpanded(true);
-  };
+  const { academicFees, hifzFees } = useMemo(() => {
+    const acad: { category: string; amount: number }[] = [];
+    const hifz: { category: string; amount: number }[] = [];
+    const seen = new Set<string>();
+    for (const fs of feeSchedules) {
+      if (fs.classId && fs.classId !== selectedClassId) continue;
+      if (seen.has(fs.category)) continue;
+      seen.add(fs.category);
+      const item = { category: fs.category, amount: Number(fs.amount) };
+      if (isHifz(fs.category)) {
+        hifz.push(item);
+      } else {
+        acad.push(item);
+      }
+    }
+    acad.sort((a, b) => feeOrder(a.category) - feeOrder(b.category));
+    hifz.sort((a, b) => feeOrder(a.category) - feeOrder(b.category));
+    return { academicFees: acad, hifzFees: hifz };
+  }, [feeSchedules, selectedClassId]);
 
-  const handleSubmit = async () => {
-    if (!form.name.trim()) return toast('Enter book name', 'error');
-    if (!form.classId) return toast('Select a class', 'error');
+  const acadTotal = academicFees.reduce((s, f) => s + f.amount, 0);
+  const hifzTotal = hifzFees.reduce((s, f) => s + f.amount, 0);
+  const classBooks = books.filter((b: any) => b.classId === selectedClassId);
+  const bookTotal = classBooks.reduce((s: number, b: any) => s + Number(b.sell || 0), 0);
 
-    const body = {
-      name: form.name.trim(),
-      publication: form.publication || undefined,
-      mrp: Number(form.mrp) || 0,
-      discounted: Number(form.discounted) || 0,
-      sell: Number(form.sell) || 0,
-      classId: form.classId,
-    };
+  const handlePrintFee = useReactToPrint({ contentRef: feeDocRef, documentTitle: `${selectedClass?.name || 'Class'}_Fee_Structure` });
 
+  const handlePrintBook = useReactToPrint({ contentRef: bookDocRef, documentTitle: `${selectedClass?.name || 'Class'}_Book_List` });
+
+  const handlePdfBook = async () => {
+    if (!selectedClass) return;
     try {
-      const url = editId ? `${API_URL}/books/${editId}` : `${API_URL}/books`;
-      await fetch(url, {
-        method: editId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(body),
-      });
-      toast(editId ? 'Book updated ✓' : 'Book added ✓', 'success');
-      resetForm();
-      fetchBooks();
-    } catch (e: any) {
-      toast(e.message || 'Error', 'error');
+      const html2pdf = (await import('html2pdf.js')).default;
+      const element = bookDocRef.current;
+      if (!element) return;
+      html2pdf().set({
+        margin: [10, 10, 10, 10],
+        filename: `${selectedClass.name}_Book_List.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(element).save();
+    } catch {
+      toast('PDF generation failed', 'error');
     }
   };
 
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const handlePdfFee = async () => {
+    if (!selectedClass) return;
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const element = feeDocRef.current;
+      if (!element) return;
+      html2pdf().set({
+        margin: [10, 10, 10, 10],
+        filename: `${selectedClass.name}_Fee_Structure.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(element).save();
+    } catch {
+      toast('PDF generation failed', 'error');
+    }
+  };
+
+  const handleUpdateFee = async (category: string) => {
+    if (!editFee || !selectedClassId) return;
+    try {
+      const existing = feeSchedules.find((fs: any) => fs.category === category && (!fs.classId || fs.classId === selectedClassId));
+      const amount = Number(editFee.amount) || 0;
+      if (existing) {
+        await fetch(`${API_URL}/finance/fee-schedules/${existing.id}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ amount }),
+        });
+      } else {
+        const activeYear = await fetch(`${API_URL}/academic-years`).then(r => r.json());
+        const year = activeYear.find((y: any) => y.isActive) || activeYear[0];
+        if (!year) { toast('No academic year found', 'error'); return; }
+        await fetch(`${API_URL}/finance/fee-schedules`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+          body: JSON.stringify({ academicYearId: year.id, classId: selectedClassId, category, amount, frequency: 'YEARLY' }),
+        });
+      }
+      toast('Fee updated ✓', 'success');
+      setEditFee(null);
+      fetchFeeSchedules();
+    } catch {
+      toast('Failed to update fee', 'error');
+    }
+  };
+
+  const handleUpdateBook = async (id: string) => {
+    if (!editBook) return;
+    try {
+      await fetch(`${API_URL}/books/${id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ name: editBook.name, sell: Number(editBook.sell) || 0 }),
+      });
+      toast('Book updated ✓', 'success');
+      setEditBook(null);
+      fetchBooks();
+    } catch {
+      toast('Failed to update book', 'error');
+    }
+  };
+
+  const handleAddBook = async () => {
+    if (!newBookData.name.trim() || !selectedClassId) return;
+    try {
+      await fetch(`${API_URL}/books`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ name: newBookData.name.trim(), sell: Number(newBookData.sell) || 0, classId: selectedClassId }),
+      });
+      toast('Book added ✓', 'success');
+      setNewBook(false);
+      setNewBookData({ name: '', sell: '' });
+      fetchBooks();
+    } catch {
+      toast('Failed to add book', 'error');
+    }
+  };
 
   const confirmDelete = async () => {
     if (!deleteId) return;
-    const book = books.find((b: any) => b.id === deleteId);
-    if (!book) return;
     setDeleteLoading(true);
     try {
       const res = await fetch(`${API_URL}/books/${deleteId}`, { method: 'DELETE', credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to delete');
-      toast('Book deleted', '', { label: 'Undo', onClick: async () => {
-        await fetch(`${API_URL}/books`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(book), credentials: 'include' });
-        fetchBooks();
-      }});
+      if (!res.ok) throw new Error();
+      toast('Book deleted', 'success');
       setDeleteId(null);
-      setDeleteLoading(false);
       fetchBooks();
     } catch {
-      toast('Failed to delete book', 'error');
+      toast('Failed to delete', 'error');
+    } finally {
       setDeleteLoading(false);
     }
   };
 
   return (
     <div className="space-y-4">
-      <ClassManagerModal open={showClassManager} onClose={() => setShowClassManager(false)} />
-
-      {/* Form */}
-      <div className="bg-white rounded-xl border border-school-border overflow-hidden">
-        <button onClick={() => setFormExpanded(!formExpanded)} className="w-full flex items-center justify-between p-4 hover:bg-school-paper/50 transition-colors">
-          <span className="font-bold text-sm text-school-primary flex items-center gap-1.5">{editId ? <><Pencil size={14} /> Edit Accessory</> : <><Plus size={14} /> Add Accessory</>}</span>
-          <span className="text-school-muted text-xs">{formExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
-        </button>
-        {formExpanded && (
-          <div className="p-4 border-t border-school-border space-y-3">
-            <div>
-              <label className="text-xs font-bold text-school-muted mb-1 block">Class</label>
-              <select value={form.classId} onChange={(e) => setForm({ ...form, classId: e.target.value })} className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent">
-                <option value="">Select class</option>
-                {sorted.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-school-muted mb-1 block">Book Name</label>
-              <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. English Grammar Part 1" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-school-muted mb-1 block">Publication <span className="font-normal opacity-60">(optional)</span></label>
-              <input type="text" value={form.publication} onChange={(e) => setForm({ ...form, publication: e.target.value })} placeholder="e.g. National Curriculum" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs font-bold text-school-muted mb-1 block">MRP (৳)</label>
-                <input type="number" value={form.mrp} onChange={(e) => setForm({ ...form, mrp: e.target.value })} placeholder="0" min="0" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-school-muted mb-1 block">Disc. (৳)</label>
-                <input type="number" value={form.discounted} onChange={(e) => setForm({ ...form, discounted: e.target.value })} placeholder="0" min="0" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-school-muted mb-1 block">Sell (৳)</label>
-                <input type="number" value={form.sell} onChange={(e) => setForm({ ...form, sell: e.target.value })} placeholder="0" min="0" className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent" />
-              </div>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button onClick={handleSubmit} className="flex-1 py-2 bg-amber-600 text-white rounded-xl text-sm font-bold hover:opacity-90 flex items-center justify-center gap-1.5">
-                {editId ? <><Check size={14} /> Update</> : '+ Add Book'}
-              </button>
-              {editId && <button onClick={resetForm} className="px-4 py-2 border border-school-border rounded-xl text-sm">Cancel</button>}
-            </div>
-          </div>
-        )}
-      </div>
+      <EditSchoolInfoModal open={showSettings} onClose={() => setShowSettings(false)} />
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h3 className="font-serif text-lg text-school-primary">Accessories</h3>
-          <span className="bg-amber-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{classBooks.length}</span>
+        <div>
+          <h3 className="font-serif text-lg text-school-primary">Fees & Books</h3>
+          <p className="text-xs text-school-muted">Fee structure & book list</p>
         </div>
-        <button onClick={() => fetchBooks()} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
-          <RefreshCw size={12} /> Refresh
-        </button>
+        <div className="flex gap-2">
+          {isAdmin && (
+            <button onClick={() => setShowSettings(true)} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper">
+              <Settings size={12} /> School Info
+            </button>
+          )}
+          <button onClick={handleRefresh} disabled={refreshing} className="flex items-center gap-1 px-3 py-1.5 border border-school-border rounded-lg text-xs hover:bg-school-paper disabled:opacity-50">
+            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
-      {/* Class Picker or Book Table */}
-      {!activeClass ? (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-school-muted">Select a class to manage accessories:</p>
-            {isAdmin && (
-              <button onClick={() => setShowClassManager(true)} className="flex items-center gap-1 text-xs text-school-muted hover:text-school-primary">
-                <Settings size={12} /> Manage Classes
-              </button>
-            )}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {sorted.map((cls) => (
-              <button
-                key={cls.id}
-                onClick={() => { setActiveClass(cls.name); setForm({ ...form, classId: cls.id }); }}
-                className="bg-white p-4 rounded-2xl border border-school-border text-center hover:border-amber-500 hover:shadow-md transition-all"
-              >
-                <BookOpen size={24} className="text-amber-600 mx-auto mb-1" />
-                <div className="font-bold text-sm text-school-primary">{cls.name}</div>
-                <div className="text-[11px] text-school-muted mt-1">{cls.bookCount} book{cls.bookCount !== 1 ? 's' : ''}</div>
-              </button>
-            ))}
-          </div>
+      {/* Class Chip Strip */}
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+        {sorted.map((cls, i) => (
+          <button
+            key={cls.id}
+            onClick={() => setSelectedClassId(cls.id)}
+            className={`flex flex-col items-center gap-0.5 px-4 py-3 rounded-2xl border-2 text-center transition-all flex-shrink-0 min-w-[80px] ${
+              selectedClassId === cls.id
+                ? 'border-school-accent bg-school-accent/5 shadow-sm'
+                : 'border-school-border bg-white hover:border-school-muted'
+            }`}
+          >
+            <span className="text-lg">{EMOJIS[i % EMOJIS.length]}</span>
+            <span className={`text-xs font-bold ${selectedClassId === cls.id ? 'text-school-accent' : 'text-school-primary'}`}>{cls.name}</span>
+            <span className="text-[10px] text-school-muted">{cls.bookCount || 0} books</span>
+          </button>
+        ))}
+      </div>
+
+      {!selectedClass ? (
+        <div className="text-center py-16 text-school-muted">
+          <BookOpen size={48} className="mx-auto mb-3 opacity-40" />
+          <p className="text-sm">Select a class to view fee structure and books</p>
         </div>
       ) : (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <button onClick={() => { setActiveClass(null); resetForm(); }} className="text-sm text-school-accent hover:underline flex items-center gap-1"><ArrowLeft size={14} /> All Classes</button>
-            <span className="font-serif text-sm text-school-primary">{activeClass}</span>
-            <span className="text-xs text-school-muted">({classBooks.length} books, Total sell: ৳{totalSell.toLocaleString()})</span>
+        <>
+          {/* Fee Structure Card */}
+          <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+            <button onClick={() => setFeeOpen(!feeOpen)} className="flex items-center justify-between w-full p-4 border-b border-school-border text-left">
+              <h4 className="font-bold text-sm text-school-primary">Fee Structure — {selectedClass.name}</h4>
+              <div className="flex items-center gap-1.5">
+                <div className="flex gap-1.5 no-print" onClick={e => e.stopPropagation()}>
+                  <button onClick={handlePrintFee} className="flex items-center gap-1 px-3 py-1.5 bg-school-paper rounded-lg text-xs hover:bg-school-border/50"><Printer size={12} /> Print</button>
+                  <button onClick={handlePdfFee} className="flex items-center gap-1 px-3 py-1.5 bg-school-paper rounded-lg text-xs hover:bg-school-border/50"><Download size={12} /> PDF</button>
+                </div>
+                <ChevronDown size={16} className={`text-school-muted transition-transform ${feeOpen ? '' : '-rotate-90'}`} />
+              </div>
+            </button>
+
+            {/* Doc for print/pdf (hidden visually, used by ref) */}
+            <div className="hidden">
+              <FeeStructureDocument ref={feeDocRef} className={selectedClass.name} academicFees={academicFees} hifzFees={hifzFees} settings={settings} />
+            </div>
+
+            {feeOpen && (
+            <div className="p-4">
+              {/* Academic Fees */}
+              <div className="mb-4">
+                <h5 className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-3 inline-block bg-school-primary text-white">Academic Section</h5>
+                {academicFees.map(f => (
+                  <div key={f.category} className="flex items-center justify-between py-1.5 border-b border-dotted border-school-border/50 group">
+                    <span className="text-sm text-school-primary">{f.category}</span>
+                    <div className="flex items-center gap-2">
+                      {editFee?.category === f.category ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-school-muted">৳</span>
+                          <input type="number" value={editFee.amount} onChange={e => setEditFee({ ...editFee, amount: e.target.value })} className="w-24 px-2 py-1 border border-school-accent rounded-lg text-sm text-right font-mono" autoFocus />
+                          <button onClick={() => handleUpdateFee(f.category)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check size={14} /></button>
+                          <button onClick={() => setEditFee(null)} className="p-1 text-red-500 hover:bg-red-50 rounded"><X size={14} /></button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-sm font-bold font-mono text-school-primary">৳ {fmt(f.amount)}</span>
+                          {isAdmin && (
+                            <button onClick={() => setEditFee({ category: f.category, amount: String(f.amount) })} className="p-1 text-school-muted opacity-0 group-hover:opacity-100 hover:bg-school-paper rounded transition-all">
+                              <Pencil size={12} />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between py-2 mt-1 font-bold border-t-2 border-school-primary">
+                  <span className="text-sm">Total Academic</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono">৳ {fmt(acadTotal)}</span>
+                    {isAdmin && <span className="w-[20px]" />}
+                  </div>
+                </div>
+              </div>
+
+              {/* Hifz Fees */}
+              {hifzFees.some(f => f.amount > 0) || isAdmin ? (
+                <div>
+                  <h5 className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-3 inline-block bg-school-primary text-white">Hifz Section</h5>
+                  {hifzFees.map(f => (
+                    <div key={f.category} className="flex items-center justify-between py-1.5 border-b border-dotted border-school-border/50 group">
+                      <span className="text-sm text-school-primary">{f.category}</span>
+                      <div className="flex items-center gap-2">
+                        {editFee?.category === f.category ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-school-muted">৳</span>
+                            <input type="number" value={editFee.amount} onChange={e => setEditFee({ ...editFee, amount: e.target.value })} className="w-24 px-2 py-1 border border-school-accent rounded-lg text-sm text-right font-mono" autoFocus />
+                            <button onClick={() => handleUpdateFee(f.category)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check size={14} /></button>
+                            <button onClick={() => setEditFee(null)} className="p-1 text-red-500 hover:bg-red-50 rounded"><X size={14} /></button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-sm font-bold font-mono text-school-primary">৳ {fmt(f.amount)}</span>
+                            {isAdmin && (
+                              <button onClick={() => setEditFee({ category: f.category, amount: String(f.amount) })} className="p-1 text-school-muted opacity-0 group-hover:opacity-100 hover:bg-school-paper rounded transition-all">
+                                <Pencil size={12} />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between py-2 mt-1 font-bold border-t-2 border-school-primary">
+                    <span className="text-sm">Total Hifz</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-mono">৳ {fmt(hifzTotal)}</span>
+                      {isAdmin && <span className="w-[20px]" />}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            )}
           </div>
 
-          {loading.books ? (
-            <BookSkeleton />
-          ) : classBooks.length === 0 ? (
-            <div className="text-center py-12 text-school-muted">
-              <BookOpen size={48} className="text-school-muted mx-auto mb-2" />
-              <p className="text-sm">No accessories in {activeClass} yet.</p>
+          {/* Book List Card */}
+          <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
+            <button onClick={() => setBooksOpen(!booksOpen)} className="flex items-center justify-between w-full p-4 border-b border-school-border text-left">
+              <h4 className="font-bold text-sm text-school-primary">Books — {selectedClass.name}</h4>
+              <div className="flex items-center gap-1.5">
+                <div className="flex gap-1.5 no-print" onClick={e => e.stopPropagation()}>
+                  <button onClick={handlePrintBook} className="flex items-center gap-1 px-3 py-1.5 bg-school-paper rounded-lg text-xs hover:bg-school-border/50"><Printer size={12} /> Print</button>
+                  <button onClick={handlePdfBook} className="flex items-center gap-1 px-3 py-1.5 bg-school-paper rounded-lg text-xs hover:bg-school-border/50"><Download size={12} /> PDF</button>
+                  {isAdmin && (
+                    <button onClick={() => { setNewBook(true); setNewBookData({ name: '', sell: '' }); }} className="flex items-center gap-1 px-3 py-1.5 bg-school-primary text-white rounded-lg text-xs font-bold hover:opacity-90">
+                      <Plus size={12} /> Add Book
+                    </button>
+                  )}
+                </div>
+                <ChevronDown size={16} className={`text-school-muted transition-transform ${booksOpen ? '' : '-rotate-90'}`} />
+              </div>
+            </button>
+
+            {/* Doc for print/pdf (hidden visually, used by ref) */}
+            <div className="hidden">
+              <BookListDocument ref={bookDocRef} className={selectedClass.name} books={classBooks} settings={settings} />
             </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-school-border overflow-hidden">
+
+            {booksOpen && (
+            <>
+            {loading.books ? (
+              <div className="p-6 space-y-3">
+                {[1,2,3].map(i => <div key={i} className="h-8 bg-school-paper rounded-lg animate-pulse" />)}
+              </div>
+            ) : classBooks.length === 0 && !newBook ? (
+              <div className="text-center py-8 text-school-muted text-sm">No books in this class yet.</div>
+            ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm mobile-card-table">
+                <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-school-paper text-school-muted text-xs uppercase tracking-wider">
-                      <th className="px-4 py-3 text-left">#</th>
-                      <th className="px-4 py-3 text-left">Name</th>
-                      <th className="px-4 py-3 text-left">Publication</th>
-                      <th className="px-4 py-3 text-right">MRP (৳)</th>
-                      <th className="px-4 py-3 text-right">Disc. (৳)</th>
-                      <th className="px-4 py-3 text-right">Sell (৳)</th>
-                      {isAdmin && <th className="px-4 py-3 text-center">Actions</th>}
+                    <tr className="bg-school-paper text-school-muted text-[10px] uppercase tracking-wider">
+                      <th className="px-4 py-2.5 text-left w-10">#</th>
+                      <th className="px-4 py-2.5 text-left">Book Name</th>
+                      <th className="px-4 py-2.5 text-right w-28">Price</th>
+                      {isAdmin && <th className="px-4 py-2.5 text-center w-20">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {classBooks.map((b: any, i: number) => (
-                      <tr key={b.id} className="border-t border-school-border hover:bg-school-paper/30">
-                        <td className="px-4 py-3 text-school-muted">{i + 1}</td>
-                        <td className="px-4 py-3 font-medium">{b.name}</td>
-                        <td className="px-4 py-3 text-school-muted">{b.publication || '—'}</td>
-                        <td className="px-4 py-3 text-right">{Number(b.mrp).toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right">{Number(b.discounted).toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-bold">{Number(b.sell).toLocaleString()}</td>
+                    {newBook && (
+                      <tr className="border-t border-school-border bg-amber-50/30">
+                        <td className="px-4 py-2 text-school-muted">—</td>
+                        <td className="px-4 py-2">
+                          <input type="text" value={newBookData.name} onChange={e => setNewBookData({ ...newBookData, name: e.target.value })} placeholder="Book name" className="w-full px-2 py-1 border border-school-border rounded-lg text-sm" autoFocus />
+                        </td>
+                        <td className="px-4 py-2">
+                          <input type="number" value={newBookData.sell} onChange={e => setNewBookData({ ...newBookData, sell: e.target.value })} placeholder="0" className="w-full px-2 py-1 border border-school-border rounded-lg text-sm text-right" />
+                        </td>
+                        <td className="px-4 py-2">
+                          <div className="flex gap-1 justify-center">
+                            <button onClick={handleAddBook} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check size={14} /></button>
+                            <button onClick={() => setNewBook(false)} className="p-1 text-red-500 hover:bg-red-50 rounded"><X size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {classBooks.map((b: any, i: number) => {
+                      const isEditing = editBook?.id === b.id;
+                      return (
+                      <tr key={b.id} className="border-t border-school-border/50 hover:bg-school-paper/30 group">
+                        <td className="px-4 py-2.5 text-school-muted text-xs">{i + 1}</td>
+                        <td className="px-4 py-2.5">
+                          {isEditing ? (
+                            <input type="text" value={editBook!.name} onChange={e => setEditBook(prev => prev ? { ...prev, name: e.target.value } : prev)} className="w-full px-2 py-1 border border-school-accent rounded-lg text-sm" autoFocus />
+                          ) : (
+                            <span className="font-medium">{b.name}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          {isEditing ? (
+                            <input type="number" value={editBook!.sell} onChange={e => setEditBook(prev => prev ? { ...prev, sell: e.target.value } : prev)} className="w-24 px-2 py-1 border border-school-accent rounded-lg text-sm text-right" />
+                          ) : (
+                            <span className="font-bold font-mono">৳ {fmt(Number(b.sell))}</span>
+                          )}
+                        </td>
                         {isAdmin && (
-                          <td className="px-4 py-3 text-center">
-                            <div className="flex gap-1 justify-center">
-                              <button onClick={() => handleEdit(b)} className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs hover:bg-blue-100">Edit</button>
-                               <button onClick={() => setDeleteId(b.id)} className="px-2 py-1 bg-red-50 text-red-500 rounded text-xs hover:bg-red-100">Delete</button>
-                            </div>
+                          <td className="px-4 py-2.5 text-center">
+                            {isEditing ? (
+                              <div className="flex gap-1 justify-center">
+                                <button onClick={() => handleUpdateBook(b.id)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check size={14} /></button>
+                                <button onClick={() => setEditBook(null)} className="p-1 text-red-500 hover:bg-red-50 rounded"><X size={14} /></button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-1 justify-center opacity-0 group-hover:opacity-100 transition-all">
+                                <button onClick={() => setEditBook({ id: b.id, name: b.name, sell: String(Number(b.sell)) })} className="p-1 text-blue-500 hover:bg-blue-50 rounded"><Pencil size={12} /></button>
+                                <button onClick={() => setDeleteId(b.id)} className="p-1 text-red-400 hover:bg-red-50 rounded"><Trash2 size={12} /></button>
+                              </div>
+                            )}
                           </td>
                         )}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-school-primary bg-school-paper font-bold">
-                      <td colSpan={5} className="px-4 py-3 text-right text-xs uppercase tracking-wider">Total Sell Price</td>
-                      <td className="px-4 py-3 text-right">৳{totalSell.toLocaleString()}</td>
+                      <td colSpan={2} className="px-4 py-2.5 text-xs uppercase tracking-wider">Total</td>
+                      <td className="px-4 py-2.5 text-right font-mono">৳ {fmt(bookTotal)}</td>
                       {isAdmin && <td></td>}
                     </tr>
                   </tfoot>
                 </table>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+            </>
+            )}
+          </div>
+        </>
       )}
-      <DeleteConfirmModal open={!!deleteId} title="Delete Book" message="This will permanently delete this book." onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} loading={deleteLoading} />
+
+      <DeleteConfirmModal open={!!deleteId} title="Delete Book" message="Permanently delete this book?" onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} loading={deleteLoading} />
     </div>
   );
 };

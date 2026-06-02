@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { useAuthStore } from '../store';
-import axios from 'axios';
+import { supabase } from '../lib/supabase';
 import { Link } from 'react-router-dom';
 import { LogIn, ShieldAlert, School, BookOpen } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
-import { API_URL } from '../lib/config';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -21,16 +20,17 @@ const Login = () => {
     setError('');
     setLoading(true);
     try {
-      const res = await axios.post(
-        `${API_URL}/auth/sign-in/email`,
-        { email, password },
-        { withCredentials: true }
-      );
-      if (res.data?.error) {
-        setError(res.data.error.message || 'Invalid credentials.');
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) {
+        setError(error.message);
         return;
       }
-      await fetchSession();
+      if (data?.user) {
+        await fetchSession();
+      }
     } catch (err: any) {
       setError(err.response?.data?.error?.message || 'Failed to login. Please try again.');
     } finally {

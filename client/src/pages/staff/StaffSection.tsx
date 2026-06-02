@@ -42,7 +42,7 @@ export default function StaffSection() {
 
   const handleEdit = (s: any) => {
     setForm({ role: s.role || '', name: s.name, email: s.email || '', contact: s.contact || '' });
-    setPhoto(s.hasPhoto ? `${API_URL}/staff/${s.id}/photo` : null);
+    setPhoto(s.photoUrl || (s.hasPhoto ? `${API_URL}/staff/${s.id}/photo` : null));
     setEditingId(s.id);
   };
 
@@ -138,7 +138,9 @@ export default function StaffSection() {
   const renderViewCard = (s: any) => (
     <div className="bg-white p-4 rounded-2xl border border-school-border card-shadow text-center">
       <div className="flex flex-col items-center gap-2">
-        {s.hasPhoto ? (
+        {s.photoUrl ? (
+          <img src={s.photoUrl} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-school-border shadow-sm" />
+        ) : s.hasPhoto ? (
           <img src={`${API_URL}/staff/${s.id}/photo`} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-school-border shadow-sm" />
         ) : (
           <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center shadow-sm"><Building2 size={24} className="text-white" /></div>
@@ -176,8 +178,8 @@ export default function StaffSection() {
           <button
             onClick={async () => {
               const photoCache: Record<string, string> = {};
-              await Promise.all(filtered.filter((s: any) => s.hasPhoto).map(async (s: any) => {
-                try { const r = await fetch(`${API_URL}/staff/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+              await Promise.all(filtered.filter((s: any) => s.photoUrl).map(async (s: any) => {
+                try { const r = await fetch(s.photoUrl, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
               }));
               const doc = new jsPDF();
               doc.setFont('helvetica', 'bold'); doc.setFontSize(16);

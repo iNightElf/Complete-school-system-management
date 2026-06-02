@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useSchoolStore } from '../store';
-import { Plus, Save, Trash2, BookOpen, ChevronDown, ChevronRight, Pencil, CalendarPlus, Copy } from 'lucide-react';
+import { Plus, Save, Trash2, BookOpen, ChevronDown, ChevronRight, Pencil, CalendarPlus, Copy, GraduationCap } from 'lucide-react';
 import { toast } from '../components/Toast';
+import PromoteModal from '../components/PromoteModal';
 
 const FREQUENCIES = ['MONTHLY', 'YEARLY', 'ONETIME'];
 const APPLICABILITIES = ['AUTO', 'ASSIGNED_ONLY'];
@@ -17,6 +18,8 @@ const FeeScheduleTab = () => {
   const [form, setForm] = useState({ classId: '', category: '', amount: '', frequency: 'MONTHLY', applicability: 'AUTO' });
   const [showYearForm, setShowYearForm] = useState(false);
   const [yearForm, setYearForm] = useState({ name: '', startDate: '', endDate: '' });
+  const [showPromote, setShowPromote] = useState(false);
+  const [promoteTarget, setPromoteTarget] = useState<{ name: string; id: string } | null>(null);
 
   const activeYear = years.find((y: any) => y.isActive);
   const previousYear = years
@@ -94,10 +97,12 @@ const FeeScheduleTab = () => {
       return;
     }
     try {
-      await axios.post('/api/academic-years', { ...yearForm, isActive: true });
+      const res = await axios.post('/api/academic-years', { ...yearForm, isActive: true });
       toast('Academic year created', 'success');
       setShowYearForm(false);
       setYearForm({ name: '', startDate: '', endDate: '' });
+      setShowPromote(true);
+      setPromoteTarget({ name: res.data.name, id: res.data.id });
       load();
     } catch (e: any) {
       toast(e?.response?.data?.error || 'Failed to create academic year', 'error');
@@ -201,6 +206,27 @@ const FeeScheduleTab = () => {
           </button>
         </div>
       )}
+
+      {showPromote && promoteTarget && (
+        <div className="bg-gradient-to-r from-purple-600 to-indigo-700 rounded-xl p-4 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-bold text-sm flex items-center gap-1.5"><GraduationCap size={16} /> New Academic Year Created</h4>
+              <p className="text-xs text-purple-200 mt-0.5">Session: <span className="font-bold text-white">{promoteTarget.name}</span></p>
+              <p className="text-xs text-purple-200 mt-1">Promote all students to the next class for the new session?</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setShowPromote(true); }} className="px-4 py-2 bg-white text-purple-700 rounded-lg text-xs font-bold hover:bg-purple-50">
+                Promote All →
+              </button>
+              <button onClick={() => { setShowPromote(false); setPromoteTarget(null); }} className="px-3 py-2 border border-purple-400 text-purple-200 rounded-lg text-xs hover:bg-white/10">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <PromoteModal open={showPromote && !!promoteTarget} targetYearName={promoteTarget?.name || ''} targetAcademicYearId={promoteTarget?.id || ''} onClose={() => { setShowPromote(false); setPromoteTarget(null); }} onDone={() => { setShowPromote(false); setPromoteTarget(null); }} />
 
       {showForm && (
         <div className="bg-white rounded-xl border border-school-border p-4 space-y-3">

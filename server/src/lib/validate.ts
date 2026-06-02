@@ -21,6 +21,11 @@ export const createTransactionSchema = z.object({
   feeScheduleId: z.string().uuid().optional().nullable(),
   totalIncomeCollected: z.number().optional().nullable(),
   directExpenseBeforeDeposit: z.number().optional().nullable(),
+  allocations: z.array(z.object({
+    feeScheduleId: z.string().uuid("Invalid feeScheduleId"),
+    amount: z.number().positive("Allocation amount must be greater than 0"),
+    period: z.string().min(1, "Period is required"),
+  })).optional().nullable(),
 }).refine(data => {
   if (!isValidAccount(data.sourceAccount)) return false;
   if (!isValidAccount(data.destinationAccount)) return false;
@@ -32,7 +37,11 @@ export const createTransactionSchema = z.object({
     return false;
   }
   return true;
-}, { message: "Source and destination accounts must be different" });
+}, { message: "Source and destination accounts must be different" }).refine(data => {
+  if (!data.allocations || data.allocations.length === 0) return true;
+  const total = data.allocations.reduce((s, a) => s + a.amount, 0);
+  return Math.abs(total - data.amount) < 0.01;
+}, { message: "Sum of allocations must equal total amount" });
 
 export const saveStudentResultSchema = z.object({
   session: z.string().optional().nullable(),
@@ -49,6 +58,7 @@ export const createStudentSchema = z.object({
   fatherName: z.string().max(200).optional().nullable(),
   motherName: z.string().max(200).optional().nullable(),
   contact: z.string().max(20).optional().nullable(),
+  session: z.string().optional().nullable(),
 });
 
 export const createTeacherSchema = z.object({

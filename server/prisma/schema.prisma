@@ -12,55 +12,11 @@ model user {
   id            String    @id @default(uuid())
   name          String
   email         String    @unique
-  emailVerified Boolean  @default(false)
+  emailVerified Boolean   @default(false)
   image         String?
-  role          String    @default("viewer") // "admin" | "viewer"
+  role          String    @default("viewer") // "admin" | "accountant" | "teacher" | "viewer"
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  session       session[]
-  account       account[]
-}
-
-model session {
-  id           String    @id @default(uuid())
-  expiresAt    DateTime
-  token        String    @unique
-  ipAddress    String?
-  userAgent    String?
-  userId       String
-  user         user      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-}
-
-model account {
-  id                    String    @id @default(uuid())
-  accountId             String
-  providerId            String
-  userId                String
-  user                  user      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken           String?
-  refreshToken          String?
-  idToken               String?
-  accessTokenExpiresAt  DateTime?
-  refreshTokenExpiresAt DateTime?
-  scope                 String?
-  password              String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-
-  @@unique([accountId, providerId])
-}
-
-model verification {
-  id         String    @id @default(uuid())
-  identifier String
-  expiresAt  DateTime
-  token      String
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  @@unique([identifier, token])
 }
 
 model Student {
@@ -68,12 +24,15 @@ model Student {
   class       String
   classId     String?          @map("class_id")
   classRel    SchoolClass?     @relation(fields: [classId], references: [id], onDelete: SetNull)
+  studentId   String           @unique @map("student_id")
   roll        String?
+  session     String?
   name        String
   fatherName  String?
   motherName  String?
   contact     String?
   photo       Bytes?
+  photoPath   String?          @map("photo_path")
   deletedAt   DateTime?
   graduatedAt DateTime?
   createdAt   DateTime         @default(now())
@@ -85,7 +44,7 @@ model Student {
 
   @@index([class])
   @@index([classId])
-  @@unique([class, roll])
+  @@index([session])
 }
 
 model Teacher {
@@ -95,6 +54,7 @@ model Teacher {
   email       String?
   contact     String?
   photo       Bytes?
+  photoPath   String?  @map("photo_path")
   deletedAt   DateTime?
   createdAt   DateTime @default(now())
 }
@@ -106,6 +66,7 @@ model Staff {
   email       String?
   contact     String?
   photo       Bytes?
+  photoPath   String?  @map("photo_path")
   deletedAt   DateTime?
   createdAt   DateTime @default(now())
 }
@@ -199,6 +160,14 @@ model PaymentAllocation {
   @@map("payment_allocations")
 }
 
+model SchoolSetting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String @db.Text
+
+  @@map("school_settings")
+}
+
 model AuditLog {
   id         String   @id @default(uuid())
   userId     String?  @map("user_id") @db.VarChar(100)
@@ -255,6 +224,8 @@ model Transaction {
   approvedBy            String?   @map("approved_by") @db.VarChar(100)
   referenceId           String?   @unique @map("reference_id") @db.VarChar(255)
   feeMonth              String?   @map("fee_month") @db.VarChar(20)
+  fiscalYear            Int?      @map("fiscal_year")
+  receiptSequence       Int?      @map("receipt_sequence")
   isCancelled           Boolean   @default(false) @map("is_cancelled")
   cancelledAt           DateTime? @map("cancelled_at")
   cancelledBy           String?   @map("cancelled_by") @db.VarChar(100)
@@ -274,6 +245,16 @@ model Transaction {
   @@index([transactionType, affectsIncomeLedger])
   @@index([reversalOfId])
   @@map("transactions")
+}
+
+model ReceiptCounter {
+  id           String @id @default(uuid()) @db.Uuid
+  fiscalYear   Int    @map("fiscal_year")
+  receiptType  String @map("receipt_type") @db.VarChar(20)
+  nextSequence Int    @default(1) @map("next_sequence")
+
+  @@unique([fiscalYear, receiptType])
+  @@map("receipt_counters")
 }
 
 model FeeWaiver {

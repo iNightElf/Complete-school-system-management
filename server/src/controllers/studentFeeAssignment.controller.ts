@@ -16,7 +16,7 @@ export const getStudentFeeAssignments = async (req: AuthRequest, res: Response) 
     let assignments = await prisma.studentFeeAssignment.findMany({
       where,
       include: {
-        student: { select: { id: true, name: true, class: true, roll: true } },
+        student: { select: { id: true, name: true, class: true, studentId: true } },
         feeSchedule: { select: { id: true, category: true, amount: true, frequency: true, classRel: { select: { name: true } } } },
       },
       orderBy: { createdAt: "desc" },
@@ -54,7 +54,7 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
           where: { id: existing.id },
           data: { active: false },
         });
-        logAudit({ userId: req.session?.user?.id, action: "DEACTIVATE", entityType: "StudentFeeAssignment", entityId: updated.id, details: JSON.stringify({ studentId, feeScheduleId }) });
+        logAudit({ userId: req.user?.id, action: "DEACTIVATE", entityType: "StudentFeeAssignment", entityId: updated.id, details: JSON.stringify({ studentId, feeScheduleId }) });
         return res.json(updated);
       }
       return res.json({ message: "Already inactive" });
@@ -67,7 +67,7 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
           where: { id: existing.id },
           data: { active: false },
         });
-        logAudit({ userId: req.session?.user?.id, action: "DEACTIVATE", entityType: "StudentFeeAssignment", entityId: updated.id, details: JSON.stringify({ studentId, feeScheduleId }) });
+        logAudit({ userId: req.user?.id, action: "DEACTIVATE", entityType: "StudentFeeAssignment", entityId: updated.id, details: JSON.stringify({ studentId, feeScheduleId }) });
         return res.json(updated);
       }
 
@@ -82,7 +82,7 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
       const created = await prisma.studentFeeAssignment.create({
         data: { studentId, feeScheduleId, active: true, startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null, note },
       });
-      logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "StudentFeeAssignment", entityId: created.id, details: JSON.stringify({ studentId, feeScheduleId }) });
+      logAudit({ userId: req.user?.id, action: "CREATE", entityType: "StudentFeeAssignment", entityId: created.id, details: JSON.stringify({ studentId, feeScheduleId }) });
       return res.status(201).json(created);
     }
 
@@ -121,7 +121,7 @@ export const bulkAssign = async (req: AuthRequest, res: Response) => {
       return done;
     });
 
-    logAudit({ userId: req.session?.user?.id, action: "BULK_ASSIGN", entityType: "StudentFeeAssignment", entityId: feeScheduleId, details: JSON.stringify({ studentIds: studentIds.length, count }) });
+    logAudit({ userId: req.user?.id, action: "BULK_ASSIGN", entityType: "StudentFeeAssignment", entityId: feeScheduleId, details: JSON.stringify({ studentIds: studentIds.length, count }) });
     res.json({ count });
   } catch (error: any) {
     res.status(errorStatus(error)).json({ error: sanitizeError(error) });

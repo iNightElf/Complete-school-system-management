@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { ReactNode, FormEvent } from 'react';
-import { useSchoolStore, useAuthStore, useUserManagementStore, useUIStore } from '../store';
+import { useSchoolStore, useAuthStore, useUIStore } from '../store';
 import axios from 'axios';
 import { Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw, BookOpen, Shield, Lock, Scale } from 'lucide-react';
 import { toast } from '../components/Toast';
@@ -13,6 +13,24 @@ import StudentWaiversTab from './StudentWaiversTab';
 import PeriodCloseTab from './PeriodCloseTab';
 import ReconciliationTab from './ReconciliationTab';
 import { API_URL } from '../lib/config';
+
+function monthDiff(from: string, to: string): number {
+  const [y1, m1] = from.split('-').map(Number);
+  const [y2, m2] = to.split('-').map(Number);
+  return (y2 - y1) * 12 + (m2 - m1);
+}
+
+function getMonthsInRange(from: string, to: string): string[] {
+  const months: string[] = [];
+  let [y, m] = from.split('-').map(Number);
+  const [y2, m2] = to.split('-').map(Number);
+  while (y < y2 || (y === y2 && m <= m2)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return months;
+}
 
 const ACCOUNTS = [
   { id: 'AL_RAWA_BANK', label: 'AL RAWA English School Bank', short: 'AL RAWA Bank', color: 'from-blue-500 to-blue-600', ring: 'ring-blue-200' },
@@ -32,7 +50,7 @@ const ACCOUNTS_LEDGER = [
   { id: 'AL_RAWA_BANK' as const, label: 'AL RAWA Bank', short: 'Bank', color: 'bg-blue-500' },
 ];
 
-function Ledger({ fmt, fetchFinance, userMap }: { fmt: (n: number) => string; fetchFinance: () => void; userMap: Record<string, string> }) {
+function Ledger({ fmt, fetchFinance }: { fmt: (n: number) => string; fetchFinance: () => void }) {
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
   const [ledgerAccount, setLedgerAccount] = useState<'AL_RAWA_BANK' | 'CASH_IN_HAND'>('CASH_IN_HAND');
@@ -175,44 +193,62 @@ function Ledger({ fmt, fetchFinance, userMap }: { fmt: (n: number) => string; fe
           <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
             <tr>
               <th className="px-4 py-3 text-left w-[110px]">Date</th>
+              <th className="px-4 py-3 text-left w-[100px]">Receipt No</th>
               <th className="px-4 py-3 text-left w-[60px]">Type</th>
               <th className="px-4 py-3 text-left">Description</th>
               <th className="px-4 py-3 text-right w-[100px]">Debit (৳)</th>
               <th className="px-4 py-3 text-right w-[100px]">Credit (৳)</th>
               <th className="px-4 py-3 text-right w-[110px]">Balance (৳)</th>
+              {canWrite && <th className="px-4 py-3 text-center w-10"></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-school-border/50">
             <tr className="bg-school-paper/30 text-xs font-bold text-school-muted">
-              <td className="px-4 py-2" colSpan={3}>Opening Balance</td>
-              <td className="px-4 py-2 text-right" colSpan={3}>{fmt(openingBalance)}</td>
+              <td className="px-4 py-2" colSpan={4}>Opening Balance</td>
+              <td className="px-4 py-2 text-right" colSpan={canWrite ? 4 : 3}>{fmt(openingBalance)}</td>
             </tr>
-            {data.length > 0 ? data.map((entry: any) => (
-              <tr key={entry.id} className="hover:bg-school-paper/30 text-xs">
+              {data.length > 0 ? data.map((entry: any) => {
+                const prefix = entry.transactionType === 'INCOME' ? 'RCPT' : 'VCHR';
+                const receiptStr = entry.receiptSequence && entry.fiscalYear
+                  ? `${prefix}-${entry.fiscalYear}-${String(entry.receiptSequence).padStart(4, '0')}`
+                  : '—';
+                return (
+              <tr key={entry.id} className={`hover:bg-school-paper/30 text-xs ${entry.isCancelled ? 'line-through opacity-50 bg-rose-50/30' : ''}`}>
                 <td className="px-4 py-2.5 whitespace-nowrap font-mono font-bold">{new Date(entry.date).toLocaleDateString()}</td>
+                <td className="px-4 py-2.5 whitespace-nowrap font-mono text-[10px] text-school-muted">{receiptStr}</td>
                 <td className="px-4 py-2.5">
-                  <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${entry.transactionType === 'INCOME' ? 'bg-emerald-50 text-emerald-700' : entry.transactionType === 'EXPENSE' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
-                    {entry.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : entry.transactionType}
+                  <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${entry.isCancelled ? 'bg-rose-100 text-rose-500' : entry.transactionType === 'INCOME' ? 'bg-emerald-50 text-emerald-700' : entry.transactionType === 'EXPENSE' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
+                    {entry.isCancelled ? 'Cancelled' : entry.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : entry.transactionType}
                   </span>
                 </td>
-                <td className="px-4 py-2.5 text-school-muted max-w-[200px] truncate">{entry.description}</td>
+                <td className={`px-4 py-2.5 max-w-[200px] truncate ${entry.isCancelled ? 'text-rose-400' : 'text-school-muted'}`}>{entry.description}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-emerald-600">{entry.debit ? fmt(entry.debit) : '—'}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-rose-600">{entry.credit ? fmt(entry.credit) : '—'}</td>
                 <td className="px-4 py-2.5 text-right font-bold font-mono">{fmt(entry.runningBalance)}</td>
+                {canWrite && <td className="px-4 py-2.5 text-center">
+                  {!entry.isCancelled ? (
+                    <button onClick={() => setCancelId(entry.id)} title="Cancel transaction"
+                      className="p-1 rounded-lg text-school-muted hover:text-red-600 hover:bg-red-50 transition-all">
+                      <Ban size={14} />
+                    </button>
+                  ) : null}
+                </td>}
               </tr>
-            )) : (
-              <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-school-muted italic">
+                );
+              }) : (
+              <tr><td colSpan={canWrite ? 8 : 7} className="px-4 py-12 text-center text-sm text-school-muted italic">
                 {loading ? 'Loading...' : total > 0 ? 'No entries match filters.' : 'No entries yet.'}
               </td></tr>
-            )}
+              )}
             <tr className="bg-school-primary/5 text-xs font-bold border-t-2 border-school-primary/20">
-              <td className="px-4 py-2.5" colSpan={3}>
+              <td className="px-4 py-2.5" colSpan={4}>
                 <span className="text-school-muted font-normal">Total Dr:</span> {fmt(totalDebits)}
                 <span className="mx-2 text-school-muted">│</span>
                 <span className="text-school-muted font-normal">Total Cr:</span> {fmt(totalCredits)}
               </td>
               <td className="px-4 py-2.5 text-right font-bold text-school-primary">{fmt(closingBalance)}</td>
               <td className="px-4 py-2.5 text-right text-[9px] text-school-muted">Closing</td>
+              {canWrite && <td></td>}
             </tr>
           </tbody>
         </table>
@@ -262,17 +298,10 @@ function Ledger({ fmt, fetchFinance, userMap }: { fmt: (n: number) => string; fe
 
 const FinanceSection = () => {
   const { balances, transactions, fetchFinance, fetchTransactions, classes, students, fetchClasses, fetchStudents } = useSchoolStore();
-  const { users, fetchUsers } = useUserManagementStore();
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
 
   useEffect(() => { document.title = 'Finance - AL RAWA English School'; }, []);
-
-  const userMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    users.forEach((u: any) => { map[u.id] = u.name; });
-    return map;
-  }, [users]);
 
   const [mainTab, setMainTab] = useState<MainTab>('transactions');
   const [activeTab, setActiveTab] = useState<TxTab>('income');
@@ -300,11 +329,14 @@ const FinanceSection = () => {
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');
   const [feeMonth, setFeeMonth] = useState('');
+  const [feeMonthTo, setFeeMonthTo] = useState('');
   const [expenseCategories, setExpenseCategories] = useState<string[]>([]);
   const [showManageCategories, setShowManageCategories] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
   const [selectedFeeScheduleId, setSelectedFeeScheduleId] = useState('');
+  const [feeStatusList, setFeeStatusList] = useState<any[]>([]);
+  const [selectedAllocations, setSelectedAllocations] = useState<Record<string, boolean>>({});
 
   const matchedSchedule = selectedFeeScheduleId
     ? feeSchedules.find((f: any) => f.id === selectedFeeScheduleId)
@@ -312,7 +344,7 @@ const FinanceSection = () => {
   const isMonthlyFee = matchedSchedule?.frequency === 'MONTHLY';
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); fetchUsers(); }, []);
+  useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); }, []);
   useEffect(() => { useUIStore.getState().registerSwipeBack(() => setMainTab('transactions')); }, []);
   // Re-fetch students when class changes (ensures student data is current)
   useEffect(() => { if (selectedClass) fetchStudents(); }, [selectedClass]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -349,6 +381,34 @@ const FinanceSection = () => {
     }
   }, [category, selectedClass, feeSchedules]);
 
+  // Fetch fee status when student + feeMonth selected
+  useEffect(() => {
+    if (!selectedStudent || !feeMonth) { setFeeStatusList([]); return; }
+    axios.get('/api/finance/fee-status', { params: { studentId: selectedStudent, feeMonth }, withCredentials: true })
+      .then(res => {
+        setFeeStatusList(res.data || []);
+        const defaultChecked: Record<string, boolean> = {};
+        (res.data || []).forEach((f: any) => { if (!f.paid) defaultChecked[f.feeScheduleId] = true; });
+        setSelectedAllocations(defaultChecked);
+      })
+      .catch(() => setFeeStatusList([]));
+  }, [selectedStudent, feeMonth]);
+
+  // Auto-fill amount from checked allocations
+  useEffect(() => {
+    const selectedFeeIds = Object.keys(selectedAllocations).filter(k => selectedAllocations[k]);
+    if (selectedFeeIds.length > 0 && feeStatusList.length > 0 && feeMonth && feeMonthTo) {
+      const months = monthDiff(feeMonth, feeMonthTo) + 1;
+      const total = selectedFeeIds.reduce((s, id) => {
+        const f = feeStatusList.find((fs: any) => fs.feeScheduleId === id);
+        if (!f) return s;
+        const isMonthly = f.frequency === 'MONTHLY';
+        return s + Number(f.amount) * (isMonthly ? months : 1);
+      }, 0);
+      setAmount(String(total));
+    }
+  }, [selectedAllocations, feeStatusList, feeMonth, feeMonthTo]);
+
   const availableStudents = useMemo(() => {
     const classStudents = students.filter((s: any) => s.class === selectedClass);
     if (!assignedStudentIds) return classStudents;
@@ -378,8 +438,10 @@ const FinanceSection = () => {
   const resetForm = () => {
     setAmount(''); setCategory(''); setDesc('');
     setDate(new Date().toISOString().split('T')[0]);
-    setSelectedClass(''); setSelectedStudent(''); setFeeMonth(''); setSelectedFeeScheduleId('');
+    setSelectedClass(''); setSelectedStudent(''); setFeeMonth(''); setFeeMonthTo(''); setSelectedFeeScheduleId('');
     setDepositTo('CASH_IN_HAND');
+    setFeeStatusList([]);
+    setSelectedAllocations({});
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -403,18 +465,41 @@ const FinanceSection = () => {
         destination = transferTo;
       }
 
-      await axios.post(`${API_URL}/finance/transactions`, {
+      const selectedFeeIds = Object.keys(selectedAllocations).filter(k => selectedAllocations[k]);
+      const hasMultiFee = selectedFeeIds.length > 0 && feeStatusList.length > 0;
+
+      const body: Record<string, any> = {
         date,
         amount: Number(amount),
         sourceAccount: source,
         destinationAccount: destination,
-        category: finalCategory,
         description: desc,
         studentId: selectedStudent || undefined,
         className: selectedClass || undefined,
-        feeMonth: feeMonth || undefined,
-        feeScheduleId: selectedFeeScheduleId || undefined,
-      }, { withCredentials: true });
+      };
+
+      if (hasMultiFee) {
+        body.feeMonth = feeMonth || undefined;
+        body.allocations = [];
+        for (const id of selectedFeeIds) {
+          const fs = feeStatusList.find((f: any) => f.feeScheduleId === id);
+          if (!fs) continue;
+          if (fs.frequency === 'MONTHLY') {
+            const months = feeMonth && feeMonthTo ? getMonthsInRange(feeMonth, feeMonthTo) : [feeMonth || ''];
+            for (const period of months) {
+              body.allocations.push({ feeScheduleId: id, amount: Number(fs.amount), period });
+            }
+          } else {
+            body.allocations.push({ feeScheduleId: id, amount: Number(fs.amount), period: (feeMonth || '').split('-')[0] });
+          }
+        }
+      } else {
+        body.category = finalCategory;
+        body.feeScheduleId = selectedFeeScheduleId || undefined;
+        body.feeMonth = feeMonth || undefined;
+      }
+
+      await axios.post(`${API_URL}/finance/transactions`, body, { withCredentials: true });
 
       toast(activeTab === 'income' ? 'Income recorded ✓' : activeTab === 'expense' ? 'Expense recorded ✓' : 'Transfer recorded ✓', 'success');
       resetForm();
@@ -539,23 +624,14 @@ const FinanceSection = () => {
               <div>
                 <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Amount (৳)</label>
                 <input type="number" required min="1" placeholder="0" value={amount} onChange={e => setAmount(e.target.value)}
-                  className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent" />
+                  readOnly={feeStatusList.length > 0}
+                  className={`w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent ${feeStatusList.length > 0 ? 'bg-school-paper/50 cursor-not-allowed' : ''}`} />
               </div>
             </div>
 
             {activeTab === 'income' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Category</label>
-                    <select value={category} onChange={e => { setCategory(e.target.value); setSelectedStudent(''); }}
-                      className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
-                      <option value="">Select...</option>
-                      {[...new Set(feeSchedules.map((fs: any) => fs.category))].map(c => <option key={c} value={c}>{c}</option>)}
-                      <option disabled>──────────</option>
-                      <option value="Other Fee">Other Fee</option>
-                    </select>
-                  </div>
                   <div>
                     <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Deposit To</label>
                     <select value={depositTo} onChange={e => setDepositTo(e.target.value)}
@@ -564,8 +640,6 @@ const FinanceSection = () => {
                       <option value="AL_RAWA_BANK">AL RAWA Bank</option>
                     </select>
                   </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Class <span className="text-red-500">*</span></label>
                     <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedStudent(''); }}
@@ -575,10 +649,11 @@ const FinanceSection = () => {
                     </select>
                   </div>
                 </div>
+
                 {selectedClass && (
                   <div>
                     <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Student <span className="text-red-500">*</span></label>
-                    <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
+                    <select value={selectedStudent} onChange={e => { setSelectedStudent(e.target.value); setFeeMonth(''); setFeeMonthTo(''); setFeeStatusList([]); setSelectedAllocations({}); }}
                       className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
                       <option value="">— Select Student —</option>
                       {availableStudents.map((s: any) => (
@@ -590,37 +665,114 @@ const FinanceSection = () => {
                     )}
                   </div>
                 )}
+
                 {selectedStudent && (
                   <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {isMonthlyFee && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee for Month</label>
-                        <div className="relative cursor-pointer" onClick={e => { const input = e.currentTarget.querySelector<HTMLInputElement>('input[type="month"]'); if (input) { if (typeof input.showPicker === 'function') input.showPicker(); else input.focus(); } }}>
-                          <input type="month" value={feeMonth} onChange={e => setFeeMonth(e.target.value)}
-                            className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent cursor-pointer" />
+                        <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">From Month</label>
+                        <input type="month" value={feeMonth} onChange={e => setFeeMonth(e.target.value)}
+                          className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">To Month</label>
+                        <input type="month" value={feeMonthTo} onChange={e => setFeeMonthTo(e.target.value)}
+                          className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent" />
+                      </div>
+                    </div>
+
+                    {feeStatusList.length > 0 ? (
+                      <>
+                        <div className="bg-school-paper/30 rounded-xl border border-school-border overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-school-paper/50 text-[10px] uppercase tracking-widest text-school-muted font-bold">
+                              <tr>
+                                <th className="px-4 py-2.5 w-10 text-center">✓</th>
+                                <th className="px-4 py-2.5 text-left">Fee Type</th>
+                                <th className="px-4 py-2.5 text-right">Monthly</th>
+                                <th className="px-4 py-2.5 text-right">Total (৳)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-school-border/50">
+                              {feeStatusList.map((f: any) => {
+                                const checked = selectedAllocations[f.feeScheduleId] || false;
+                                const isMonthly = f.frequency === 'MONTHLY';
+                                const months = isMonthly && feeMonth && feeMonthTo ? monthDiff(feeMonth, feeMonthTo) + 1 : 1;
+                                const totalAmount = Number(f.amount) * months;
+                                return (
+                                  <tr key={f.feeScheduleId} className={`hover:bg-school-paper/30 ${f.paid ? 'opacity-40' : ''}`}>
+                                    <td className="px-4 py-2.5 text-center">
+                                      <input type="checkbox" checked={checked}
+                                        disabled={f.paid}
+                                        onChange={e => setSelectedAllocations(prev => ({ ...prev, [f.feeScheduleId]: e.target.checked }))}
+                                        className="w-4 h-4 rounded border-school-border accent-school-primary cursor-pointer" />
+                                    </td>
+                                    <td className="px-4 py-2.5 text-sm">
+                                      <span className="font-medium text-school-primary">{f.category}</span>
+                                      <span className="ml-2 text-[10px] text-school-muted uppercase">({f.frequency})</span>
+                                      {f.paid && <span className="ml-2 text-[10px] text-emerald-600 font-bold">PAID</span>}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right">{isMonthly ? Number(f.amount).toLocaleString() : '—'}</td>
+                                    <td className="px-4 py-2.5 text-right font-bold">{totalAmount.toLocaleString()}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                            <tfoot className="bg-school-primary/5 border-t-2 border-school-primary/20">
+                              <tr>
+                                <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-school-primary">Total</td>
+                                <td className="px-4 py-2.5 text-right font-bold text-school-primary">
+                                  {feeStatusList
+                                    .filter(f => selectedAllocations[f.feeScheduleId])
+                                    .reduce((s, f) => {
+                                      const isMonthly = f.frequency === 'MONTHLY';
+                                      const months = isMonthly && feeMonth && feeMonthTo ? monthDiff(feeMonth, feeMonthTo) + 1 : 1;
+                                      return s + Number(f.amount) * months;
+                                    }, 0)
+                                    .toLocaleString()}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                        {feeStatusList.every((f: any) => f.paid) && (
+                          <p className="text-[10px] text-emerald-600 font-bold text-center">All fees paid for this period.</p>
+                        )}
+                      </>
+                    ) : feeMonth && feeMonthTo ? (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Category</label>
+                            <select value={category} onChange={e => { setCategory(e.target.value); setSelectedStudent(''); }}
+                              className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
+                              <option value="">Select...</option>
+                              {[...new Set(feeSchedules.map((fs: any) => fs.category))].map(c => <option key={c} value={c}>{c}</option>)}
+                              <option disabled>──────────</option>
+                              <option value="Other Fee">Other Fee</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee Schedule</label>
+                            <select value={selectedFeeScheduleId} onChange={e => {
+                              setSelectedFeeScheduleId(e.target.value);
+                              const fs = feeSchedules.find((f: any) => f.id === e.target.value);
+                              if (fs) { setCategory(fs.category); setAmount(String(fs.amount)); }
+                            }}
+                              className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
+                              <option value="">Auto-detect</option>
+                              {feeSchedules
+                                .filter((fs: any) => !fs.classId || fs.classRel?.name === selectedClass || (selectedStudent && students.length > 0 && students.find((s: any) => s.id === selectedStudent)?.classId === fs.classId))
+                                .map((fs: any) => (
+                                  <option key={fs.id} value={fs.id}>
+                                    {fs.category} ({fs.frequency}) — {Number(fs.amount).toLocaleString()} ৳
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
                         </div>
                       </div>
-                    )}
-                    <div>
-                      <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Fee Schedule</label>
-                      <select value={selectedFeeScheduleId} onChange={e => {
-                        setSelectedFeeScheduleId(e.target.value);
-                        const fs = feeSchedules.find((f: any) => f.id === e.target.value);
-                        if (fs) { setCategory(fs.category); setAmount(String(fs.amount)); }
-                      }}
-                        className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent bg-white">
-                        <option value="">Auto-detect</option>
-                        {feeSchedules
-                          .filter((fs: any) => !fs.classId || fs.classRel?.name === selectedClass || (selectedStudent && students.length > 0 && students.find((s: any) => s.id === selectedStudent)?.classId === fs.classId))
-                          .map((fs: any) => (
-                            <option key={fs.id} value={fs.id}>
-                              {fs.category} ({fs.frequency}) — {Number(fs.amount).toLocaleString()} ৳
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  </div>
+                    ) : null}
                   </>
                 )}
               </div>
@@ -724,7 +876,7 @@ const FinanceSection = () => {
           )}
 
       {/* Ledger */}
-      <Ledger fmt={fmt} fetchFinance={fetchFinance} userMap={userMap} />
+      <Ledger fmt={fmt} fetchFinance={fetchFinance} />
       </div>)}
 
     </div>

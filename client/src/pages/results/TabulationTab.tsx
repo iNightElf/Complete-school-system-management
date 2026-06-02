@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSchoolStore } from '../../store';
 import ClassSelect from '../../components/ClassSelect';
 import { tabulationPDF } from '../../lib/tabulationPdf';
@@ -9,10 +9,22 @@ export default function TabulationTab() {
   const { students, fetchStudents, subjects, fetchSubjects } = useSchoolStore();
   const [cls, setCls] = useState<any>(null);
   const [allResults, setAllResults] = useState<any[]>([]);
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [sessionFilter, setSessionFilter] = useState('');
 
   const loadResults = async (clsId: string) => {
-    try { const res = await fetch(`${API_URL}/classes/${clsId}/results`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
+    try { const params = sessionFilter ? `?session=${encodeURIComponent(sessionFilter)}` : ''; const res = await fetch(`${API_URL}/classes/${clsId}/results${params}`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
   };
+
+  useEffect(() => {
+    fetch(`${API_URL}/academic-years`, { credentials: 'include' }).then(r => r.json()).then(years => {
+      setAcademicYears(years);
+      const active = years.find((y: any) => y.isActive);
+      setSessionFilter(active ? active.name : String(new Date().getFullYear()));
+    }).catch(() => setSessionFilter(String(new Date().getFullYear())));
+  }, []);
+
+  useEffect(() => { if (cls) loadResults(cls.id); }, [sessionFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectClass = (c: any) => { setCls(c); fetchSubjects(c.id); fetchStudents(); loadResults(c.id); };
   const clsStudents = cls ? students.filter((s: any) => s.class === cls.name).sort((a: any, b: any) => (+a.roll || 999) - (+b.roll || 999) || a.name.localeCompare(b.name)) : [];
@@ -21,6 +33,16 @@ export default function TabulationTab() {
     <div className="space-y-4">
       <div className="flex gap-3 flex-wrap">
         <div className="flex-1 min-w-[180px]"><label className="text-xs text-school-muted mb-1 block">Class</label><ClassSelect value={cls?.id || ''} onChange={handleSelectClass} /></div>
+        {academicYears.length > 0 && (
+          <div className="flex-1 min-w-[160px]">
+            <label className="text-xs text-school-muted mb-1 block">Academic Year</label>
+            <select value={sessionFilter} onChange={(e) => setSessionFilter(e.target.value)} className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent bg-white">
+              {academicYears.map((y: any) => (
+                <option key={y.id} value={y.name}>{y.name} {y.isActive ? '✓' : ''}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
       {!cls && <div className="text-center py-12 text-sm text-school-muted">Select a class to download tabulation sheets.</div>}
       {cls && (

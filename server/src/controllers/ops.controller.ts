@@ -5,7 +5,10 @@ import { prisma } from "../lib/prisma.js";
 import { sanitizeError, errorStatus } from "../lib/errors.js";
 import { validate, createTeacherSchema, createStaffSchema, createBookSchema } from "../lib/validate.js";
 import { parsePhoto, detectMimeType } from "../lib/photo.js";
+import { uploadPhoto, getSignedUrl, deletePhoto } from "../lib/supabase.js";
 import { logAudit } from "../lib/audit.js";
+
+const PHOTO_BUCKET = "student-photos";
 
 // ── Teachers ──
 
@@ -51,15 +54,16 @@ export const getAllTeachers = async (req: Request, res: Response) => {
       prisma.teacher.findMany({ where: { deletedAt: null }, orderBy: { createdAt: "desc" }, skip, take }),
       prisma.teacher.count({ where: { deletedAt: null } }),
     ]);
-    const result = teachers.map((t) => ({
+    const result = await Promise.all(teachers.map(async (t) => ({
       id: t.id,
       designation: t.designation,
       name: t.name,
       email: t.email,
       contact: t.contact,
-      hasPhoto: !!t.photo,
+      photoUrl: t.photoPath ? await getSignedUrl(PHOTO_BUCKET, t.photoPath) : null,
+      hasPhoto: !!(t.photoPath || t.photo),
       createdAt: t.createdAt,
-    }));
+    })));
     res.json({ data: result, total, skip, take });
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
@@ -79,11 +83,27 @@ export const createTeacher = async (req: Request, res: Response) => {
         name,
         email: email || null,
         contact: contact || null,
-        photo: parsed?.buffer ?? null,
       },
     });
 
-    res.status(201).json({ ...teacher, photo: null });
+    let photoUrl: string | null = null;
+    if (parsed) {
+      const { path, error } = await uploadPhoto(PHOTO_BUCKET, "teachers", teacher.id, parsed.buffer, parsed.mimeType);
+      if (!error && path) {
+        await prisma.teacher.update({ where: { id: teacher.id }, data: { photoPath: path } });
+        photoUrl = await getSignedUrl(PHOTO_BUCKET, path);
+      }
+    }
+
+    res.status(201).json({
+      id: teacher.id,
+      designation: teacher.designation,
+      name: teacher.name,
+      email: teacher.email,
+      contact: teacher.contact,
+      photoUrl,
+      createdAt: teacher.createdAt,
+    });
   } catch (error: any) {
     res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
@@ -103,10 +123,28 @@ export const updateTeacher = async (req: Request, res: Response) => {
       ...(email !== undefined && { email: email || null }),
       ...(contact !== undefined && { contact: contact || null }),
     };
-    if (parsed) data.photo = parsed.buffer;
+
+    const existing = await prisma.teacher.findUnique({ where: { id }, select: { photoPath: true } });
+
+    if (parsed) {
+      if (existing?.photoPath) await deletePhoto(PHOTO_BUCKET, existing.photoPath);
+      const { path, error } = await uploadPhoto(PHOTO_BUCKET, "teachers", id, parsed.buffer, parsed.mimeType);
+      if (!error && path) data.photoPath = path;
+    } else if (req.body.clearPhoto === true && existing?.photoPath) {
+      await deletePhoto(PHOTO_BUCKET, existing.photoPath);
+      data.photoPath = null;
+    }
 
     const teacher = await prisma.teacher.update({ where: { id }, data });
-    res.json({ ...teacher, photo: undefined, hasPhoto: !!teacher.photo });
+    res.json({
+      id: teacher.id,
+      designation: teacher.designation,
+      name: teacher.name,
+      email: teacher.email,
+      contact: teacher.contact,
+      photoUrl: teacher.photoPath ? await getSignedUrl(PHOTO_BUCKET, teacher.photoPath) : null,
+      createdAt: teacher.createdAt,
+    });
   } catch (error: any) {
     res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
@@ -135,9 +173,15 @@ export const restoreTeacher = async (req: Request, res: Response) => {
 export const getTeacherPhoto = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const teacher = await prisma.teacher.findUnique({ where: { id }, select: { photo: true } });
-    if (!teacher?.photo) return res.status(404).json({ error: "Photo not found" });
+    const teacher = await prisma.teacher.findUnique({ where: { id }, select: { photo: true, photoPath: true } });
+    if (!teacher?.photo && !teacher?.photoPath) return res.status(404).json({ error: "Photo not found" });
 
+    if (teacher.photoPath) {
+      const url = await getSignedUrl(PHOTO_BUCKET, teacher.photoPath, 3600);
+      if (url) return res.redirect(url);
+    }
+
+    if (!teacher.photo) return res.status(404).json({ error: "Photo not found" });
     const buf = Buffer.from(teacher.photo);
     const etag = createHash('md5').update(buf).digest('hex');
     if (req.headers['if-none-match'] === etag) { return res.status(304).end(); }
@@ -192,15 +236,16 @@ export const getAllStaff = async (req: Request, res: Response) => {
       prisma.staff.findMany({ where: { deletedAt: null }, orderBy: { createdAt: "desc" }, skip, take }),
       prisma.staff.count({ where: { deletedAt: null } }),
     ]);
-    const result = staff.map((s) => ({
+    const result = await Promise.all(staff.map(async (s) => ({
       id: s.id,
       role: s.role,
       name: s.name,
       email: s.email,
       contact: s.contact,
-      hasPhoto: !!s.photo,
+      photoUrl: s.photoPath ? await getSignedUrl(PHOTO_BUCKET, s.photoPath) : null,
+      hasPhoto: !!(s.photoPath || s.photo),
       createdAt: s.createdAt,
-    }));
+    })));
     res.json({ data: result, total, skip, take });
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
@@ -220,11 +265,27 @@ export const createStaff = async (req: Request, res: Response) => {
         name,
         email: email || null,
         contact: contact || null,
-        photo: parsed?.buffer ?? null,
       },
     });
 
-    res.status(201).json({ ...staff, photo: null });
+    let photoUrl: string | null = null;
+    if (parsed) {
+      const { path, error } = await uploadPhoto(PHOTO_BUCKET, "staff", staff.id, parsed.buffer, parsed.mimeType);
+      if (!error && path) {
+        await prisma.staff.update({ where: { id: staff.id }, data: { photoPath: path } });
+        photoUrl = await getSignedUrl(PHOTO_BUCKET, path);
+      }
+    }
+
+    res.status(201).json({
+      id: staff.id,
+      role: staff.role,
+      name: staff.name,
+      email: staff.email,
+      contact: staff.contact,
+      photoUrl,
+      createdAt: staff.createdAt,
+    });
   } catch (error: any) {
     res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
@@ -244,10 +305,28 @@ export const updateStaff = async (req: Request, res: Response) => {
       ...(email !== undefined && { email: email || null }),
       ...(contact !== undefined && { contact: contact || null }),
     };
-    if (parsed) data.photo = parsed.buffer;
+
+    const existing = await prisma.staff.findUnique({ where: { id }, select: { photoPath: true } });
+
+    if (parsed) {
+      if (existing?.photoPath) await deletePhoto(PHOTO_BUCKET, existing.photoPath);
+      const { path, error } = await uploadPhoto(PHOTO_BUCKET, "staff", id, parsed.buffer, parsed.mimeType);
+      if (!error && path) data.photoPath = path;
+    } else if (req.body.clearPhoto === true && existing?.photoPath) {
+      await deletePhoto(PHOTO_BUCKET, existing.photoPath);
+      data.photoPath = null;
+    }
 
     const staff = await prisma.staff.update({ where: { id }, data });
-    res.json({ ...staff, photo: undefined, hasPhoto: !!staff.photo });
+    res.json({
+      id: staff.id,
+      role: staff.role,
+      name: staff.name,
+      email: staff.email,
+      contact: staff.contact,
+      photoUrl: staff.photoPath ? await getSignedUrl(PHOTO_BUCKET, staff.photoPath) : null,
+      createdAt: staff.createdAt,
+    });
   } catch (error: any) {
     res.status(errorStatus(error)).json({ error: sanitizeError(error) });
   }
@@ -276,9 +355,15 @@ export const restoreStaff = async (req: Request, res: Response) => {
 export const getStaffPhoto = async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const staff = await prisma.staff.findUnique({ where: { id }, select: { photo: true } });
-    if (!staff?.photo) return res.status(404).json({ error: "Photo not found" });
+    const staff = await prisma.staff.findUnique({ where: { id }, select: { photo: true, photoPath: true } });
+    if (!staff?.photo && !staff?.photoPath) return res.status(404).json({ error: "Photo not found" });
 
+    if (staff.photoPath) {
+      const url = await getSignedUrl(PHOTO_BUCKET, staff.photoPath, 3600);
+      if (url) return res.redirect(url);
+    }
+
+    if (!staff.photo) return res.status(404).json({ error: "Photo not found" });
     const buf = Buffer.from(staff.photo);
     const etag = createHash('md5').update(buf).digest('hex');
     if (req.headers['if-none-match'] === etag) { return res.status(304).end(); }

@@ -45,7 +45,7 @@ export default function TeacherSection() {
 
   const handleEdit = (t: any) => {
     setForm({ designation: t.designation, name: t.name, email: t.email || '', contact: t.contact || '' });
-    setPhoto(t.hasPhoto ? `${API_URL}/teachers/${t.id}/photo` : null);
+    setPhoto(t.photoUrl || (t.hasPhoto ? `${API_URL}/teachers/${t.id}/photo` : null));
     setEditingId(t.id);
   };
 
@@ -141,7 +141,9 @@ export default function TeacherSection() {
   const renderViewCard = (t: any) => (
     <div className="bg-white p-4 rounded-2xl border border-school-border card-shadow text-center">
       <div className="flex flex-col items-center gap-2">
-        {t.hasPhoto ? (
+        {t.photoUrl ? (
+          <img src={t.photoUrl} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-school-border shadow-sm" />
+        ) : t.hasPhoto ? (
           <img src={`${API_URL}/teachers/${t.id}/photo`} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-school-border shadow-sm" />
         ) : (
           <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 text-white flex items-center justify-center shadow-sm"><GraduationCap size={24} className="text-white" /></div>
@@ -179,8 +181,8 @@ export default function TeacherSection() {
           <button
             onClick={async () => {
               const photoCache: Record<string, string> = {};
-              await Promise.all(filtered.filter((t: any) => t.hasPhoto).map(async (t: any) => {
-                try { const r = await fetch(`${API_URL}/teachers/${t.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[t.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+              await Promise.all(filtered.filter((t: any) => t.photoUrl).map(async (t: any) => {
+                try { const r = await fetch(t.photoUrl, { credentials: 'include' }); const blob = await r.blob(); photoCache[t.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
               }));
               const doc = new jsPDF();
               doc.setFont('helvetica', 'bold'); doc.setFontSize(16);

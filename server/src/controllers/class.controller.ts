@@ -3,6 +3,8 @@ import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
 import { sanitizeError, errorStatus } from "../lib/errors.js";
 
+const MAX_CLASS_ORDER = 13; // Play(0) through Class 10(12), 13th slot = graduate
+
 export const getAllClasses = async (req: Request, res: Response) => {
   try {
     const [classes, studentCounts] = await Promise.all([
@@ -67,6 +69,117 @@ export const deleteClass = async (req: Request, res: Response) => {
     await prisma.schoolClass.delete({ where: { id } });
 
     res.json({ message: "Class deleted" });
+  } catch (error: any) {
+    res.status(500).json({ error: sanitizeError(error) });
+  }
+};
+
+export const promoteAll = async (req: Request, res: Response) => {
+  try {
+    const { targetYearName, targetAcademicYearId } = req.body;
+    if (!targetYearName) return res.status(400).json({ error: "targetYearName is required" });
+    const dryRun = req.query.dryRun === 'true';
+
+    const allClasses = await prisma.schoolClass.findMany({ orderBy: { order: 'asc' } });
+
+    const promoted: any[] = [];
+    const graduated: any[] = [];
+    const classesCreated: string[] = [];
+    const errors: any[] = [];
+
+    for (const cls of allClasses) {
+      const students = await prisma.student.findMany({
+        where: { classId: cls.id, deletedAt: null, graduatedAt: null, NOT: { session: targetYearName } },
+      });
+      if (students.length === 0) continue;
+
+      let nextClass = allClasses.find(c => c.order === cls.order + 1);
+      let createdNew = false;
+
+      if (!nextClass) {
+        // No next class — try to auto-create or graduate
+        let nextName: string | null = null;
+
+        const nameMatch = cls.name.match(/^Class\s+(\d+)$/i);
+        if (nameMatch) {
+          const num = parseInt(nameMatch[1], 10);
+          if (num < 10) nextName = `Class ${num + 1}`;
+        } else {
+          const seq: Record<string, string> = {
+            'play': 'Nursery', 'nursery': 'KG', 'kg': 'Class 1',
+          };
+          nextName = seq[cls.name.trim().toLowerCase()] || null;
+        }
+
+        if (nextName) {
+          if (dryRun) {
+            promoted.push({ from: cls.name, to: nextName, count: students.length, newClass: true });
+            classesCreated.push(nextName);
+            continue;
+          }
+          nextClass = await prisma.schoolClass.create({ data: { name: nextName, order: cls.order + 1 } });
+          createdNew = true;
+          classesCreated.push(nextName);
+
+          // Copy fee schedules for target year
+          if (targetAcademicYearId) {
+            const fees = await prisma.feeSchedule.findMany({
+              where: { classId: cls.id, academicYearId: targetAcademicYearId },
+            });
+            if (fees.length > 0) {
+              await prisma.feeSchedule.createMany({
+                data: fees.map(f => ({
+                  academicYearId: targetAcademicYearId, classId: nextClass!.id,
+                  category: f.category, amount: f.amount, frequency: f.frequency, applicability: f.applicability,
+                })),
+              });
+            }
+          }
+          // Copy books
+          const books = await prisma.book.findMany({ where: { classId: cls.id } });
+          if (books.length > 0) {
+            await prisma.book.createMany({
+              data: books.map(b => ({
+                name: b.name, publication: b.publication, mrp: b.mrp,
+                discounted: b.discounted, sell: b.sell, classId: nextClass!.id,
+              })),
+            });
+          }
+          // Copy subjects
+          const subjects = await prisma.subject.findMany({ where: { classId: cls.id } });
+          if (subjects.length > 0) {
+            await prisma.subject.createMany({
+              data: subjects.map(s => ({
+                name: s.name, fullMarks: s.fullMarks, order: s.order, classId: nextClass!.id,
+              })),
+            });
+          }
+        } else {
+          // No next name — graduate
+          if (!dryRun) {
+            await prisma.student.updateMany({
+              where: { id: { in: students.map(s => s.id) } },
+              data: { graduatedAt: new Date(), session: targetYearName },
+            });
+          }
+          graduated.push({ from: cls.name, count: students.length });
+          continue;
+        }
+      }
+
+      // Promote students to nextClass
+      if (!dryRun) {
+        await prisma.student.updateMany({
+          where: { id: { in: students.map(s => s.id) } },
+          data: { classId: nextClass.id, class: nextClass.name, session: targetYearName },
+        });
+      }
+      if (!createdNew) {
+        promoted.push({ from: cls.name, to: nextClass.name, count: students.length, newClass: false });
+      }
+    }
+
+    res.json({ promoted, graduated, classesCreated, errors, dryRun });
   } catch (error: any) {
     res.status(500).json({ error: sanitizeError(error) });
   }

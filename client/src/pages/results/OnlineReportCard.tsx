@@ -67,7 +67,7 @@ export default function OnlineReportCard({ student, cls, subjects, allResults, t
           <p className="text-sm font-bold text-red-600 mt-2">{isFinal ? 'ANNUAL REPORT CARD' : `TERM REPORT CARD — ${label.toUpperCase()}`}</p>
         </div>
         <div className="flex items-center gap-4">
-          {student.hasPhoto ? <img src={`${API_URL}/students/${student.id}/photo`} alt="" className="w-16 h-16 rounded-full object-cover border border-school-border" /> : <div className="w-16 h-16 rounded-full bg-school-primary text-white flex items-center justify-center"><User size={24} className="text-white" /></div>}
+          {student.photoUrl ? <img src={student.photoUrl} alt="" className="w-16 h-16 rounded-full object-cover border border-school-border" /> : student.hasPhoto ? <img src={`${API_URL}/students/${student.id}/photo`} alt="" className="w-16 h-16 rounded-full object-cover border border-school-border" /> : <div className="w-16 h-16 rounded-full bg-school-primary text-white flex items-center justify-center"><User size={24} className="text-white" /></div>}
           <div className="space-y-1 text-sm">
             <div><span className="text-school-muted">Student Name:</span> <strong>{student.name}</strong></div>
             <div><span className="text-school-muted">Class:</span> <strong>{cls.name}</strong></div>

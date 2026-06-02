@@ -21,15 +21,19 @@ export default function EnterByStudent() {
   const [reportTerm, setReportTerm] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | ''>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [sessionFilter, setSessionFilter] = useState('');
   const saveTimer = useRef<any>(null);
   const statusTimer = useRef<any>(null);
   const marksRef = useRef(marks);
   const attendanceRef = useRef(attendance);
   const commentRef = useRef(comment);
+  const sessionRef = useRef(sessionFilter);
 
   useEffect(() => { marksRef.current = marks; }, [marks]);
   useEffect(() => { attendanceRef.current = attendance; }, [attendance]);
   useEffect(() => { commentRef.current = comment; }, [comment]);
+  useEffect(() => { sessionRef.current = sessionFilter; }, [sessionFilter]);
   useEffect(() => { return () => { clearTimeout(saveTimer.current); }; }, []);
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -40,8 +44,18 @@ export default function EnterByStudent() {
   }, [hasUnsavedChanges]);
 
   const loadResults = async (clsId: string) => {
-    try { const res = await fetch(`${API_URL}/classes/${clsId}/results`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
+    try { const params = sessionFilter ? `?session=${encodeURIComponent(sessionFilter)}` : ''; const res = await fetch(`${API_URL}/classes/${clsId}/results${params}`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
   };
+
+  useEffect(() => {
+    fetch(`${API_URL}/academic-years`, { credentials: 'include' }).then(r => r.json()).then(years => {
+      setAcademicYears(years);
+      const active = years.find((y: any) => y.isActive);
+      setSessionFilter(active ? active.name : String(new Date().getFullYear()));
+    }).catch(() => setSessionFilter(String(new Date().getFullYear())));
+  }, []);
+
+  useEffect(() => { if (cls) loadResults(cls.id); }, [sessionFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectClass = (c: any) => { setCls(c); setActiveStudent(null); setActiveTerm('1'); fetchSubjects(c.id); fetchStudents(); loadResults(c.id); };
 
@@ -73,7 +87,7 @@ export default function EnterByStudent() {
     const days = parseInt(attendanceRef.current.days) || 0;
     const present = parseInt(attendanceRef.current.present) || 0;
     const attendanceData = days > 0 ? { days, present } : undefined;
-    await saveStudentResult(activeStudent.id, activeTerm, marksData, attendanceData, commentRef.current);
+    await saveStudentResult(activeStudent.id, activeTerm, marksData, attendanceData, commentRef.current, sessionRef.current);
     setHasUnsavedChanges(false);
     setSaveStatus('saved'); statusTimer.current = setTimeout(() => setSaveStatus(''), 2000);
   };
@@ -92,6 +106,16 @@ export default function EnterByStudent() {
     <div className="space-y-4">
       <div className="flex gap-3 flex-wrap">
         <div className="flex-1 min-w-[180px]"><label className="text-xs text-school-muted mb-1 block">Class</label><ClassSelect value={cls?.id || ''} onChange={handleSelectClass} /></div>
+        {academicYears.length > 0 && (
+          <div className="flex-1 min-w-[160px]">
+            <label className="text-xs text-school-muted mb-1 block">Academic Year</label>
+            <select value={sessionFilter} onChange={(e) => setSessionFilter(e.target.value)} className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent bg-white">
+              {academicYears.map((y: any) => (
+                <option key={y.id} value={y.name}>{y.name} {y.isActive ? '✓' : ''}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {!cls && <div className="text-center py-12 text-sm text-school-muted">Select a class to begin.</div>}
@@ -104,7 +128,7 @@ export default function EnterByStudent() {
               return (
                 <button key={s.id} onClick={() => { setActiveStudent(s); setActiveTerm('1'); }} className="bg-white p-4 rounded-2xl border border-school-border hover:shadow-md transition-shadow text-left">
                   <div className="flex items-center gap-3">
-                    {s.hasPhoto ? <img src={`${API_URL}/students/${s.id}/photo`} alt="" className="w-10 h-10 rounded-full object-cover border border-school-border" /> : <div className="w-10 h-10 rounded-full bg-school-primary text-white flex items-center justify-center text-sm"><User size={24} className="text-white" /></div>}
+                    {s.photoUrl ? <img src={s.photoUrl} alt="" className="w-10 h-10 rounded-full object-cover border border-school-border" /> : s.hasPhoto ? <img src={`${API_URL}/students/${s.id}/photo`} alt="" className="w-10 h-10 rounded-full object-cover border border-school-border" /> : <div className="w-10 h-10 rounded-full bg-school-primary text-white flex items-center justify-center text-sm"><User size={24} className="text-white" /></div>}
                     <div>
                       <div className="font-bold text-sm text-school-primary">{s.name}</div>
                       <div className="text-[11px] text-school-muted">{s.roll ? `Roll: ${s.roll}` : cls.name}</div>
@@ -121,7 +145,7 @@ export default function EnterByStudent() {
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <button onClick={() => setActiveStudent(null)} className="text-sm text-school-accent hover:underline">← Students</button>
-            {activeStudent.hasPhoto ? <img src={`${API_URL}/students/${activeStudent.id}/photo`} alt="" className="w-10 h-10 rounded-full object-cover border border-school-border" /> : <div className="w-10 h-10 rounded-full bg-school-primary text-white flex items-center justify-center text-sm"><User size={24} className="text-white" /></div>}
+            {activeStudent.photoUrl ? <img src={activeStudent.photoUrl} alt="" className="w-10 h-10 rounded-full object-cover border border-school-border" /> : activeStudent.hasPhoto ? <img src={`${API_URL}/students/${activeStudent.id}/photo`} alt="" className="w-10 h-10 rounded-full object-cover border border-school-border" /> : <div className="w-10 h-10 rounded-full bg-school-primary text-white flex items-center justify-center text-sm"><User size={24} className="text-white" /></div>}
             <div className="flex-1">
               <div className="font-bold text-sm text-school-primary">{activeStudent.name}</div>
               <div className="text-[11px] text-school-muted">{cls.name}{activeStudent.roll ? ` · Roll: ${activeStudent.roll}` : ''}</div>

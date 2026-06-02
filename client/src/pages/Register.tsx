@@ -35,29 +35,15 @@ const Register = () => {
 
     setLoading(true);
     try {
-      if (setupMode) {
-        const res = await axios.post(
-          `${API_URL}/setup/init`,
-          { name, email, password, token: setupToken },
-          { withCredentials: true }
-        );
-        if (res.data?.error) {
-          setError(res.data.error);
-          return;
-        }
-        setRegistered(true);
-      } else {
-        const res = await axios.post(
-          `${API_URL}/auth/sign-up/email`,
-          { name, email, password },
-          { withCredentials: true }
-        );
-        if (res.data?.error) {
-          setError(res.data.error.message || 'Failed to register.');
-          return;
-        }
-        setRegistered(true);
+      const res = await axios.post(
+        `${API_URL}/setup/init`,
+        { name, email, password, token: setupToken }
+      );
+      if (res.data?.error) {
+        setError(res.data.error);
+        return;
       }
+      setRegistered(true);
     } catch (err: any) {
       const msg = typeof err.response?.data?.error === 'string' ? err.response.data.error : err.response?.data?.error?.message || 'Failed to register. Please try again.';
       setError(msg);

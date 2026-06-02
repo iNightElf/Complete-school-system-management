@@ -1,12 +1,29 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
-import * as argon2 from "argon2";
 import { timingSafeEqual } from "crypto";
+import { createAdminUser, generateAndSendVerification } from "../lib/supabase-auth.js";
+import { createClient } from "@supabase/supabase-js";
+
+const adminClient = () => {
+  const url = process.env.SUPABASE_URL || "";
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!url || !key) return null;
+  return createClient(url, key);
+};
+
+async function hasValidAdmin(): Promise<boolean> {
+  const dbAdmin = await prisma.user.findFirst({ where: { role: "admin" }, select: { id: true } });
+  if (!dbAdmin) return false;
+  const client = adminClient();
+  if (!client) return false;
+  const { data, error } = await client.auth.admin.getUserById(dbAdmin.id);
+  return !error && !!data.user;
+}
 
 export const getSetupStatus = async (_req: Request, res: Response) => {
   try {
-    const admin = await prisma.user.findFirst({ where: { role: "admin" }, select: { id: true } });
-    res.json({ adminExists: !!admin, setupTokenRequired: !!process.env.SETUP_TOKEN });
+    const adminExists = await hasValidAdmin();
+    res.json({ adminExists, setupTokenRequired: !!process.env.SETUP_TOKEN });
   } catch {
     res.status(500).json({ error: "Failed to check setup status" });
   }
@@ -14,18 +31,17 @@ export const getSetupStatus = async (_req: Request, res: Response) => {
 
 export const initSetup = async (req: Request, res: Response) => {
   try {
-    const existingAdmin = await prisma.user.findFirst({ where: { role: "admin" }, select: { id: true } });
-    if (existingAdmin) {
-      return res.status(400).json({ error: "System already has an admin. Setup is not required." });
-    }
-
     const { name, email, password, token } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ error: "name, email, and password are required" });
     }
 
+    const hasAdmin = await hasValidAdmin();
     const setupToken = process.env.SETUP_TOKEN;
     if (setupToken) {
+      if (hasAdmin) {
+        return res.status(400).json({ error: "System already has an admin. Setup is not required." });
+      }
       if (!token) {
         return res.status(400).json({ error: "Setup token is required" });
       }
@@ -40,27 +56,45 @@ export const initSetup = async (req: Request, res: Response) => {
       }
     }
 
+    // Clean up orphaned DB record if Supabase Auth user doesn't exist
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return res.status(409).json({ error: "A user with this email already exists" });
+      const client = adminClient();
+      if (client) {
+        const { data: authUser } = await client.auth.admin.getUserById(existingUser.id);
+        if (authUser?.user) {
+          return res.status(409).json({ error: "A user with this email already exists" });
+        }
+      }
+      await prisma.user.delete({ where: { id: existingUser.id } }).catch(() => {});
     }
 
-    const passwordHash = await argon2.hash(password);
+    // Clean up orphaned Supabase Auth user if email already registered there
+    const client = adminClient();
+    if (client) {
+      const { data: users } = await client.auth.admin.listUsers();
+      const existing = users?.users?.find(u => u.email === email);
+      if (existing) {
+        await client.auth.admin.deleteUser(existing.id);
+      }
+    }
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        role: "admin",
-        emailVerified: true,
-        account: {
-          create: {
-            accountId: email,
-            providerId: "email",
-            password: passwordHash,
-          },
-        },
-      },
+    const role = hasAdmin ? "viewer" : "admin";
+    const supabaseUser = await createAdminUser(email, password, name);
+    if (!supabaseUser) {
+      return res.status(500).json({ error: "Failed to create user in Supabase Auth" });
+    }
+
+    // Update role to viewer if admin already exists
+    if (role === "viewer") {
+      await prisma.user.update({ where: { id: supabaseUser.id }, data: { role: "viewer" } });
+    }
+
+    // Send verification email (best-effort)
+    generateAndSendVerification(email, password).catch(() => {});
+
+    const user = await prisma.user.findUnique({
+      where: { id: supabaseUser.id },
       select: {
         id: true,
         name: true,
@@ -71,11 +105,11 @@ export const initSetup = async (req: Request, res: Response) => {
       },
     });
 
-    res.json({ user, message: "Admin user created successfully. You can now sign in." });
+    res.json({ user, message: "User created successfully. You can now sign in." });
   } catch (err: any) {
     if (err?.code === 'P2002') {
       return res.status(409).json({ error: "A user with this email already exists" });
     }
-    res.status(500).json({ error: "Failed to create admin user" });
+    res.status(500).json({ error: "Failed to create user" });
   }
 };

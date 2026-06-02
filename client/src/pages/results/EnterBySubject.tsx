@@ -18,10 +18,22 @@ export default function EnterBySubject() {
   const [bulkAtt, setBulkAtt] = useState<Record<string, { days: string; present: string }>>({});
   const [bulkComment, setBulkComment] = useState<Record<string, string>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [sessionFilter, setSessionFilter] = useState('');
 
   const loadResults = async (clsId: string) => {
-    try { const res = await fetch(`${API_URL}/classes/${clsId}/results`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
+    try { const params = sessionFilter ? `?session=${encodeURIComponent(sessionFilter)}` : ''; const res = await fetch(`${API_URL}/classes/${clsId}/results${params}`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
   };
+
+  useEffect(() => {
+    fetch(`${API_URL}/academic-years`, { credentials: 'include' }).then(r => r.json()).then(years => {
+      setAcademicYears(years);
+      const active = years.find((y: any) => y.isActive);
+      setSessionFilter(active ? active.name : String(new Date().getFullYear()));
+    }).catch(() => setSessionFilter(String(new Date().getFullYear())));
+  }, []);
+
+  useEffect(() => { if (cls) loadResults(cls.id); }, [sessionFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -65,7 +77,7 @@ export default function EnterBySubject() {
       if (existing?.marks) Object.entries(existing.marks).forEach(([k, val]) => { marksData[k] = +(val as number); });
       if (v !== '' && v !== undefined && !isNaN(+v)) marksData[bulkSubject] = Math.min(+v, selectedSubj.fullMarks);
       else delete marksData[bulkSubject];
-      await saveStudentResult(s.id, bulkTerm, marksData, existing?.attendance || undefined);
+      await saveStudentResult(s.id, bulkTerm, marksData, existing?.attendance || undefined, undefined, sessionFilter);
     }
     setHasUnsavedChanges(false);
     toast(`Marks saved for ${clsStudents.length} students ✓`, 'success');
@@ -80,7 +92,7 @@ export default function EnterBySubject() {
       const days = parseInt(att.days) || 0;
       const present = parseInt(att.present) || 0;
       const attendanceData = days > 0 ? { days, present } : undefined;
-      await saveStudentResult(s.id, bulkTerm, existing?.marks || {}, attendanceData);
+      await saveStudentResult(s.id, bulkTerm, existing?.marks || {}, attendanceData, undefined, sessionFilter);
     }
     setHasUnsavedChanges(false);
     toast(`Attendance saved ✓`, 'success');
@@ -91,7 +103,7 @@ export default function EnterBySubject() {
     toast('Saving…');
     for (const s of clsStudents) {
       const existing = allResults.find((x: any) => x.studentId === s.id && x.term === '3');
-      await saveStudentResult(s.id, '3', existing?.marks || {}, existing?.attendance || undefined, bulkComment[s.id] || '');
+      await saveStudentResult(s.id, '3', existing?.marks || {}, existing?.attendance || undefined, bulkComment[s.id] || '', sessionFilter);
     }
     setHasUnsavedChanges(false);
     toast(`Comments saved ✓`, 'success');
@@ -102,6 +114,16 @@ export default function EnterBySubject() {
     <div className="space-y-4">
       <div className="flex gap-3 flex-wrap">
         <div className="flex-1 min-w-[180px]"><label className="text-xs text-school-muted mb-1 block">Class</label><ClassSelect value={cls?.id || ''} onChange={handleSelectClass} /></div>
+        {academicYears.length > 0 && (
+          <div className="flex-1 min-w-[160px]">
+            <label className="text-xs text-school-muted mb-1 block">Academic Year</label>
+            <select value={sessionFilter} onChange={(e) => setSessionFilter(e.target.value)} className="w-full px-3 py-2 border border-school-border rounded-xl text-sm focus:outline-none focus:border-school-accent bg-white">
+              {academicYears.map((y: any) => (
+                <option key={y.id} value={y.name}>{y.name} {y.isActive ? '✓' : ''}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {cls && (
           <>
             <div className="flex-1 min-w-[180px]">

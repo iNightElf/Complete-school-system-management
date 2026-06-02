@@ -47,7 +47,7 @@ const Dashboard = () => {
 
   const MODULES = [
     { key: 'idcard' as ModeParam, label: 'ID Card', desc: 'Students, Teachers & Staff', color: 'blue', icon: CreditCard },
-    { key: 'accessories' as ModeParam, label: 'Accessories', desc: 'Books & pricing', color: 'amber', icon: BookOpen },
+    { key: 'accessories' as ModeParam, label: 'Fees & Books', desc: 'Fee structure & book list', color: 'amber', icon: BookOpen },
     { key: 'result' as ModeParam, label: 'Result', desc: 'Marks & report cards', color: 'green', icon: BarChart3 },
     { key: 'finance' as ModeParam, label: 'Finance', desc: 'Accounting & fees', color: 'rose', icon: Wallet },
   ];

@@ -2,7 +2,9 @@ export interface Student {
   id: string;
   classId?: string | null;
   class: string;
+  studentId: string;
   roll: string | null;
+  session: string | null;
   name: string;
   fatherName: string | null;
   motherName: string | null;
@@ -97,4 +99,12 @@ export interface Transaction {
 export interface Balance {
   account: string;
   balance: number;
+}
+
+export interface SchoolSettings {
+  school_name: string;
+  address: string;
+  phone: string;
+  email: string;
+  website: string;
 }

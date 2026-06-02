@@ -50,7 +50,7 @@ export function defaulterPDF(params: {
   const headerH = hasMonthly ? 10 : 7;
   const headSp = hasMonthly ? 5 : 3.5;
 
-  function drawHdrCell(cx: number, w: number, label: string, fontSize: number, yOff: number, align: CanvasTextAlign) {
+  function drawHdrCell(cx: number, w: number, label: string, fontSize: number, yOff: number, align: 'center' | 'left' | 'right' | 'justify') {
     doc.setFontSize(fontSize);
     doc.text(label, cx + (align === 'right' ? w - 1 : align === 'center' ? w / 2 : 1), y + yOff, { align });
   }

@@ -8,22 +8,22 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-import { auth } from "./lib/auth.js";
 import { prisma } from "./lib/prisma.js";
 import { sanitizeError, waitForDatabase } from "./lib/errors.js";
 import { requestIdMiddleware, log } from "./lib/logger.js";
-import { toNodeHandler } from "better-auth/node";
 import * as students from "./controllers/student.controller.js";
 import * as finance from "./controllers/finance.controller.js";
 import * as ops from "./controllers/ops.controller.js";
 import * as classes from "./controllers/class.controller.js";
 import * as results from "./controllers/result.controller.js";
 import * as users from "./controllers/user.controller.js";
+import * as settings from "./controllers/setting.controller.js";
 import * as feeSchedule from "./controllers/feeSchedule.controller.js";
 import * as feeWaiver from "./controllers/feeWaiver.controller.js";
 import * as studentFeeAssignment from "./controllers/studentFeeAssignment.controller.js";
 import * as setup from "./controllers/setup.controller.js";
 import * as audit from "./controllers/audit.controller.js";
+import * as authCtrl from "./controllers/auth.controller.js";
 import { authenticate, authorizePermission } from "./middleware/auth.middleware.js";
 
 const corsOrigins = process.env.CORS_ORIGINS
@@ -64,17 +64,19 @@ app.use(compression());
 app.use(express.json({ limit: "2mb" }));
 
 const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 500, standardHeaders: true, legacyHeaders: false });
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 
 app.use("/api/", globalLimiter);
-app.use("/api/auth/", authLimiter);
 
 // ── Setup (no auth — first-admin bootstrap) ──
 app.get("/api/setup/status", setup.getSetupStatus);
 app.post("/api/setup/init", setup.initSetup);
 
-// Better-Auth handler — must come before other routes
-app.use("/api/auth", toNodeHandler(auth));
+// ── School Settings ──
+app.get("/api/settings", settings.getSettings);
+app.put("/api/settings", authenticate, authorizePermission("finance:admin"), settings.updateSettings);
+
+// Auth routes — session verification via Supabase JWT
+app.get("/api/auth/get-session", authenticate, authCtrl.getSession);
 
 // ── Users (admin) ──
 app.get("/api/users", authenticate, authorizePermission("users:read"), users.getAllUsers);
@@ -123,6 +125,7 @@ app.get("/api/classes", authenticate, authorizePermission("classes:read"), class
 app.post("/api/classes", authenticate, authorizePermission("classes:write"), classes.createClass);
 app.delete("/api/classes/:id", authenticate, authorizePermission("classes:write"), classes.deleteClass);
 app.put("/api/classes/reorder", authenticate, authorizePermission("classes:write"), classes.reorderClasses);
+app.post("/api/classes/promote-all", authenticate, authorizePermission("classes:write"), classes.promoteAll);
 
 // ── Subjects ──
 app.get("/api/classes/:classId/subjects", authenticate, authorizePermission("subjects:read"), results.getSubjectsByClass);
@@ -224,6 +227,7 @@ app.get("/api/finance/ledger", authenticate, authorizePermission("finance:read")
 app.get("/api/finance/transactions", authenticate, authorizePermission("finance:read"), finance.getTransactions);
 app.post("/api/finance/transactions", authenticate, authorizePermission("finance:write"), finance.createTransaction);
 app.post("/api/finance/transactions/:id/cancel", authenticate, authorizePermission("finance:write"), finance.cancelTransaction);
+app.get("/api/finance/fee-status", authenticate, authorizePermission("finance:read"), finance.getFeeStatus);
 
 // ── Student Fee Assignments ──
 app.get("/api/finance/student-fee-assignments", authenticate, authorizePermission("finance:read"), studentFeeAssignment.getStudentFeeAssignments);

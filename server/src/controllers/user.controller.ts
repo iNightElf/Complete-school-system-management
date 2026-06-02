@@ -1,7 +1,8 @@
 import { Response } from "express";
 import { prisma } from "../lib/prisma.js";
-import { AuthRequest } from "../middleware/auth.middleware.js";
+import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { ALL_ROLES, ROLE_LABELS, Role } from "../lib/permissions.js";
+import { updateUserRole as supabaseUpdateRole, deleteAuthUser as supabaseDeleteUser } from "../lib/supabase-auth.js";
 
 export const getAllUsers = async (req: AuthRequest, res: Response) => {
   try {
@@ -31,7 +32,7 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Invalid role" });
     }
 
-    if (id === req.session?.user.id) {
+    if (id === req.user?.id) {
       return res.status(400).json({ error: "Cannot change your own role" });
     }
 
@@ -53,6 +54,8 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
       },
     });
 
+    await supabaseUpdateRole(id, role).catch(() => {});
+
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: "Failed to update role" });
@@ -63,7 +66,7 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string;
 
-    if (id === req.session?.user.id) {
+    if (id === req.user?.id) {
       return res.status(400).json({ error: "Cannot delete your own account" });
     }
 
@@ -72,7 +75,7 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    await prisma.user.delete({ where: { id } });
+    await supabaseDeleteUser(id);
 
     res.json({ success: true });
   } catch (err) {

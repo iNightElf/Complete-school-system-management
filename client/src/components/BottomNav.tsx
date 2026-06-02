@@ -4,7 +4,7 @@ import { CreditCard, BookOpen, ClipboardList, Banknote } from 'lucide-react';
 
 const items = [
   { mode: 'idcard' as const, label: 'ID Card', icon: CreditCard },
-  { mode: 'accessories' as const, label: 'Books', icon: BookOpen },
+  { mode: 'accessories' as const, label: 'Fees', icon: BookOpen },
   { mode: 'result' as const, label: 'Result', icon: ClipboardList },
   { mode: 'finance' as const, label: 'Finance', icon: Banknote },
 ];

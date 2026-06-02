@@ -1,13 +1,21 @@
 import { create } from 'zustand';
 import axios from 'axios';
 import { API_URL } from './lib/config';
-import type { Student, Teacher, Staff, Transaction, SchoolClass, Subject, FeeSchedule } from './lib/types';
+import { supabase } from './lib/supabase';
+import type { Student, Teacher, Staff, Transaction, SchoolClass, Subject, FeeSchedule, SchoolSettings } from './lib/types';
 
 // ── API ──
 
 const api = axios.create({
   baseURL: API_URL,
-  withCredentials: true,
+});
+
+api.interceptors.request.use(async (config) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    config.headers.Authorization = `Bearer ${session.access_token}`;
+  }
+  return config;
 });
 
 api.interceptors.response.use(
@@ -15,7 +23,6 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       useAuthStore.setState({ user: null });
-      window.location.href = '/login';
     }
     return Promise.reject(error);
   }
@@ -31,6 +38,8 @@ interface User {
   image: string | null;
 }
 
+let fetching = false;
+
 interface AuthState {
   user: User | null;
   loading: boolean;
@@ -38,25 +47,35 @@ interface AuthState {
   logout: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   loading: true,
 
   fetchSession: async () => {
+    if (fetching) return;
+    fetching = true;
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        set({ user: null, loading: false });
+        return;
+      }
+      if (get().user?.id === session.user.id) {
+        set({ loading: false });
+        return;
+      }
       const res = await api.get('/auth/get-session');
       set({ user: res.data?.user ?? null, loading: false });
     } catch {
       set({ user: null, loading: false });
+    } finally {
+      fetching = false;
     }
   },
 
   logout: async () => {
-    try {
-      await api.post('/auth/sign-out');
-    } finally {
-      set({ user: null });
-    }
+    await supabase.auth.signOut();
+    set({ user: null });
   },
 }));
 
@@ -131,6 +150,7 @@ interface SchoolState {
   subjects: Subject[];
   transactions: Transaction[];
   balances: Record<string, number>;
+  settings: SchoolSettings;
   feeSchedules: FeeSchedule[];
   openingBalances: any;
   openingBalancesHistory: any[];
@@ -152,10 +172,13 @@ interface SchoolState {
   fetchSubjects: (classId: string) => Promise<void>;
   fetchFinance: () => Promise<void>;
   fetchTransactions: (params?: Record<string, string>) => Promise<void>;
+  fetchFeeSchedules: () => Promise<void>;
   fetchOpeningBalances: (year?: string) => Promise<void>;
   setOpeningBalances: (year: string, balances: Record<string, number>) => Promise<any>;
   fetchOpeningBalanceHistory: (year?: string) => Promise<void>;
   revertOpeningBalance: (historyId: string) => Promise<void>;
+  fetchSettings: () => Promise<void>;
+  updateSettings: (data: Partial<SchoolSettings>) => Promise<void>;
 
   createClass: (name: string) => Promise<any>;
   deleteClass: (id: string) => Promise<void>;
@@ -178,6 +201,7 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   subjects: [],
   transactions: [],
   balances: { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 },
+  settings: { school_name: 'AL RAWA English School', address: '', phone: '', email: '', website: '' },
   feeSchedules: [],
   openingBalances: { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 },
   openingBalancesHistory: [],
@@ -237,6 +261,9 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     finally { set((s) => ({ loading: { ...s.loading, transactions: false } })); }
   },
 
+  fetchFeeSchedules: async () => {
+    try { const res = await api.get('/finance/fee-schedules'); set({ feeSchedules: res.data }); } catch { /* silent */ }
+  },
   fetchOpeningBalances: async (year) => {
     try { const res = await api.get('/finance/opening-balances', { params: { year } }); set({ openingBalances: res.data }); } catch { /* silent */ }
   },
@@ -252,6 +279,14 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     await api.post(`/finance/opening-balances/revert/${historyId}`);
     await get().fetchOpeningBalances();
     await get().fetchOpeningBalanceHistory();
+  },
+
+  fetchSettings: async () => {
+    try { const res = await api.get('/settings'); set({ settings: res.data }); } catch { /* silent */ }
+  },
+  updateSettings: async (data) => {
+    const res = await api.put('/settings', data);
+    set({ settings: res.data });
   },
 
   createClass: async (name: string) => {

@@ -8,6 +8,7 @@ import { CardSkeleton } from '../../components/Skeleton';
 import { Settings, RefreshCw, Download, Upload, Camera, Pencil, Trash2, Check, User, GraduationCap, Play, Sprout, Palette, BookOpen, Search, Archive } from 'lucide-react';
 import { contactLinks } from '../../lib/contacts';
 import DeleteConfirmModal from '../../components/DeleteConfirmModal';
+import PromoteModal from '../../components/PromoteModal';
 import jsPDF from 'jspdf';
 import { API_URL } from '../../lib/config';
 
@@ -21,6 +22,10 @@ export default function StudentSection() {
   const [showCamera, setShowCamera] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showGraduated, setShowGraduated] = useState(false);
+  const [sessionFilter, setSessionFilter] = useState('2026');
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [showPromote, setShowPromote] = useState(false);
+  const [promoteYear, setPromoteYear] = useState<{ name: string; id: string } | null>(null);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const searchTimer = useRef<any>(null);
@@ -43,12 +48,28 @@ export default function StudentSection() {
   useEffect(() => { fetchClasses(); fetchStudents(); }, []);
   useEffect(() => { fetchStudents(showGraduated ? { showGraduated: 'true' } : undefined); }, [showGraduated]);
 
+  useEffect(() => { fetchAcademicYears(); }, []);
+
+  function fetchAcademicYears() {
+    fetch(`${API_URL}/academic-years`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setAcademicYears(data);
+          const active = data.find((y: any) => y.isActive);
+          if (active) setSessionFilter(active.name);
+        }
+      })
+      .catch(() => {});
+  }
+
   const sorted = [...classes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const classStudents = students.filter((s) => activeClass && s.class === activeClass);
+  const sessionStudents = students.filter((s) => s.session === sessionFilter);
+  const classStudents = sessionStudents.filter((s) => activeClass && s.class === activeClass);
   const filtered = classStudents.filter((s) =>
     !debouncedSearch || s.name.toLowerCase().includes(debouncedSearch.toLowerCase()) || s.roll?.includes(debouncedSearch)
   );
-  const searchResults = students.filter((s) =>
+  const searchResults = sessionStudents.filter((s) =>
     debouncedSearch && (s.name.toLowerCase().includes(debouncedSearch.toLowerCase()) || s.roll?.includes(debouncedSearch) || (s.class || '').toLowerCase().includes(debouncedSearch.toLowerCase()))
   );
 
@@ -68,7 +89,7 @@ export default function StudentSection() {
       motherName: s.motherName || '',
       contact: s.contact || '',
     });
-    setPhoto(s.hasPhoto ? `${API_URL}/students/${s.id}/photo` : null);
+    setPhoto(s.photoUrl || (s.hasPhoto ? `${API_URL}/students/${s.id}/photo` : null));
     setEditingId(s.id);
   };
 
@@ -209,7 +230,9 @@ export default function StudentSection() {
   const renderViewCard = (s: any) => (
     <div className={`bg-white p-4 rounded-2xl border card-shadow text-center ${s.hasGraduated ? 'border-amber-300 bg-amber-50/30' : 'border-school-border'}`}>
       <div className="flex flex-col items-center gap-2">
-        {s.hasPhoto ? (
+        {s.photoUrl ? (
+          <img src={s.photoUrl} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-school-border shadow-sm" />
+        ) : s.hasPhoto ? (
           <img src={`${API_URL}/students/${s.id}/photo`} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-school-border shadow-sm" />
         ) : (
           <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white flex items-center justify-center shadow-sm"><User size={24} className="text-white" /></div>
@@ -260,18 +283,32 @@ export default function StudentSection() {
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onImported={() => fetchStudents()} />
 
       {/* Panel Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <h3 className="font-serif text-lg text-school-primary">Students</h3>
           <span className="bg-school-primary text-white text-xs font-bold px-2 py-0.5 rounded-full">{filtered.length}</span>
+          <select value={sessionFilter} onChange={e => setSessionFilter(e.target.value)} className="ml-2 px-2 py-1 border border-school-border rounded-lg text-xs bg-white">
+            {academicYears.map((y: any) => (
+              <option key={y.id} value={y.name}>{y.name} {y.isActive ? '✓' : ''}</option>
+            ))}
+          </select>
         </div>
         <div className="flex gap-2">
+          {isAdmin && (
+            <button onClick={() => {
+              const active = academicYears.find((y: any) => y.isActive);
+              if (active) { setPromoteYear({ name: active.name, id: active.id }); setShowPromote(true); }
+              else { const last = academicYears[academicYears.length - 1]; if (last) { setPromoteYear({ name: last.name, id: last.id }); setShowPromote(true); } }
+            }} className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-700 text-white rounded-lg text-xs font-bold hover:opacity-90">
+              <GraduationCap size={12} /> Promote All
+            </button>
+          )}
           <button
             onClick={async () => {
               const list = activeClass ? (filtered.length > 0 ? filtered : classStudents) : students;
               const photoCache: Record<string, string> = {};
-              await Promise.all(list.filter((s: any) => s.hasPhoto).map(async (s: any) => {
-                try { const r = await fetch(`${API_URL}/students/${s.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+              await Promise.all(list.filter((s: any) => s.photoUrl).map(async (s: any) => {
+                try { const r = await fetch(s.photoUrl, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
               }));
               const doc = new jsPDF();
               const title = activeClass ? activeClass + ' — Students' : 'All Students';
@@ -427,6 +464,9 @@ export default function StudentSection() {
             </div>
           )}
         </div>
+      )}
+      {showPromote && promoteYear && (
+        <PromoteModal open={showPromote} targetYearName={promoteYear.name} targetAcademicYearId={promoteYear.id} onClose={() => { setShowPromote(false); setPromoteYear(null); }} onDone={() => { setShowPromote(false); setPromoteYear(null); fetchStudents(); }} />
       )}
       <DeleteConfirmModal open={!!deleteId} title="Delete Student" message="This will permanently delete this student and all their results." onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} loading={deleteLoading} />
       <DeleteConfirmModal open={!!archiveId} title="Archive Class" message={`Archive all students in ${archiveName}? This will mark them as graduated.`} onConfirm={confirmArchive} onCancel={() => { setArchiveId(null); setArchiveName(''); }} loading={archiveLoading} />

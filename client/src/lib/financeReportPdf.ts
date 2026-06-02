@@ -445,7 +445,7 @@ export function pdfLedger(entries: any[], account: string, dateFrom: string, dat
   let y = addHeader(doc, `${accLabel} Ledger`, rangeStr, 10);
 
   const M = 12, PW = 186;
-  const dateW = 28, typeW = 20, descW = 62, debitW = 38, creditW = 38, balW = 0;
+  const dateW = 28, typeW = 20, debitW = 38, creditW = 38, balW = 0;
   const headerH = 7, rowH = 5;
 
   function drawTableHeader() {

@@ -43,7 +43,7 @@ export const createFeeSchedule = async (req: AuthRequest, res: Response) => {
         applicability: applicability || "AUTO",
       },
     });
-    logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "FeeSchedule", entityId: schedule.id, details: JSON.stringify({ academicYearId, classId, category, amount }) });
+    logAudit({ userId: req.user?.id, action: "CREATE", entityType: "FeeSchedule", entityId: schedule.id, details: JSON.stringify({ academicYearId, classId, category, amount }) });
     res.status(201).json(schedule);
   } catch (error: any) {
     res.status(errorStatus(error)).json({ error: sanitizeError(error) });
@@ -66,7 +66,7 @@ export const updateFeeSchedule = async (req: AuthRequest, res: Response) => {
     if (classId !== undefined) data.classId = classId || null;
     if (applicability !== undefined) data.applicability = applicability;
     const schedule = await prisma.feeSchedule.update({ where: { id }, data });
-    logAudit({ userId: req.session?.user?.id, action: "UPDATE", entityType: "FeeSchedule", entityId: id, details: JSON.stringify(data) });
+    logAudit({ userId: req.user?.id, action: "UPDATE", entityType: "FeeSchedule", entityId: id, details: JSON.stringify(data) });
     res.json(schedule);
   } catch (error: any) {
     res.status(errorStatus(error)).json({ error: sanitizeError(error) });
@@ -105,7 +105,7 @@ export const copyFeeSchedulesFromYear = async (req: AuthRequest, res: Response) 
         throw e;
       }
     }
-    logAudit({ userId: req.session?.user?.id, action: "CREATE", entityType: "FeeSchedule", details: `Copied ${copied} schedules from year ${sourceAcademicYearId} to ${targetAcademicYearId} (${skipped} skipped)` });
+    logAudit({ userId: req.user?.id, action: "CREATE", entityType: "FeeSchedule", details: `Copied ${copied} schedules from year ${sourceAcademicYearId} to ${targetAcademicYearId} (${skipped} skipped)` });
     const targetSchedules = await prisma.feeSchedule.findMany({
       where: { academicYearId: targetAcademicYearId },
       include: { academicYear: { select: { name: true } }, classRel: { select: { name: true } } },
@@ -121,7 +121,7 @@ export const deleteFeeSchedule = async (req: AuthRequest, res: Response) => {
   try {
     const id = param(req, "id");
     await prisma.feeSchedule.delete({ where: { id } });
-    logAudit({ userId: req.session?.user?.id, action: "DELETE", entityType: "FeeSchedule", entityId: id });
+    logAudit({ userId: req.user?.id, action: "DELETE", entityType: "FeeSchedule", entityId: id });
     res.json({ message: "Fee schedule deleted" });
   } catch (error: any) {
     res.status(errorStatus(error)).json({ error: sanitizeError(error) });
