@@ -6,3 +6,17 @@ dist/
 src/generated/client/
 
 test-results/
+
+# Old app files
+css/
+js/
+index.html
+
+# Personal/dev notes
+BigPickle.md
+deepseek.md
+geminiflash.md
+MiMo.md
+ROADMAP.md
+SESSION-NOTES.md
+WHAT-TO-IMPROVE.md
