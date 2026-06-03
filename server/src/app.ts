@@ -77,6 +77,14 @@ const financeWriteLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, stand
 
 app.use("/api/", globalLimiter);
 
+// ── Public config (no auth) ──
+app.get("/api/config", (_req, res) => {
+  res.json({
+    supabaseUrl: process.env.SUPABASE_URL || "",
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "",
+  });
+});
+
 // ── Setup (no auth — first-admin bootstrap) ──
 app.get("/api/setup/status", setup.getSetupStatus);
 app.post("/api/setup/init", setupLimiter, idempotent(setup.initSetup));

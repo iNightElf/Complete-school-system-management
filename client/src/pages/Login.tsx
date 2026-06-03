@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { useAuthStore, useDarkMode } from '../store';
-import { supabase } from '../lib/supabase';
+import { getClient as getSupabase } from '../lib/supabase';
 import { Link } from 'react-router-dom';
 import { LogIn, ShieldAlert, School, BookOpen, Sun, Moon } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
@@ -22,6 +22,7 @@ const Login = () => {
     setError('');
     setLoading(true);
     try {
+      const supabase = await getSupabase();
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,

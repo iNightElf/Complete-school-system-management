@@ -1,7 +1,7 @@
 import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
-import { supabase } from './lib/supabase';
+import { ready as supabaseReady } from './lib/supabase';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotFound from './pages/NotFound';
 
@@ -25,15 +25,19 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetch('/api/wake-db').catch(() => {});
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        fetchSession();
-      }
-      if (event === 'SIGNED_OUT') {
-        useAuthStore.setState({ user: null });
-      }
+    let unsub: (() => void) | undefined;
+    supabaseReady.then((supabase) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+          fetchSession();
+        }
+        if (event === 'SIGNED_OUT') {
+          useAuthStore.setState({ user: null });
+        }
+      });
+      unsub = () => subscription?.unsubscribe();
     });
-    return () => subscription?.unsubscribe();
+    return () => unsub?.();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {

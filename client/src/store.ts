@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import axios from 'axios';
 import { API_URL } from './lib/config';
-import { supabase } from './lib/supabase';
+import { getClient as getSupabase } from './lib/supabase';
 import type { Student, Teacher, Staff, Transaction, SchoolClass, Subject, FeeSchedule, SchoolSettings } from './lib/types';
 
 // ── Global interceptor for ALL axios requests (covers components that use raw axios) ──
 
 axios.interceptors.request.use(async (config) => {
   try {
+    const supabase = await getSupabase();
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
       config.headers.Authorization = `Bearer ${session.access_token}`;
@@ -26,6 +27,7 @@ export const api = axios.create({
 
 api.interceptors.request.use(async (config) => {
   try {
+    const supabase = await getSupabase();
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
       config.headers.Authorization = `Bearer ${session.access_token}`;
@@ -73,6 +75,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (fetching) return;
     fetching = true;
     try {
+      const supabase = await getSupabase();
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         set({ user: null, loading: false });
@@ -93,6 +96,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
+    const supabase = await getSupabase();
     await supabase.auth.signOut();
     set({ user: null });
   },

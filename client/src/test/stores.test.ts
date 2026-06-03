@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuthStore, useDarkMode, useUIStore, useUserManagementStore, api } from '../store';
-import { supabase } from '../lib/supabase';
+
+const mockSupabase = {
+  auth: {
+    getSession: vi.fn(),
+    signOut: vi.fn(),
+  },
+};
+
+vi.mock('../lib/supabase', () => ({
+  getClient: vi.fn(() => Promise.resolve(mockSupabase)),
+  ready: Promise.resolve(mockSupabase),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -18,7 +29,7 @@ describe('useAuthStore', () => {
   });
 
   it('fetchSession sets user null and loading false when no session', async () => {
-    vi.spyOn(supabase.auth, 'getSession').mockResolvedValue({ data: { session: null }, error: null } as any);
+    mockSupabase.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
 
     await useAuthStore.getState().fetchSession();
 
@@ -28,7 +39,7 @@ describe('useAuthStore', () => {
 
   it('fetchSession fetches user from server when session exists', async () => {
     const mockUser = { id: 'u1', name: 'Alice', email: 'a@b.com', role: 'admin', image: null };
-    vi.spyOn(supabase.auth, 'getSession').mockResolvedValue({ data: { session: { user: { id: 'u1' } } }, error: null } as any);
+    mockSupabase.auth.getSession.mockResolvedValue({ data: { session: { user: { id: 'u1' } } }, error: null });
     const getSpy = vi.spyOn(api, 'get').mockResolvedValue({ data: { user: mockUser } });
 
     await useAuthStore.getState().fetchSession();
@@ -40,7 +51,7 @@ describe('useAuthStore', () => {
 
   it('fetchSession skips server call when user id already matches session', async () => {
     useAuthStore.setState({ user: { id: 'u1', name: 'Bob', email: 'b@b.com', role: 'viewer', image: null }, loading: false });
-    vi.spyOn(supabase.auth, 'getSession').mockResolvedValue({ data: { session: { user: { id: 'u1' } } }, error: null } as any);
+    mockSupabase.auth.getSession.mockResolvedValue({ data: { session: { user: { id: 'u1' } } }, error: null });
     const getSpy = vi.spyOn(api, 'get');
 
     await useAuthStore.getState().fetchSession();
@@ -50,7 +61,7 @@ describe('useAuthStore', () => {
   });
 
   it('fetchSession handles error and clears user', async () => {
-    vi.spyOn(supabase.auth, 'getSession').mockRejectedValue(new Error('network error'));
+    mockSupabase.auth.getSession.mockRejectedValue(new Error('network error'));
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     await useAuthStore.getState().fetchSession();
@@ -61,11 +72,11 @@ describe('useAuthStore', () => {
 
   it('logout signs out and clears user', async () => {
     useAuthStore.setState({ user: { id: 'u1', name: 'X', email: 'x@y.com', role: 'admin', image: null }, loading: false });
-    const signOutSpy = vi.spyOn(supabase.auth, 'signOut').mockResolvedValue({ error: null } as any);
+    mockSupabase.auth.signOut.mockResolvedValue({ error: null });
 
     await useAuthStore.getState().logout();
 
-    expect(signOutSpy).toHaveBeenCalledOnce();
+    expect(mockSupabase.auth.signOut).toHaveBeenCalledOnce();
     expect(useAuthStore.getState().user).toBeNull();
   });
 });
