@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { handleControllerError } from "../lib/errors.js";
 import { getFiscalYearRange } from "../lib/fiscal-year.js";
-import { ACCOUNT_BALANCES_SQL, dateToMonthStr } from "./transaction.controller.js";
+import { getAccountBalances, dateToMonthStr } from "./transaction.controller.js";
 
 function getMonthRange(from: string, to: string): string[] {
   const [y1, m1] = from.split('-').map(Number);
@@ -47,7 +47,7 @@ export const getAGMReport = async (req: Request, res: Response) => {
         _sum: { amount: true },
       }),
       prisma.openingBalance.findMany({ where: { fiscalYear: year } }),
-      prisma.$queryRawUnsafe<[{ al_rawa: string; global_forum: string; cash: string }]>(ACCOUNT_BALANCES_SQL, start, end),
+      getAccountBalances(start, end),
     ]);
 
     const opening: Record<string, number> = { AL_RAWA_BANK: 0, GLOBAL_FORUM_BANK: 0, CASH_IN_HAND: 0 };
@@ -141,6 +141,208 @@ function isMonthInAssignment(monthStr: string, assign: { startsAt: string | null
   if (assign.endsAt && monthStr > assign.endsAt) return false;
   return true;
 }
+
+export const getHeadwiseReport = async (req: Request, res: Response) => {
+  try {
+    const { dateFrom, dateTo, type } = req.query;
+    const txnType = String(type || 'INCOME').toUpperCase();
+    if (!['INCOME', 'EXPENSE'].includes(txnType)) {
+      return res.status(400).json({ error: 'type must be INCOME or EXPENSE' });
+    }
+    const where: any = {
+      isCancelled: false,
+      reversalOfId: null,
+      transactionType: txnType,
+      ...(txnType === 'INCOME' ? { affectsIncomeLedger: true } : { affectsExpenseLedger: true }),
+    };
+    if (dateFrom || dateTo) {
+      where.transactionDate = {};
+      if (dateFrom) where.transactionDate.gte = new Date(String(dateFrom));
+      if (dateTo) where.transactionDate.lte = new Date(String(dateTo) + 'T23:59:59Z');
+    }
+
+    const [grouped, totalAgg, rows] = await Promise.all([
+      prisma.transaction.groupBy({
+        by: ['category'],
+        where,
+        _sum: { amount: true },
+        _count: true,
+        orderBy: { _sum: { amount: 'desc' } },
+      }),
+      prisma.transaction.aggregate({
+        where,
+        _sum: { amount: true },
+        _count: true,
+      }),
+      txnType === 'INCOME' ? prisma.transaction.findMany({
+        where: { ...where, category: { not: null } },
+        select: { category: true, student: { select: { name: true } } },
+      }) : Promise.resolve([]),
+    ]);
+
+    const studentMap = new Map<string, Set<string>>();
+    if (txnType === 'INCOME') {
+      for (const r of rows) {
+        const cat = r.category || 'Uncategorized';
+        if (!studentMap.has(cat)) studentMap.set(cat, new Set());
+        if (r.student?.name) studentMap.get(cat)!.add(r.student.name);
+      }
+    }
+
+    const categories = grouped.map((g) => ({
+      category: g.category || 'Uncategorized',
+      total: Number(g._sum.amount) || 0,
+      count: g._count,
+      uniqueStudents: txnType === 'INCOME' ? (studentMap.get(g.category || 'Uncategorized')?.size || 0) : 0,
+    }));
+
+    res.json({
+      categories,
+      grandTotal: Number(totalAgg._sum.amount) || 0,
+      grandCount: totalAgg._count || 0,
+    });
+  } catch (error: any) {
+    handleControllerError(res, error, req.path);
+  }
+};
+
+export const getMonthlyTransactions = async (req: Request, res: Response) => {
+  try {
+    const { dateFrom, dateTo, type } = req.query;
+    const txnType = String(type || 'INCOME').toUpperCase();
+    if (!['INCOME', 'EXPENSE'].includes(txnType)) {
+      return res.status(400).json({ error: 'type must be INCOME or EXPENSE' });
+    }
+    const where: any = {
+      isCancelled: false,
+      reversalOfId: null,
+      transactionType: txnType,
+      ...(txnType === 'INCOME' ? { affectsIncomeLedger: true } : { affectsExpenseLedger: true }),
+    };
+    if (dateFrom || dateTo) {
+      where.transactionDate = {};
+      if (dateFrom) where.transactionDate.gte = new Date(String(dateFrom));
+      if (dateTo) where.transactionDate.lte = new Date(String(dateTo) + 'T23:59:59Z');
+    }
+
+    const [transactions, totalAgg] = await Promise.all([
+      prisma.transaction.findMany({
+        where,
+        orderBy: { transactionDate: 'asc' },
+        select: {
+          id: true,
+          transactionDate: true,
+          className: true,
+          category: true,
+          description: true,
+          amount: true,
+          student: { select: { name: true, class: true } },
+        },
+      }),
+      prisma.transaction.aggregate({ where, _sum: { amount: true } }),
+    ]);
+
+    res.json({
+      transactions,
+      grandTotal: Number(totalAgg._sum.amount) || 0,
+    });
+  } catch (error: any) {
+    handleControllerError(res, error, req.path);
+  }
+};
+
+export const getAuditReport = async (req: Request, res: Response) => {
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const { start, end } = getFiscalYearRange(year);
+
+    const where = {
+      isCancelled: false,
+      reversalOfId: null,
+      transactionDate: { gte: start, lte: end } as any,
+    };
+
+    const [incomeByCat, expenseByCat, incomeAgg, expenseAgg] = await Promise.all([
+      prisma.transaction.groupBy({
+        by: ['category'],
+        where: { ...where, transactionType: 'INCOME', affectsIncomeLedger: true },
+        _sum: { amount: true },
+        orderBy: { _sum: { amount: 'desc' } },
+      }),
+      prisma.transaction.groupBy({
+        by: ['category'],
+        where: { ...where, transactionType: 'EXPENSE', affectsExpenseLedger: true },
+        _sum: { amount: true },
+        orderBy: { _sum: { amount: 'desc' } },
+      }),
+      prisma.transaction.aggregate({
+        where: { ...where, transactionType: 'INCOME', affectsIncomeLedger: true },
+        _sum: { amount: true },
+      }),
+      prisma.transaction.aggregate({
+        where: { ...where, transactionType: 'EXPENSE', affectsExpenseLedger: true },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const totalIncome = Number(incomeAgg._sum.amount) || 0;
+    const totalExpense = Number(expenseAgg._sum.amount) || 0;
+
+    res.json({
+      fiscalYear: year,
+      totalIncome,
+      totalExpense,
+      netSurplus: totalIncome - totalExpense,
+      incomeByCategory: incomeByCat.map((g) => [g.category || 'Uncategorized', Number(g._sum.amount)]),
+      expenseByCategory: expenseByCat.map((g) => [g.category || 'Uncategorized', Number(g._sum.amount)]),
+    });
+  } catch (error: any) {
+    handleControllerError(res, error, req.path);
+  }
+};
+
+export const getDashboardSummary = async (req: Request, res: Response) => {
+  try {
+    const fiscalYear = Number(req.query.fiscalYear) || new Date().getFullYear();
+    const { start, end } = getFiscalYearRange(fiscalYear);
+
+    const where = {
+      isCancelled: false,
+      reversalOfId: null,
+      transactionDate: { gte: start, lte: end } as any,
+    };
+
+    const [incomeAgg, depositAgg] = await Promise.all([
+      prisma.transaction.aggregate({
+        where: {
+          ...where,
+          transactionType: 'INCOME',
+          destinationAccount: { in: ['CASH_IN_HAND', 'AL_RAWA_BANK'] },
+        },
+        _sum: { amount: true },
+      }),
+      prisma.transaction.aggregate({
+        where: {
+          ...where,
+          sourceAccount: 'CASH_IN_HAND',
+          destinationAccount: 'AL_RAWA_BANK',
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const totalIncome = Number(incomeAgg._sum.amount) || 0;
+    const totalDepositedToBank = Number(depositAgg._sum.amount) || 0;
+
+    res.json({
+      totalIncome,
+      totalDepositedToBank,
+      depositRemaining: totalIncome - totalDepositedToBank,
+    });
+  } catch (error: any) {
+    handleControllerError(res, error, req.path);
+  }
+};
 
 export const getDefaulterReport = async (req: Request, res: Response) => {
   try {

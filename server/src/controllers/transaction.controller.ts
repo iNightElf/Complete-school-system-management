@@ -7,18 +7,20 @@ import { validate, createTransactionSchema } from "../lib/validate.js";
 import { logAudit } from "../lib/audit.js";
 import { getFiscalYearForDate, getFiscalYearRange } from "../lib/fiscal-year.js";
 
-export const ACCOUNT_BALANCES_SQL = `
-  SELECT
-    COALESCE(SUM(CASE WHEN destination_account = 'AL_RAWA_BANK' THEN amount
-                     WHEN source_account = 'AL_RAWA_BANK' THEN -amount ELSE 0 END), 0) AS al_rawa,
-    COALESCE(SUM(CASE WHEN destination_account = 'GLOBAL_FORUM_BANK' THEN amount
-                     WHEN source_account = 'GLOBAL_FORUM_BANK' THEN -amount ELSE 0 END), 0) AS global_forum,
-    COALESCE(SUM(CASE WHEN destination_account = 'CASH_IN_HAND' THEN amount
-                     WHEN source_account = 'CASH_IN_HAND' THEN -amount ELSE 0 END), 0) AS cash
-  FROM transactions
-  WHERE is_cancelled = false AND reversal_of_id IS NULL
-    AND transaction_date >= $1::timestamptz AND transaction_date <= $2::timestamptz
-`;
+export function getAccountBalances(start: Date, end: Date) {
+  return prisma.$queryRaw<[{ al_rawa: string; global_forum: string; cash: string }]>`
+    SELECT
+      COALESCE(SUM(CASE WHEN destination_account = 'AL_RAWA_BANK' THEN amount
+                       WHEN source_account = 'AL_RAWA_BANK' THEN -amount ELSE 0 END), 0) AS al_rawa,
+      COALESCE(SUM(CASE WHEN destination_account = 'GLOBAL_FORUM_BANK' THEN amount
+                       WHEN source_account = 'GLOBAL_FORUM_BANK' THEN -amount ELSE 0 END), 0) AS global_forum,
+      COALESCE(SUM(CASE WHEN destination_account = 'CASH_IN_HAND' THEN amount
+                       WHEN source_account = 'CASH_IN_HAND' THEN -amount ELSE 0 END), 0) AS cash
+    FROM transactions
+    WHERE is_cancelled = false AND reversal_of_id IS NULL
+      AND transaction_date >= ${start}::timestamptz AND transaction_date <= ${end}::timestamptz
+  `;
+}
 
 export function dateToMonthStr(d: Date | null): string | null {
   if (!d) return null;
@@ -59,13 +61,6 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
     } = validation.data;
 
     const fiscalYear = getFiscalYearForDate(new Date(date));
-    const closedPeriod = await prisma.periodClose.findFirst({
-      where: { fiscalYear },
-    });
-    if (closedPeriod) {
-      return res.status(403).json({ error: `Fiscal year ${fiscalYear} is closed. No new transactions can be added.` });
-    }
-
     const { transactionType, affectsIncomeLedger, affectsExpenseLedger } =
       classifyTransaction(sourceAccount ?? undefined, destinationAccount ?? undefined);
 
@@ -171,7 +166,11 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
 
     const hasMultipleAllocations = allocations.length > 0;
 
-    const [transaction] = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
+      // Integrity check INSIDE the transaction (serialized by Postgres)
+      const closedPeriod = await tx.periodClose.findFirst({ where: { fiscalYear } });
+      if (closedPeriod) return { _closed: true, fiscalYear };
+
       const tf = transactionType === 'INCOME' || transactionType === 'EXPENSE' ? transactionType : null;
       let receiptNum: { fiscalYear: number; sequence: number } | null = null;
       if (tf) {
@@ -229,8 +228,14 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
         });
       }
 
-      return [t];
+      return { _closed: false, transaction: t };
     });
+
+    if (result._closed) {
+      return res.status(403).json({ error: `Fiscal year ${result.fiscalYear} is closed. No new transactions can be added.` });
+    }
+
+    const transaction = (result as any).transaction;
 
     logAudit({ userId: req.user?.id, action: "CREATE", entityType: "Transaction", entityId: transaction.id, details: JSON.stringify({ amount: finalAmount, transactionType, category, studentId }) });
 
@@ -246,7 +251,7 @@ export const getBalances = async (req: Request, res: Response) => {
     const fiscalYear = year ? Number(year) : new Date().getFullYear();
     const { start, end } = getFiscalYearRange(fiscalYear);
 
-    const rows = await prisma.$queryRawUnsafe<[{ al_rawa: string | null; global_forum: string | null; cash: string | null }]>(ACCOUNT_BALANCES_SQL, start, end);
+    const rows = await getAccountBalances(start, end);
     const r = rows[0];
 
     const openingRows = await prisma.openingBalance.findMany({ where: { fiscalYear } });
@@ -299,48 +304,48 @@ export const getLedger = async (req: Request, res: Response) => {
     // by summing all transactions from fiscal year start up to (but not including) dateFrom
     let openingBalance = fiscalOpening;
     if (dateFrom) {
-      const prior = await prisma.$queryRawUnsafe<[{ total: string | null }]>(`
+      const prior = await prisma.$queryRaw<[{ total: string | null }]>`
         SELECT COALESCE(SUM(
-          CASE WHEN destination_account = $1::text THEN amount
-               WHEN source_account = $1::text THEN -amount ELSE 0 END
+          CASE WHEN destination_account = ${account}::text THEN amount
+               WHEN source_account = ${account}::text THEN -amount ELSE 0 END
         ), 0) AS total
         FROM transactions
-        WHERE transaction_date >= $2::timestamptz AND transaction_date < $3::timestamptz
-          AND (destination_account = $1::text OR source_account = $1::text)
-      `, account, start, dateFromDate);
+        WHERE transaction_date >= ${start}::timestamptz AND transaction_date < ${dateFromDate}::timestamptz
+          AND (destination_account = ${account}::text OR source_account = ${account}::text)
+      `;
       openingBalance = fiscalOpening + Number(prior[0]?.total || 0);
     }
 
     const [total, raw, totals] = await Promise.all([
       prisma.transaction.count({ where }),
-      prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(`
+      prisma.$queryRaw<Array<Record<string, unknown>>>`
         WITH ledger AS (
           SELECT id, transaction_date, amount, transaction_type, source_account,
                  destination_account, category, description, student_id, class_name,
                  fee_month, is_cancelled, receipt_sequence, fiscal_year, created_at,
                  reversal_of_id,
-            $1::numeric + COALESCE(SUM(
-              CASE WHEN destination_account = $2::text THEN amount
-                   WHEN source_account = $2::text THEN -amount ELSE 0 END
+            ${openingBalance}::numeric + COALESCE(SUM(
+              CASE WHEN destination_account = ${account}::text THEN amount
+                   WHEN source_account = ${account}::text THEN -amount ELSE 0 END
             ) OVER (ORDER BY transaction_date ASC, created_at ASC), 0) AS running_balance
           FROM transactions
-          WHERE transaction_date >= $3::timestamptz AND transaction_date <= $4::timestamptz
-            AND (destination_account = $2::text OR source_account = $2::text)
+          WHERE transaction_date >= ${dateFromDate}::timestamptz AND transaction_date <= ${dateToDate}::timestamptz
+            AND (destination_account = ${account}::text OR source_account = ${account}::text)
         )
         SELECT * FROM ledger
         ORDER BY transaction_date ASC, created_at ASC
-        LIMIT $5 OFFSET $6
-      `, openingBalance, account, dateFromDate, dateToDate, limit, offset),
-      prisma.$queryRawUnsafe<[{ dr: string | null; cr: string | null }]>(`
+        LIMIT ${limit} OFFSET ${offset}
+      `,
+      prisma.$queryRaw<[{ dr: string | null; cr: string | null }]>`
         SELECT
-          COALESCE(SUM(CASE WHEN destination_account = $1::text THEN amount ELSE 0 END), 0) AS dr,
-          COALESCE(SUM(CASE WHEN source_account = $1::text THEN amount ELSE 0 END), 0) AS cr
+          COALESCE(SUM(CASE WHEN destination_account = ${account}::text THEN amount ELSE 0 END), 0) AS dr,
+          COALESCE(SUM(CASE WHEN source_account = ${account}::text THEN amount ELSE 0 END), 0) AS cr
         FROM transactions
-        WHERE transaction_date >= $2::timestamptz AND transaction_date <= $3::timestamptz
-          AND (destination_account = $1::text OR source_account = $1::text)
+        WHERE transaction_date >= ${dateFromDate}::timestamptz AND transaction_date <= ${dateToDate}::timestamptz
+          AND (destination_account = ${account}::text OR source_account = ${account}::text)
           AND is_cancelled = false
           AND reversal_of_id IS NULL
-      `, account, dateFromDate, dateToDate),
+      `,
     ]);
 
     // Batch-fetch student names for rows on this page
@@ -432,27 +437,23 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
     const { reason } = req.body;
     if (!reason || !reason.trim()) return res.status(400).json({ error: "Reason is required to cancel a transaction" });
 
-    const tx = await prisma.transaction.findUnique({ where: { id }, include: { student: { select: { id: true, name: true, class: true, studentId: true } } } });
-    if (!tx) return res.status(404).json({ error: "Transaction not found" });
-    if (tx.isCancelled) return res.status(400).json({ error: "Transaction already cancelled" });
+    const record = await prisma.transaction.findUnique({ where: { id }, include: { student: { select: { id: true, name: true, class: true, studentId: true } } } });
+    if (!record) return res.status(404).json({ error: "Transaction not found" });
+    if (record.isCancelled) return res.status(400).json({ error: "Transaction already cancelled" });
 
-    const fiscalYear = getFiscalYearForDate(new Date(tx.transactionDate));
-    const closedPeriod = await prisma.periodClose.findFirst({
-      where: { fiscalYear },
-    });
-    if (closedPeriod) {
-      return res.status(403).json({ error: `Fiscal year ${fiscalYear} is closed. Transactions in this period cannot be cancelled.` });
-    }
-
+    const fiscalYear = getFiscalYearForDate(new Date(record.transactionDate));
     const userId = req.user?.id || "system";
-    const studentName = (tx as any).student?.name || null;
-    const studentClass = (tx as any).className || (tx as any).student?.class || null;
+    const studentName = (record as any).student?.name || null;
+    const studentClass = (record as any).className || (record as any).student?.class || null;
 
     const { transactionType, affectsIncomeLedger, affectsExpenseLedger } =
-      classifyTransaction(tx.destinationAccount || undefined, tx.sourceAccount || undefined);
+      classifyTransaction(record.destinationAccount || undefined, record.sourceAccount || undefined);
 
-    const [cancelled, reversal] = await prisma.$transaction([
-      prisma.transaction.update({
+    const result = await prisma.$transaction(async (tx) => {
+      const closedPeriod = await tx.periodClose.findFirst({ where: { fiscalYear } });
+      if (closedPeriod) return { _closed: true, fiscalYear };
+
+      const cancelled = await tx.transaction.update({
         where: { id },
         data: {
           isCancelled: true,
@@ -460,29 +461,35 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
           cancelledBy: userId,
           cancelReason: reason || null,
         },
-      }),
-      prisma.transaction.create({
+      });
+      const reversal = await tx.transaction.create({
         data: {
           transactionDate: new Date(),
-          amount: tx.amount,
+          amount: record.amount,
           transactionType,
-          sourceAccount: tx.destinationAccount || null,
-          destinationAccount: tx.sourceAccount || null,
-          category: `Reversal - ${tx.category || "Uncategorized"}`,
-          description: `Cancelled: ${tx.description || tx.category || "Transaction"}${studentName ? ` (${studentClass || ''} - ${studentName})` : ""}${reason ? `. Reason: ${reason}` : ""}`,
-          studentId: tx.studentId,
+          sourceAccount: record.destinationAccount || null,
+          destinationAccount: record.sourceAccount || null,
+          category: `Reversal - ${record.category || "Uncategorized"}`,
+          description: `Cancelled: ${record.description || record.category || "Transaction"}${studentName ? ` (${studentClass || ''} - ${studentName})` : ""}${reason ? `. Reason: ${reason}` : ""}`,
+          studentId: record.studentId,
           className: studentClass,
-          feeMonth: tx.feeMonth,
+          feeMonth: record.feeMonth,
           affectsIncomeLedger,
           affectsExpenseLedger,
-          reversalOfId: tx.id,
+          reversalOfId: record.id,
           createdBy: userId,
         },
-      }),
-    ]);
+      });
 
-    logAudit({ userId, action: "CANCEL", entityType: "Transaction", entityId: id, details: JSON.stringify({ reason, reversalId: reversal.id }) });
-    res.json({ cancelled, reversal });
+      return { _closed: false, cancelled, reversal };
+    });
+
+    if (result._closed) {
+      return res.status(403).json({ error: `Fiscal year ${result.fiscalYear} is closed. Transactions in this period cannot be cancelled.` });
+    }
+
+    logAudit({ userId, action: "CANCEL", entityType: "Transaction", entityId: id, details: JSON.stringify({ reason, reversalId: (result as any).reversal.id }) });
+    res.json({ cancelled: (result as any).cancelled, reversal: (result as any).reversal });
   } catch (error: any) {
     handleControllerError(res, error, req.path);
   }

@@ -6,17 +6,19 @@ const mockGetUser = vi.hoisted(() => vi.fn());
 const mockPrisma = vi.hoisted(() => {
   const tx = {
     create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(),
+    count: vi.fn(), upsert: vi.fn(), groupBy: vi.fn(), aggregate: vi.fn(),
   };
   const ob = { findMany: vi.fn(), findUnique: vi.fn(), upsert: vi.fn(), create: vi.fn() };
   const obh = { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() };
-  const sfa = { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), create: vi.fn(), upsert: vi.fn() };
+  const sfa = { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), create: vi.fn(), upsert: vi.fn(), createMany: vi.fn() };
   const m = {
     transaction: tx,
     openingBalance: ob,
     openingBalanceHistory: obh,
     studentFeeAssignment: sfa,
-    paymentAllocation: { create: vi.fn() },
-    student: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
+    paymentAllocation: { create: vi.fn(), findMany: vi.fn() },
+    studentIdCounter: { update: vi.fn() },
+    student: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn(), aggregate: vi.fn() },
     teacher: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
     staff: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
     schoolClass: { findUnique: vi.fn() },
@@ -27,7 +29,8 @@ const mockPrisma = vi.hoisted(() => {
     user: { findMany: vi.fn(), findUnique: vi.fn() },
     periodClose: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), delete: vi.fn() },
     reconciliation: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
-    paymentAllocation: { findMany: vi.fn() },
+    receiptCounter: { upsert: vi.fn() },
+    idempotencyKey: { findUnique: vi.fn(), upsert: vi.fn(), deleteMany: vi.fn() },
     $queryRaw: vi.fn(),
     $queryRawUnsafe: vi.fn(),
   };
@@ -100,7 +103,13 @@ describe("API Integration Tests", () => {
     mockPrisma.user.findMany.mockResolvedValue([]);
     mockPrisma.periodClose.findFirst.mockResolvedValue(null);
     mockPrisma.$queryRaw.mockResolvedValue([{ al_rawa: "0", global_forum: "0", cash: "0" }]);
-    mockPrisma.$queryRawUnsafe.mockResolvedValue([{ al_rawa: "0", global_forum: "0", cash: "0" }]);
+    mockPrisma.$queryRaw.mockResolvedValue([{ al_rawa: "0", global_forum: "0", cash: "0" }]);
+    mockPrisma.transaction.aggregate.mockResolvedValue({ _sum: { amount: 0 }, _count: 0 });
+    mockPrisma.transaction.groupBy.mockResolvedValue([]);
+    mockPrisma.transaction.findMany.mockReset().mockResolvedValue([]);
+    mockPrisma.transaction.count.mockReset().mockResolvedValue(0);
+    mockPrisma.receiptCounter.upsert.mockResolvedValue({ fiscalYear: 2026, receiptType: 'INCOME', nextSequence: 1 });
+    mockPrisma.studentIdCounter.update.mockResolvedValue({ id: 'singleton', prefix: 'S', nextValue: 1, padLength: 6 });
   });
 
   describe("Health Check (no auth)", () => {
@@ -149,10 +158,10 @@ describe("API Integration Tests", () => {
       it("allows teacher", async () => {
         mockGetUser.mockResolvedValueOnce(users.teacher);
         mockPrisma.schoolClass.findUnique.mockResolvedValueOnce({ id: "class-1", name: "One" });
-        mockPrisma.student.create.mockResolvedValueOnce({ id: "s-new", name: "Bob", class: "One" });
+        mockPrisma.student.create.mockResolvedValueOnce({ id: "s-new", name: "Bob", class: "One", roll: null });
         const res = await post("/api/students").send({ class: "One", name: "Bob" });
         expect(res.status).toBe(201);
-        expect(res.body.photo).toBe(null);
+        expect(res.body.roll).toBe(null);
       });
 
       it("blocks accountant (403)", async () => {
@@ -397,7 +406,7 @@ describe("API Integration Tests", () => {
 
   describe("Finance — Balances", () => {
     it("returns balances with opening balances added", async () => {
-      mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ al_rawa: "5000", global_forum: "3000", cash: "2000" }]);
+      mockPrisma.$queryRaw.mockResolvedValueOnce([{ al_rawa: "5000", global_forum: "3000", cash: "2000" }]);
       mockPrisma.openingBalance.findMany.mockResolvedValueOnce([
         { id: "ob-1", fiscalYear: "2026", account: "AL_RAWA_BANK", amount: 10000 },
         { id: "ob-2", fiscalYear: "2026", account: "CASH_IN_HAND", amount: 5000 },
@@ -412,7 +421,7 @@ describe("API Integration Tests", () => {
     it("uses SQL with reversal_of_id IS NULL filter", async () => {
       const res = await get("/api/finance/balances");
       expect(res.status).toBe(200);
-      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
+      expect(mockPrisma.$queryRaw).toHaveBeenCalled();
     });
   });
 
@@ -458,12 +467,12 @@ describe("API Integration Tests", () => {
       expect(res.body).toHaveLength(1);
     });
 
-    it("POST toggles assignment", async () => {
-      mockPrisma.studentFeeAssignment.findFirst.mockResolvedValueOnce(null);
-      mockPrisma.studentFeeAssignment.create.mockResolvedValueOnce({ id: "sfa-2", studentId: "s1", feeScheduleId: "fs-2", active: true });
+    it("POST toggles assignment off", async () => {
+      mockPrisma.studentFeeAssignment.findFirst.mockResolvedValueOnce({ id: "sfa-2", studentId: "s1", feeScheduleId: "fs-2", active: true });
+      mockPrisma.studentFeeAssignment.update.mockResolvedValueOnce({ id: "sfa-2", studentId: "s1", feeScheduleId: "fs-2", active: false });
       const res = await post("/api/finance/student-fee-assignments/toggle").send({ studentId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", feeScheduleId: "fs-2" });
-      expect(res.status).toBe(201);
-      expect(res.body.active).toBe(true);
+      expect(res.status).toBe(200);
+      expect(res.body.active).toBe(false);
     });
 
     it("POST bulk assigns", async () => {
@@ -495,7 +504,7 @@ describe("API Integration Tests", () => {
     it("returns AGM report for a fiscal year", async () => {
       mockPrisma.transaction.findMany.mockResolvedValueOnce([]);
       mockPrisma.openingBalance.findMany.mockResolvedValueOnce([]);
-      mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ al_rawa: "0", global_forum: "0", cash: "0" }]);
+      mockPrisma.$queryRaw.mockResolvedValueOnce([{ al_rawa: "0", global_forum: "0", cash: "0" }]);
       const res = await get("/api/finance/reports/agm?year=2026");
       expect(res.status).toBe(200);
       expect(res.body.fiscalYear).toBe(2026);
@@ -505,10 +514,11 @@ describe("API Integration Tests", () => {
 
   describe("Finance — Transaction List", () => {
     it("GET returns filtered transactions", async () => {
-      mockPrisma.transaction.findMany.mockResolvedValueOnce([mockTx()]);
+      mockPrisma.transaction.findMany.mockResolvedValue([mockTx()]);
+      mockPrisma.transaction.count.mockResolvedValue(1);
       const res = await get("/api/finance/transactions?dateFrom=2026-01-01&dateTo=2026-12-31&type=INCOME");
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
+      expect(res.body.data).toHaveLength(1);
     });
   });
 

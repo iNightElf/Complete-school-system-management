@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import axios from 'axios';
-import { useSchoolStore } from '../store';
+import { useSchoolStore, api } from '../store';
 import { FileText, Calendar, BarChart3, Scale, Users, Loader } from 'lucide-react';
 import { toast } from '../components/Toast';
 import ExportMenu from '../components/ExportMenu';
@@ -86,7 +85,7 @@ const FinanceReports = () => {
   useEffect(() => {
     if (tab === 'yearly-agm') {
       setAgmLoading(true);
-      axios.get('/api/finance/reports/agm', { params: { year: yearFilter } })
+      api.get('/finance/reports/agm', { params: { year: yearFilter } })
         .then(res => setAgmData(res.data))
         .catch(() => { setAgmData(null); toast('Failed to load AGM report from server', 'error'); })
         .finally(() => setAgmLoading(false));

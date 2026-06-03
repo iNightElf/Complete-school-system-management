@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import { FISCAL_START_LABEL, FISCAL_END_LABEL } from './config';
+import { SCHOOL_LOGO } from './logo';
 
 export function getMonthName(m: number) {
   return ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m];
@@ -15,9 +16,7 @@ export function fmt(n: number) {
 
 export function addLogo(doc: jsPDF, y: number) {
   try {
-    const el = document.getElementById('school-logo') as HTMLImageElement;
-    if (!el?.src) return;
-    const raw = el.src.includes(',') ? el.src.split(',')[1] : el.src;
+    const raw = SCHOOL_LOGO.includes(',') ? SCHOOL_LOGO.split(',')[1] : SCHOOL_LOGO;
     doc.addImage(raw, 'UNKNOWN', 12, y, 18, 18);
   } catch { console.debug('Photo load skipped'); }
 }
@@ -45,20 +44,17 @@ function subtitleForRange(dateFrom: string, dateTo: string) {
   return `${getMonthName(Number(dateFrom.split('-')[1]) - 1)} ${dateFrom.split('-')[0]} — ${getMonthName(Number(dateTo.split('-')[1]) - 1)} ${dateTo.split('-')[0]}`;
 }
 
-export function pdfHeadwiseIncome(incomeTx: any[], dateFrom: string, dateTo: string) {
+export function pdfHeadwiseIncome(categories: { category: string; total: number; count: number; uniqueStudents: number }[], grandTotal: number, dateFrom: string, dateTo: string) {
   const doc = new jsPDF({ format: 'a4', unit: 'mm' });
   let y = addHeader(doc, 'HEADWISE INCOME REPORT', subtitleForRange(dateFrom, dateTo), 10);
-  const hw = headwise(incomeTx);
-  const totalIncome = hw.reduce((s, x) => s + x[1], 0);
 
   doc.setFillColor(26, 26, 46); doc.rect(12, y, 186, 7, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
   doc.text('Category', 14, y + 4.5); doc.text('Amount', 120, y + 4.5, { align: 'right' }); doc.text('% Share', 160, y + 4.5, { align: 'right' }); doc.text('Count', 186, y + 4.5, { align: 'right' });
   y += 7;
 
-  hw.forEach(([cat, amt], i) => {
-    const pct = totalIncome > 0 ? ((amt / totalIncome) * 100).toFixed(1) : '0';
-    const count = incomeTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length;
+  categories.forEach(({ category: cat, total: amt, count }, i) => {
+    const pct = grandTotal > 0 ? ((amt / grandTotal) * 100).toFixed(1) : '0';
     if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(12, y, 186, 6, 'F'); }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(26, 26, 46);
     doc.text(cat, 14, y + 4); doc.text(fmt(amt), 120, y + 4, { align: 'right' });
@@ -68,26 +64,23 @@ export function pdfHeadwiseIncome(incomeTx: any[], dateFrom: string, dateTo: str
 
   doc.setFillColor(240, 235, 225); doc.rect(12, y, 186, 7, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(26, 26, 46);
-  doc.text(`TOTAL INCOME: ${fmt(totalIncome)} /-`, 14, y + 4.5);
-  doc.text(`${hw.length} categories`, 186, y + 4.5, { align: 'right' });
+  doc.text(`TOTAL INCOME: ${fmt(grandTotal)} /-`, 14, y + 4.5);
+  doc.text(`${categories.length} categories`, 186, y + 4.5, { align: 'right' });
 
   doc.save(`Headwise_Income_${dateFrom}_to_${dateTo}.pdf`);
 }
 
-export function pdfHeadwiseExpense(expenseTx: any[], dateFrom: string, dateTo: string) {
+export function pdfHeadwiseExpense(categories: { category: string; total: number; count: number }[], grandTotal: number, dateFrom: string, dateTo: string) {
   const doc = new jsPDF({ format: 'a4', unit: 'mm' });
   let y = addHeader(doc, 'HEADWISE EXPENSE REPORT', subtitleForRange(dateFrom, dateTo), 10);
-  const hw = headwise(expenseTx);
-  const totalExpense = hw.reduce((s, x) => s + x[1], 0);
 
   doc.setFillColor(26, 26, 46); doc.rect(12, y, 186, 7, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
   doc.text('Category', 14, y + 4.5); doc.text('Amount', 120, y + 4.5, { align: 'right' }); doc.text('% Share', 160, y + 4.5, { align: 'right' }); doc.text('Count', 186, y + 4.5, { align: 'right' });
   y += 7;
 
-  hw.forEach(([cat, amt], i) => {
-    const pct = totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : '0';
-    const count = expenseTx.filter((t: any) => (t.category || 'Uncategorized') === cat).length;
+  categories.forEach(({ category: cat, total: amt, count }, i) => {
+    const pct = grandTotal > 0 ? ((amt / grandTotal) * 100).toFixed(1) : '0';
     if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(12, y, 186, 6, 'F'); }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(26, 26, 46);
     doc.text(cat, 14, y + 4); doc.text(fmt(amt), 120, y + 4, { align: 'right' });
@@ -97,13 +90,13 @@ export function pdfHeadwiseExpense(expenseTx: any[], dateFrom: string, dateTo: s
 
   doc.setFillColor(240, 235, 225); doc.rect(12, y, 186, 7, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(26, 26, 46);
-  doc.text(`TOTAL EXPENSE: ${fmt(totalExpense)} /-`, 14, y + 4.5);
-  doc.text(`${hw.length} categories`, 186, y + 4.5, { align: 'right' });
+  doc.text(`TOTAL EXPENSE: ${fmt(grandTotal)} /-`, 14, y + 4.5);
+  doc.text(`${categories.length} categories`, 186, y + 4.5, { align: 'right' });
 
   doc.save(`Headwise_Expense_${dateFrom}_to_${dateTo}.pdf`);
 }
 
-export function pdfMonthly(type: 'income' | 'expense', data: any[], students: any[], dateFrom: string, dateTo: string) {
+export function pdfMonthly(type: 'income' | 'expense', data: any[], precomputedTotal: number, dateFrom: string, dateTo: string) {
   const doc = new jsPDF({ format: 'a4', unit: 'mm' });
   const title = type === 'income' ? 'MONTHLY INCOME REPORT' : 'MONTHLY EXPENSE REPORT';
   let y = addHeader(doc, title, subtitleForRange(dateFrom, dateTo), 10);
@@ -147,7 +140,7 @@ export function pdfMonthly(type: 'income' | 'expense', data: any[], students: an
     if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(M, y, PW, rowH, 'F'); }
 
     const dateStr = new Date(t.transactionDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const studentName = t.studentId ? (students.find((s: any) => s.id === t.studentId)?.name || '') : '';
+    const studentName = t.student?.name || '';
     const classStudent = [t.className || '', studentName].filter(Boolean).join(' / ') || t.description || `${(t.sourceAccount || '').replace(/_/g, ' ')} -> ${(t.destinationAccount || '').replace(/_/g, ' ')}`;
     grandTotal += Number(t.amount);
 
@@ -176,13 +169,11 @@ export function pdfMonthly(type: 'income' | 'expense', data: any[], students: an
   doc.save(`${title.replace(/ /g, '_')}_${dateFrom}_to_${dateTo}.pdf`);
 }
 
-export function pdfAudit(yearIncome: any[], yearExpense: any[], yearFilter: string) {
+export function pdfAudit(data: { totalIncome: number; totalExpense: number; netSurplus: number; incomeByCategory: [string, number][]; expenseByCategory: [string, number][] }, yearFilter: string) {
   const doc = new jsPDF({ format: 'a4', unit: 'mm' });
   let y = addHeader(doc, 'ANNUAL AUDIT REPORT', `Financial Year ${Number(yearFilter)-1}-${yearFilter} (${FISCAL_START_LABEL} ${Number(yearFilter)-1} – ${FISCAL_END_LABEL} ${yearFilter})`, 10);
 
-  const totalIncome = yearIncome.reduce((s, t) => s + Number(t.amount), 0);
-  const totalExpense = yearExpense.reduce((s, t) => s + Number(t.amount), 0);
-  const netSurplus = totalIncome - totalExpense;
+  const { totalIncome, totalExpense, netSurplus, incomeByCategory: inc, expenseByCategory: exp } = data;
 
   doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(26, 26, 46);
   doc.text('FINANCIAL SUMMARY', 12, y); y += 7;
@@ -203,19 +194,17 @@ export function pdfAudit(yearIncome: any[], yearExpense: any[], yearFilter: stri
   y += 6;
 
   doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('INCOME BY CATEGORY', 12, y); y += 7;
-  const hwInc = headwise(yearIncome);
   doc.setFillColor(26, 26, 46); doc.rect(12, y, 186, 6, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
   doc.text('Category', 14, y + 4); doc.text('Amount', 120, y + 4, { align: 'right' }); doc.text('%', 160, y + 4, { align: 'right' }); doc.text('Count', 186, y + 4, { align: 'right' });
   y += 6;
-  hwInc.forEach(([cat, amt], i) => {
+  inc.forEach(([cat, amt]: [string, number], i: number) => {
     if (y > 270) { doc.addPage(); y = 14; }
     const pct = totalIncome > 0 ? ((amt / totalIncome) * 100).toFixed(1) : '0';
-    const count = yearIncome.filter((t: any) => (t.category || 'Uncategorized') === cat).length;
     if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(12, y, 186, 6, 'F'); }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(26, 26, 46);
     doc.text(cat, 14, y + 4); doc.text(fmt(amt), 120, y + 4, { align: 'right' });
-    doc.text(`${pct}%`, 160, y + 4, { align: 'right' }); doc.text(String(count), 186, y + 4, { align: 'right' });
+    doc.text(`${pct}%`, 160, y + 4, { align: 'right' });
     y += 6;
   });
   y += 6;
@@ -223,19 +212,17 @@ export function pdfAudit(yearIncome: any[], yearExpense: any[], yearFilter: stri
   if (y > 200) { doc.addPage(); y = 14; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(26, 26, 46);
   doc.text('EXPENSE BY CATEGORY', 12, y); y += 7;
-  const hwExp = headwise(yearExpense);
   doc.setFillColor(26, 26, 46); doc.rect(12, y, 186, 6, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
   doc.text('Category', 14, y + 4); doc.text('Amount', 120, y + 4, { align: 'right' }); doc.text('%', 160, y + 4, { align: 'right' }); doc.text('Count', 186, y + 4, { align: 'right' });
   y += 6;
-  hwExp.forEach(([cat, amt], i) => {
+  exp.forEach(([cat, amt]: [string, number], i: number) => {
     if (y > 270) { doc.addPage(); y = 14; }
     const pct = totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : '0';
-    const count = yearExpense.filter((t: any) => (t.category || 'Uncategorized') === cat).length;
     if (i % 2 === 0) { doc.setFillColor(255, 253, 247); doc.rect(12, y, 186, 6, 'F'); }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(26, 26, 46);
     doc.text(cat, 14, y + 4); doc.text(fmt(amt), 120, y + 4, { align: 'right' });
-    doc.text(`${pct}%`, 160, y + 4, { align: 'right' }); doc.text(String(count), 186, y + 4, { align: 'right' });
+    doc.text(`${pct}%`, 160, y + 4, { align: 'right' });
     y += 6;
   });
   y += 8;

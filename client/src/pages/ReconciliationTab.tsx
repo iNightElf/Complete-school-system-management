@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
 import { Scale, Plus, X, Download } from 'lucide-react';
 import { toast } from '../components/Toast';
-import { useAuthStore } from '../store';
-import { API_URL } from '../lib/config';
+import { useAuthStore, api } from '../store';
 
 const ACCOUNTS = ['AL_RAWA_BANK', 'GLOBAL_FORUM_BANK', 'CASH_IN_HAND'];
 
@@ -23,7 +21,7 @@ export default function ReconciliationTab() {
   const handleExport = async (reconciliationId: string) => {
     setExporting(reconciliationId);
     try {
-      const res = await axios.get(`${API_URL}/finance/reconciliations/${reconciliationId}`, { withCredentials: true });
+      const res = await api.get(`/finance/reconciliations/${reconciliationId}`);
       const { reconciliation, openingBalance, transactions } = res.data;
       const rows = [
         ['Account', reconciliation.account],
@@ -61,7 +59,7 @@ export default function ReconciliationTab() {
 
   const fetchRecords = async () => {
     try {
-      const res = await axios.get(`${API_URL}/finance/reconciliations`, { withCredentials: true });
+      const res = await api.get('/finance/reconciliations');
       setRecords(res.data);
     } catch { /* empty */ }
     finally { setLoading(false); }
@@ -73,9 +71,9 @@ export default function ReconciliationTab() {
     if (!account || !statementDate || !closingBalance) return;
     setSubmitting(true);
     try {
-      await axios.post(`${API_URL}/finance/reconciliations`, {
+      await api.post('/finance/reconciliations', {
         account, statementDate, closingBalance: Number(closingBalance), notes: notes || undefined,
-      }, { withCredentials: true });
+      });
       toast('Reconciliation recorded', 'success');
       setShowForm(false);
       setClosingBalance('');

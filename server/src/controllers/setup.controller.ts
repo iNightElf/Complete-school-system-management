@@ -50,6 +50,12 @@ export const initSetup = async (req: Request, res: Response) => {
 
     const hasAdmin = await hasValidAdmin();
     const setupToken = process.env.SETUP_TOKEN;
+
+    // In production, SETUP_TOKEN is required. If missing, refuse all registration attempts.
+    if (process.env.NODE_ENV === 'production' && !setupToken) {
+      return res.status(403).json({ error: "Setup is not configured. Ask the server administrator to set SETUP_TOKEN." });
+    }
+
     if (setupToken) {
       if (hasAdmin) {
         return res.status(400).json({ error: "System already has an admin. Setup is not required." });

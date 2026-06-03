@@ -17,21 +17,11 @@ async function resolveClassId(className: string): Promise<string | null> {
 }
 
 async function nextStudentId(): Promise<string> {
-  const result = await prisma.student.aggregate({
-    _max: { studentId: true },
+  const { nextValue, prefix, padLength } = await prisma.studentIdCounter.update({
+    where: { id: 'singleton' },
+    data: { nextValue: { increment: 1 } },
   });
-  const maxId = result._max.studentId || 'S000000';
-  const num = parseInt(maxId.replace(/\D/g, ''), 10) || 0;
-  return `S${String(num + 1).padStart(6, '0')}`;
-}
-
-async function generateStudentIdWithRetry(maxAttempts = 5): Promise<string> {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const id = await nextStudentId();
-    const exists = await prisma.student.findUnique({ where: { studentId: id }, select: { id: true } });
-    if (!exists) return id;
-  }
-  throw new Error('Failed to generate unique student ID after ' + maxAttempts + ' attempts');
+  return `${prefix}${String(nextValue).padStart(padLength, '0')}`;
 }
 
 export const getAllStudents = async (req: Request, res: Response) => {
@@ -80,55 +70,42 @@ export const createStudent = async (req: Request, res: Response) => {
     const parsed = parsePhoto(req.body);
     const classId = await resolveClassId(className);
 
-    // Retry loop to handle concurrent studentId race
-    let lastError: any;
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      try {
-        const studentId = await generateStudentIdWithRetry();
-        const student = await prisma.student.create({
-          data: {
-            class: className,
-            classId,
-            studentId,
-            roll: roll || null,
-            session: session || null,
-            name,
-            fatherName: fatherName || null,
-            motherName: motherName || null,
-            contact: contact || null,
-          },
-        });
+    const studentId = await nextStudentId();
+    const student = await prisma.student.create({
+      data: {
+        class: className,
+        classId,
+        studentId,
+        roll: roll || null,
+        session: session || null,
+        name,
+        fatherName: fatherName || null,
+        motherName: motherName || null,
+        contact: contact || null,
+      },
+    });
 
-        if (parsed) {
-          uploadPhotoAsync(BUCKET, "students", student.id, parsed.buffer, parsed.mimeType);
-        }
-
-        logAudit({ action: "CREATE", entityType: "Student", entityId: student.id, details: JSON.stringify({ name, class: className }) });
-        return res.status(201).json({
-          id: student.id,
-          classId: student.classId,
-          class: student.class,
-          studentId: student.studentId,
-          roll: student.roll,
-          session: student.session,
-          name: student.name,
-          fatherName: student.fatherName,
-          motherName: student.motherName,
-          contact: student.contact,
-          photoUrl: null,
-          hasPhoto: false,
-          hasGraduated: false,
-          createdAt: student.createdAt,
-        });
-      } catch (err: any) {
-        lastError = err;
-        if (err?.code === 'P2002' && err?.meta?.target?.includes('studentId')) {
-          continue; // retry with new ID
-        }
-        throw err;
-      }
+    if (parsed) {
+      uploadPhotoAsync(BUCKET, "students", student.id, parsed.buffer, parsed.mimeType);
     }
-    throw lastError || new Error('Failed to create student after retries');
+
+    logAudit({ action: "CREATE", entityType: "Student", entityId: student.id, details: JSON.stringify({ name, class: className }) });
+    return res.status(201).json({
+      id: student.id,
+      classId: student.classId,
+      class: student.class,
+      studentId: student.studentId,
+      roll: student.roll,
+      session: student.session,
+      name: student.name,
+      fatherName: student.fatherName,
+      motherName: student.motherName,
+      contact: student.contact,
+      photoUrl: null,
+      hasPhoto: false,
+      hasGraduated: false,
+      createdAt: student.createdAt,
+    });
   } catch (error: any) {
     handleControllerError(res, error, req.path);
   }
@@ -281,25 +258,31 @@ export const importStudents = async (req: Request, res: Response) => {
       return res.status(400).json({ created: 0, errors, students: [] });
     }
 
-    const result = await prisma.student.aggregate({ _max: { studentId: true } });
-    const maxId = result._max.studentId || 'S000000';
-    const startNum = parseInt(maxId.replace(/\D/g, ''), 10) || 0;
+    const created = await prisma.$transaction(async (tx) => {
+      // reserve the IDs atomically
+      const { nextValue, prefix, padLength } = await tx.studentIdCounter.update({
+        where: { id: 'singleton' },
+        data: { nextValue: { increment: valid.length } },
+      });
 
-    const data = valid.map((s: any, i: number) => ({
-      class: s.class,
-      classId: classMap.get(s.class) || null,
-      studentId: `S${String(startNum + 1 + i).padStart(6, '0')}`,
-      roll: s.roll || null,
-      session: s.session || null,
-      name: s.name,
-      fatherName: s.fatherName || null,
-      motherName: s.motherName || null,
-      contact: s.contact || null,
-    }));
+      const startNum = nextValue - valid.length;
 
-    const created = await prisma.student.createManyAndReturn({
-      data,
-      select: { id: true, name: true, class: true, studentId: true, roll: true },
+      const data = valid.map((s: any, i: number) => ({
+        class: s.class,
+        classId: classMap.get(s.class) || null,
+        studentId: `${prefix}${String(startNum + i).padStart(padLength, '0')}`,
+        roll: s.roll || null,
+        session: s.session || null,
+        name: s.name,
+        fatherName: s.fatherName || null,
+        motherName: s.motherName || null,
+        contact: s.contact || null,
+      }));
+
+      return tx.student.createManyAndReturn({
+        data,
+        select: { id: true, name: true, class: true, studentId: true, roll: true },
+      });
     });
 
     logAudit({ action: "IMPORT", entityType: "Student", entityId: `batch-${created.length}`, details: JSON.stringify({ created: created.length, errors: errors.length }) });

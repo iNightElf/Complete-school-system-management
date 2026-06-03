@@ -145,8 +145,8 @@ app.delete("/api/subjects/:id", authenticate, authorizePermission("subjects:writ
 app.get("/api/students/:id/results", authenticate, authorizePermission("results:read"), results.getStudentResults);
 app.post("/api/students/:id/results", authenticate, authorizePermission("results:write"), results.saveStudentResult);
 app.get("/api/classes/:classId/results", authenticate, authorizePermission("results:read"), results.getClassResults);
-app.delete("/api/classes/:classId/results", authenticate, authorizePermission("results:write"), results.deleteClassResultsOnly);
-app.delete("/api/classes/:classId/subjects", authenticate, authorizePermission("subjects:write"), results.deleteClassSubjects);
+app.delete("/api/classes/:classId/results", authenticate, authorizePermission("results:admin"), results.deleteClassResultsOnly);
+app.delete("/api/classes/:classId/subjects", authenticate, authorizePermission("subjects:admin"), results.deleteClassSubjects);
 
 // ── Academic Years ──
 app.get("/api/academic-years", authenticate, authorizePermission("academic-years:read"), academicYear.getAcademicYears);
@@ -193,6 +193,10 @@ app.post("/api/finance/opening-balances/revert/:id", authenticate, authorizePerm
 
 // ── Reports ──
 app.get("/api/finance/reports/agm", authenticate, authorizePermission("finance:read"), reportCtrl.getAGMReport);
+app.get("/api/finance/reports/headwise", authenticate, authorizePermission("finance:read"), reportCtrl.getHeadwiseReport);
+app.get("/api/finance/reports/monthly", authenticate, authorizePermission("finance:read"), reportCtrl.getMonthlyTransactions);
+app.get("/api/finance/reports/audit", authenticate, authorizePermission("finance:read"), reportCtrl.getAuditReport);
+app.get("/api/finance/dashboard-summary", authenticate, authorizePermission("finance:read"), reportCtrl.getDashboardSummary);
 app.get("/api/finance/defaulter", authenticate, authorizePermission("finance:read"), reportCtrl.getDefaulterReport);
 
 // ── Period Close ──
@@ -223,7 +227,7 @@ app.get("/api/wake-db", async (_req, res) => {
 // Health Check
 app.get("/health", async (_req, res) => {
   try {
-    await prisma.$queryRawUnsafe('SELECT 1');
+    await prisma.$queryRaw`SELECT 1`;
     res.json({ status: "ok", database: "connected" });
   } catch {
     res.json({ status: "ok", database: "connecting" });

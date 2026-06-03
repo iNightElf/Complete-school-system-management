@@ -191,6 +191,8 @@ interface SchoolState {
   fetchSubjects: (classId: string) => Promise<void>;
   fetchFinance: () => Promise<void>;
   fetchTransactions: (params?: Record<string, string>) => Promise<void>;
+  dashboardSummary: { totalIncome: number; totalDepositedToBank: number; depositRemaining: number };
+  fetchDashboardSummary: (fiscalYear?: string) => Promise<void>;
   fetchFeeSchedules: () => Promise<void>;
   fetchOpeningBalances: (year?: string) => Promise<void>;
   setOpeningBalances: (year: string, balances: Record<string, number>) => Promise<any>;
@@ -244,6 +246,7 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   classResults: {},
   studentResultsCache: {},
   expenseCategories: [],
+  dashboardSummary: { totalIncome: 0, totalDepositedToBank: 0, depositRemaining: 0 },
   loading: {},
 
   fetchClasses: async () => {
@@ -290,6 +293,13 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
       }
     } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
     finally { set((s) => ({ loading: { ...s.loading, transactions: false } })); }
+  },
+
+  fetchDashboardSummary: async (fiscalYear?: string) => {
+    try {
+      const res = await api.get('/finance/dashboard-summary', { params: { fiscalYear } });
+      set({ dashboardSummary: res.data });
+    } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
   },
 
   fetchFeeSchedules: async () => {

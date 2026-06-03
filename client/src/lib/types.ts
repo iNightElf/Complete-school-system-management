@@ -76,9 +76,7 @@ export interface FeeSchedule {
 export interface Transaction {
   id: string;
   date: string;
-  transactionDate?: string;
-  type: 'INCOME' | 'EXPENSE' | 'INTERNAL_TRANSFER';
-  transactionType?: string;
+  transactionType: 'INCOME' | 'EXPENSE' | 'INTERNAL_TRANSFER';
   description: string;
   category: string | null;
   amount: number;

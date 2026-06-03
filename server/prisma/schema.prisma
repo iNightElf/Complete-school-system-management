@@ -215,6 +215,7 @@ model Result {
   @@unique([studentId, term, session])
   @@index([studentId])
   @@index([session])
+  @@index([studentId, session])
 }
 
 model Transaction {
@@ -345,7 +346,7 @@ model PeriodClose {
   @@map("period_closes")
 }
 
-model Reconciliation {
+model   Reconciliation {
   id             String   @id @default(uuid())
   account        String   @db.VarChar(100)
   statementDate  DateTime @map("statement_date")
@@ -360,4 +361,24 @@ model Reconciliation {
   @@index([account])
   @@index([createdAt])
   @@map("reconciliations")
+}
+
+model StudentIdCounter {
+  id        String @id
+  prefix    String @default("S")
+  nextValue Int    @default(1) @map("next_value")
+  padLength Int    @default(6) @map("pad_length")
+
+  @@map("student_id_counters")
+}
+
+model IdempotencyKey {
+  id        String   @id
+  status    Int
+  body      Json
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("idempotency_keys")
 }

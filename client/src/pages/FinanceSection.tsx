@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { ReactNode, FormEvent } from 'react';
-import { useSchoolStore, useAuthStore, useUIStore } from '../store';
-import axios from 'axios';
+import { useSchoolStore, useAuthStore, useUIStore, api } from '../store';
 import { Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw, BookOpen, Shield, Lock, Scale } from 'lucide-react';
 import { toast } from '../components/Toast';
 import DatePicker from '../components/DatePicker';
@@ -13,7 +12,7 @@ import FeeScheduleTab from './FeeScheduleTab';
 import StudentWaiversTab from './StudentWaiversTab';
 import PeriodCloseTab from './PeriodCloseTab';
 import ReconciliationTab from './ReconciliationTab';
-import { API_URL } from '../lib/config';
+import { FISCAL_YEAR_START_MONTH } from '../lib/config';
 
 function monthDiff(from: string, to: string): number {
   const [y1, m1] = from.split('-').map(Number);
@@ -79,7 +78,7 @@ function Ledger({ fmt, fetchFinance, refreshKey }: { fmt: (n: number) => string;
       if (dateTo) params.dateTo = dateTo;
       params.page = String(p);
       params.limit = String(PAGE_SIZE);
-      const res = await axios.get('/api/finance/ledger', { params, withCredentials: true });
+      const res = await api.get('/finance/ledger', { params });
       if (res.data?.data) {
         setData(res.data.data);
         setTotal(res.data.total);
@@ -100,7 +99,7 @@ function Ledger({ fmt, fetchFinance, refreshKey }: { fmt: (n: number) => string;
     if (!cancelId || !canWrite) return;
     setCancelling(true);
     try {
-      await axios.post(`${API_URL}/finance/transactions/${cancelId}/cancel`, { reason: cancelReason }, { withCredentials: true });
+      await api.post(`/finance/transactions/${cancelId}/cancel`, { reason: cancelReason });
       toast('Transaction cancelled', 'success');
       setCancelId(null);
       setCancelReason('');
@@ -118,7 +117,7 @@ function Ledger({ fmt, fetchFinance, refreshKey }: { fmt: (n: number) => string;
       const params: Record<string, string> = { account: ledgerAccount };
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
-      const res = await axios.get('/api/finance/ledger', { params, withCredentials: true });
+      const res = await api.get('/finance/ledger', { params });
       const allEntries = res.data?.data || [];
       const { pdfLedger } = await import('../lib/financeReportPdf');
       pdfLedger(allEntries, ledgerAccount, dateFrom, dateTo, res.data.openingBalance, res.data.closingBalance);
@@ -131,7 +130,7 @@ function Ledger({ fmt, fetchFinance, refreshKey }: { fmt: (n: number) => string;
       const params: Record<string, string> = { account: ledgerAccount };
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
-      const res = await axios.get('/api/finance/ledger', { params, withCredentials: true });
+      const res = await api.get('/finance/ledger', { params });
       const allEntries = res.data?.data || [];
       const { buildLedgerPrintHtml } = await import('../lib/financeReportPdf');
       const html = buildLedgerPrintHtml(allEntries, ledgerAccount, dateFrom, dateTo, res.data.openingBalance, res.data.closingBalance, fmt);
@@ -298,7 +297,7 @@ function Ledger({ fmt, fetchFinance, refreshKey }: { fmt: (n: number) => string;
 }
 
 const FinanceSection = () => {
-  const { balances, transactions, feeSchedules, fetchFinance, fetchTransactions, fetchFeeSchedules, expenseCategories, fetchExpenseCategories, classes, students, fetchClasses, fetchStudents } = useSchoolStore();
+  const { balances, feeSchedules, fetchFinance, fetchDashboardSummary, dashboardSummary, fetchFeeSchedules, expenseCategories, fetchExpenseCategories, classes, students, fetchClasses, fetchStudents } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
 
@@ -335,7 +334,16 @@ const FinanceSection = () => {
   const isMonthlyFee = matchedSchedule?.frequency === 'MONTHLY';
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); fetchFeeSchedules(); fetchExpenseCategories(); }, []);
+  useEffect(() => {
+    fetchFinance();
+    const now = new Date();
+    const fy = now.getMonth() >= FISCAL_YEAR_START_MONTH ? now.getFullYear() + 1 : now.getFullYear();
+    fetchDashboardSummary(String(fy));
+    fetchClasses();
+    fetchStudents();
+    fetchFeeSchedules();
+    fetchExpenseCategories();
+  }, []);
   useEffect(() => { useUIStore.getState().registerSwipeBack(() => setMainTab('transactions')); }, []);
   // Re-fetch students when class changes (ensures student data is current)
   useEffect(() => { if (selectedClass) fetchStudents(); }, [selectedClass]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -348,7 +356,7 @@ const FinanceSection = () => {
     const sched = feeSchedules.find((fs: any) => fs.category === category && (!fs.classId || fs.classRel?.name === selectedClass));
     if (!sched) return;
     const ctrl = new AbortController();
-    axios.get(`/api/finance/fee-waivers`, { signal: ctrl.signal, params: { studentId: selectedStudent, feeScheduleId: sched.id, active: 'true' }, withCredentials: true })
+    api.get(`/finance/fee-waivers`, { signal: ctrl.signal, params: { studentId: selectedStudent, feeScheduleId: sched.id, active: 'true' } })
       .then(res => {
         const waiver = res.data?.[0];
         const amount = waiver ? Number(waiver.value) : Number(sched.amount);
@@ -367,7 +375,7 @@ const FinanceSection = () => {
     const sched = feeSchedules.find((fs: any) => fs.category === category && (!fs.classId || fs.classRel?.name === selectedClass));
     if (sched?.applicability === 'ASSIGNED_ONLY') {
       const ctrl = new AbortController();
-      axios.get(`/api/finance/student-fee-assignments`, { signal: ctrl.signal, params: { feeScheduleId: sched.id }, withCredentials: true })
+      api.get(`/finance/student-fee-assignments`, { signal: ctrl.signal, params: { feeScheduleId: sched.id } })
         .then(res => setAssignedStudentIds(res.data.map((a: any) => a.studentId)))
         .catch(() => setAssignedStudentIds(null));
       return () => ctrl.abort();
@@ -382,7 +390,7 @@ const FinanceSection = () => {
     const ctrl = new AbortController();
     const params: Record<string, string> = { studentId: selectedStudent, feeMonth };
     if (feeMonthTo) params.feeMonthTo = feeMonthTo;
-    axios.get('/api/finance/fee-status', { signal: ctrl.signal, params, withCredentials: true })
+    api.get('/finance/fee-status', { signal: ctrl.signal, params })
       .then(res => {
         setFeeStatusList(res.data || []);
         const defaultChecked: Record<string, boolean> = {};
@@ -423,18 +431,7 @@ const FinanceSection = () => {
     }
   }, [availableStudents, selectedStudent]);
 
-  // Compute totals from transactions (exclude cancelled)
-  const activeTransactions = transactions.filter((t: any) => !t.isCancelled);
-
-  const totalIncome = activeTransactions
-    .filter((t: any) => t.transactionType === 'INCOME' && (t.destinationAccount === 'CASH_IN_HAND' || t.destinationAccount === 'AL_RAWA_BANK'))
-    .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-
-  const totalDepositedToBank = activeTransactions
-    .filter((t: any) => t.sourceAccount === 'CASH_IN_HAND' && t.destinationAccount === 'AL_RAWA_BANK')
-    .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-
-  const depositRemaining = totalIncome - totalDepositedToBank;
+  const { totalIncome, totalDepositedToBank, depositRemaining } = dashboardSummary;
 
   const resetForm = () => {
     setAmount(''); setCategory(''); setDesc('');
@@ -500,12 +497,14 @@ const FinanceSection = () => {
         body.feeMonth = feeMonth || undefined;
       }
 
-      await axios.post(`${API_URL}/finance/transactions`, body, { withCredentials: true });
+      await api.post(`/finance/transactions`, body);
 
       toast(activeTab === 'income' ? 'Income recorded ✓' : activeTab === 'expense' ? 'Expense recorded ✓' : 'Transfer recorded ✓', 'success');
       resetForm();
       fetchFinance();
-      fetchTransactions();
+      const now = new Date();
+      const fy = now.getMonth() >= FISCAL_YEAR_START_MONTH ? now.getFullYear() + 1 : now.getFullYear();
+      fetchDashboardSummary(String(fy));
       setLedgerRefreshKey(k => k + 1);
     } catch (err: any) {
       const msg = err?.response?.data?.error;
@@ -811,7 +810,7 @@ const FinanceSection = () => {
                         <button onClick={async () => {
                           if (!newCategoryName.trim()) return;
                           try {
-                            await axios.post('/api/categories', { type: 'EXPENSE', name: newCategoryName.trim() });
+                            await api.post('/categories', { type: 'EXPENSE', name: newCategoryName.trim() });
                             await fetchExpenseCategories();
                             setNewCategoryName('');
                             toast('Category added', 'success');
@@ -826,9 +825,9 @@ const FinanceSection = () => {
                             <span>{c}</span>
                             <button onClick={async () => {
                               try {
-                                const res = await axios.get('/api/categories?type=EXPENSE');
+                                const res = await api.get('/categories?type=EXPENSE');
                                 const cat = res.data.find((x: any) => x.name === c);
-                                if (cat) await axios.delete(`/api/categories/${cat.id}`);
+                                if (cat) await api.delete(`/categories/${cat.id}`);
                                 await fetchExpenseCategories();
                                 toast('Category deleted', 'success');
                               } catch { toast('Failed to delete', 'error'); }

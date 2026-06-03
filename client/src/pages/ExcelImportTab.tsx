@@ -1,9 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { toast } from '../components/Toast';
 import { Upload, Trash2, Edit2, Check, X, Download, Loader } from 'lucide-react';
-import { useSchoolStore } from '../store';
-import axios from 'axios';
-import { API_URL } from '../lib/config';
+import { useSchoolStore, api } from '../store';
 
 
 
@@ -239,32 +237,25 @@ export default function ExcelImportTab() {
         const sourceAccount = row.type === 'income' ? undefined : 'AL_RAWA_BANK';
         const destinationAccount = row.type === 'income' ? 'CASH_IN_HAND' : undefined;
 
-        const res = await fetch(`${API_URL}/finance/transactions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            date: row.date,
-            amount: parseFloat(row.amount),
-            sourceAccount,
-            destinationAccount,
-            category: row.category,
-            description: row.description || undefined,
-            referenceId: row.token || undefined,
-            feeMonth: row.feeMonth || undefined,
-            studentId: row.studentId || undefined,
-            className: row.className || undefined,
-          }),
+        await api.post('/finance/transactions', {
+          date: row.date,
+          amount: parseFloat(row.amount),
+          sourceAccount,
+          destinationAccount,
+          category: row.category,
+          description: row.description || undefined,
+          referenceId: row.token || undefined,
+          feeMonth: row.feeMonth || undefined,
+          studentId: row.studentId || undefined,
+          className: row.className || undefined,
         });
-        if (res.ok) {
-          success++;
-        } else if (res.status === 409) {
+        success++;
+      } catch (err: any) {
+        if (err.response?.status === 409) {
           duplicates++;
         } else {
           failed++;
         }
-      } catch {
-        failed++;
       }
     }
 

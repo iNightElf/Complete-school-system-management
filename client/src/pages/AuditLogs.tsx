@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../store';
 import Layout from '../components/Layout';
 import { ClipboardList, X } from 'lucide-react';
-import { API_URL } from '../lib/config';
 
 const ACTION_LABELS: Record<string, string> = {
   CREATE: 'Create',
@@ -47,7 +46,7 @@ const AuditLogs = () => {
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
       if (userIdFilter) params.userId = userIdFilter;
-      const res = await axios.get(`${API_URL}/audit`, { params, withCredentials: true });
+      const res = await api.get('/audit', { params });
       setLogs(res.data.data);
       setTotal(res.data.total);
     } catch { /* ignore */ }
@@ -55,10 +54,10 @@ const AuditLogs = () => {
   };
 
   useEffect(() => {
-    axios.get(`${API_URL}/audit/actions`, { withCredentials: true })
+    api.get('/audit/actions')
       .then(res => setActions(res.data.map((r: any) => r.action)))
       .catch(() => {});
-    axios.get(`${API_URL}/audit/entity-types`, { withCredentials: true })
+    api.get('/audit/entity-types')
       .then(res => setEntityTypes(res.data.map((r: any) => r.entityType)))
       .catch(() => {});
   }, []);

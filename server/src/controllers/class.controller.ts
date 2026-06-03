@@ -80,10 +80,10 @@ export const promoteAll = async (req: Request, res: Response) => {
     if (!targetYearName) return res.status(400).json({ error: "targetYearName is required" });
     const dryRun = req.query.dryRun === 'true';
 
+    // ── Read phase (all reads before transaction) ──
     const allClasses = await prisma.schoolClass.findMany({ orderBy: { order: 'asc' } });
     const allClassIds = allClasses.map(c => c.id);
 
-    // Batch-fetch all data before the loop: O(1) queries instead of O(N) per class
     const allStudents = await prisma.student.findMany({
       where: { classId: { in: allClassIds }, deletedAt: null, graduatedAt: null, NOT: { session: targetYearName } },
     });
@@ -118,99 +118,122 @@ export const promoteAll = async (req: Request, res: Response) => {
       subjectsByClass.get(s.classId)!.push(s);
     }
 
+    const classByOrder = new Map(allClasses.map(c => [c.order, c]));
+
+    // ── Dry-run path (no writes) ──
+    if (dryRun) {
+      const promotedDR: any[] = [];
+      const graduatedDR: any[] = [];
+      const classesCreatedDR: string[] = [];
+      for (const cls of allClasses) {
+        const students = studentsByClass.get(cls.id) || [];
+        if (students.length === 0) continue;
+        let nextClass = classByOrder.get(cls.order + 1);
+        if (!nextClass) {
+          let nextName: string | null = null;
+          const nameMatch = cls.name.match(/^Class\s+(\d+)$/i);
+          if (nameMatch) {
+            const num = parseInt(nameMatch[1], 10);
+            if (num < 10) nextName = `Class ${num + 1}`;
+          } else {
+            const seq: Record<string, string> = {
+              'play': 'Nursery', 'nursery': 'KG', 'kg': 'Class 1',
+            };
+            nextName = seq[cls.name.trim().toLowerCase()] || null;
+          }
+          if (nextName) {
+            promotedDR.push({ from: cls.name, to: nextName, count: students.length, newClass: true });
+            classesCreatedDR.push(nextName);
+          } else {
+            graduatedDR.push({ from: cls.name, count: students.length });
+          }
+        } else {
+          promotedDR.push({ from: cls.name, to: nextClass.name, count: students.length, newClass: false });
+        }
+      }
+      res.json({ promoted: promotedDR, graduated: graduatedDR, classesCreated: classesCreatedDR, dryRun: true });
+      return;
+    }
+
+    // ── Write phase (all writes inside a single atomic transaction) ──
     const promoted: any[] = [];
     const graduated: any[] = [];
     const classesCreated: string[] = [];
-    const errors: any[] = [];
-    const promoteUpdates: { studentIds: string[]; nextClass: any }[] = [];
-    const graduateUpdates: { studentIds: string[] }[] = [];
 
-    const classByOrder = new Map(allClasses.map(c => [c.order, c]));
+    await prisma.$transaction(async (tx) => {
+      for (const cls of allClasses) {
+        const students = studentsByClass.get(cls.id) || [];
+        if (students.length === 0) continue;
 
-    for (const cls of allClasses) {
-      const students = studentsByClass.get(cls.id) || [];
-      if (students.length === 0) continue;
+        let nextClass = classByOrder.get(cls.order + 1);
+        let createdNew = false;
 
-      let nextClass = classByOrder.get(cls.order + 1);
-      let createdNew = false;
+        if (!nextClass) {
+          let nextName: string | null = null;
 
-      if (!nextClass) {
-        let nextName: string | null = null;
+          const nameMatch = cls.name.match(/^Class\s+(\d+)$/i);
+          if (nameMatch) {
+            const num = parseInt(nameMatch[1], 10);
+            if (num < 10) nextName = `Class ${num + 1}`;
+          } else {
+            const seq: Record<string, string> = {
+              'play': 'Nursery', 'nursery': 'KG', 'kg': 'Class 1',
+            };
+            nextName = seq[cls.name.trim().toLowerCase()] || null;
+          }
 
-        const nameMatch = cls.name.match(/^Class\s+(\d+)$/i);
-        if (nameMatch) {
-          const num = parseInt(nameMatch[1], 10);
-          if (num < 10) nextName = `Class ${num + 1}`;
-        } else {
-          const seq: Record<string, string> = {
-            'play': 'Nursery', 'nursery': 'KG', 'kg': 'Class 1',
-          };
-          nextName = seq[cls.name.trim().toLowerCase()] || null;
-        }
-
-        if (nextName) {
-          if (dryRun) {
-            promoted.push({ from: cls.name, to: nextName, count: students.length, newClass: true });
+          if (nextName) {
+            nextClass = await tx.schoolClass.create({ data: { name: nextName, order: cls.order + 1 } });
+            createdNew = true;
             classesCreated.push(nextName);
-            continue;
-          }
-          nextClass = await prisma.schoolClass.create({ data: { name: nextName, order: cls.order + 1 } });
-          createdNew = true;
-          classesCreated.push(nextName);
 
-          // Copy fees, books, subjects using pre-fetched data
-          const fees = feesByClass.get(cls.id) || [];
-          if (fees.length > 0) {
-            await prisma.feeSchedule.createMany({
-              data: fees.map(f => ({
-                academicYearId: targetAcademicYearId, classId: nextClass!.id,
-                category: f.category, amount: f.amount, frequency: f.frequency, applicability: f.applicability,
-              })),
-            });
-          }
-          const books = booksByClass.get(cls.id) || [];
-          if (books.length > 0) {
-            await prisma.book.createMany({
-              data: books.map(b => ({
-                name: b.name, publication: b.publication, mrp: b.mrp,
-                discounted: b.discounted, sell: b.sell, classId: nextClass!.id,
-              })),
-            });
-          }
-          const subjects = subjectsByClass.get(cls.id) || [];
-          if (subjects.length > 0) {
-            await prisma.subject.createMany({
-              data: subjects.map(s => ({
-                name: s.name, fullMarks: s.fullMarks, order: s.order, classId: nextClass!.id,
-              })),
-            });
-          }
-        } else {
-          graduateUpdates.push({ studentIds: students.map(s => s.id) });
-          if (!dryRun) {
-            await prisma.student.updateMany({
+            const fees = feesByClass.get(cls.id) || [];
+            if (fees.length > 0) {
+              await tx.feeSchedule.createMany({
+                data: fees.map(f => ({
+                  academicYearId: targetAcademicYearId, classId: nextClass!.id,
+                  category: f.category, amount: f.amount, frequency: f.frequency, applicability: f.applicability,
+                })),
+              });
+            }
+            const books = booksByClass.get(cls.id) || [];
+            if (books.length > 0) {
+              await tx.book.createMany({
+                data: books.map(b => ({
+                  name: b.name, publication: b.publication, mrp: b.mrp,
+                  discounted: b.discounted, sell: b.sell, classId: nextClass!.id,
+                })),
+              });
+            }
+            const subjects = subjectsByClass.get(cls.id) || [];
+            if (subjects.length > 0) {
+              await tx.subject.createMany({
+                data: subjects.map(s => ({
+                  name: s.name, fullMarks: s.fullMarks, order: s.order, classId: nextClass!.id,
+                })),
+              });
+            }
+          } else {
+            await tx.student.updateMany({
               where: { id: { in: students.map(s => s.id) } },
               data: { graduatedAt: new Date(), session: targetYearName },
             });
+            graduated.push({ from: cls.name, count: students.length });
+            continue;
           }
-          graduated.push({ from: cls.name, count: students.length });
-          continue;
         }
-      }
 
-      promoteUpdates.push({ studentIds: students.map(s => s.id), nextClass });
-      if (!dryRun) {
-        await prisma.student.updateMany({
+        await tx.student.updateMany({
           where: { id: { in: students.map(s => s.id) } },
           data: { classId: nextClass.id, class: nextClass.name, session: targetYearName },
         });
+        if (!createdNew) {
+          promoted.push({ from: cls.name, to: nextClass.name, count: students.length, newClass: false });
+        }
       }
-      if (!createdNew) {
-        promoted.push({ from: cls.name, to: nextClass.name, count: students.length, newClass: false });
-      }
-    }
+    });
 
-    res.json({ promoted, graduated, classesCreated, errors, dryRun });
+    res.json({ promoted, graduated, classesCreated, dryRun });
   } catch (error: any) {
     handleControllerError(res, error, req.path);
   }

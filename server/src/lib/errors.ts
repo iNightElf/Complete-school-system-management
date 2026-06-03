@@ -45,7 +45,7 @@ export function handleControllerError(res: Response, error: any, path?: string) 
 export async function waitForDatabase(prisma: any, maxRetries = 10, delayMs = 2000): Promise<void> {
   for (let i = 1; i <= maxRetries; i++) {
     try {
-      await prisma.$queryRawUnsafe('SELECT 1');
+      await prisma.$queryRaw`SELECT 1`;
       return;
     } catch {
       if (i === maxRetries) throw new Error(`Database unreachable after ${maxRetries} attempts`);

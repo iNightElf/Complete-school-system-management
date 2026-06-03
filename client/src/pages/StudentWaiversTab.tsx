@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import axios from 'axios';
-import { useSchoolStore } from '../store';
+import { useSchoolStore, api } from '../store';
 import { X, Shield, Search } from 'lucide-react';
 import { toast } from '../components/Toast';
-import { API_URL } from '../lib/config';
 
 const StudentWaiversTab = () => {
   const { classes, students, feeSchedules: schedules, fetchClasses, fetchStudents, fetchFeeSchedules } = useSchoolStore();
@@ -32,7 +30,7 @@ const StudentWaiversTab = () => {
   const loadActiveWaivers = useCallback(async () => {
     setActiveLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/finance/fee-waivers`, { params: { active: 'true' }, withCredentials: true });
+      const res = await api.get('/finance/fee-waivers', { params: { active: 'true' } });
       setActiveWaivers(res.data);
     } catch { /* silent */ }
     finally { setActiveLoading(false); }
@@ -49,8 +47,8 @@ const StudentWaiversTab = () => {
     setLoading(true);
     try {
       const [waiverRes, historyRes] = await Promise.all([
-        axios.get(`${API_URL}/finance/fee-waivers`, { params: { studentId: selectedStudent } }),
-        axios.get(`${API_URL}/finance/fee-waivers`, { params: { studentId: selectedStudent, active: 'false' } }),
+        api.get('/finance/fee-waivers', { params: { studentId: selectedStudent } }),
+        api.get('/finance/fee-waivers', { params: { studentId: selectedStudent, active: 'false' } }),
       ]);
       setWaivers(waiverRes.data);
       setHistory(historyRes.data);
@@ -85,9 +83,9 @@ const StudentWaiversTab = () => {
     if (!selectedScheduleId || !expectedAmount) { toast('Select a fee category and enter expected amount', 'error'); return; }
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/finance/fee-waivers`, {
+      await api.post('/finance/fee-waivers', {
         studentId: selectedStudent, feeScheduleId: selectedScheduleId, value: Number(expectedAmount), reason, approvedBy,
-      }, { withCredentials: true });
+      });
       toast('Waiver saved ✓', 'success');
       await loadData();
       await loadActiveWaivers();
@@ -97,7 +95,7 @@ const StudentWaiversTab = () => {
 
   const deactivateWaiver = async (waiverId: string) => {
     try {
-      await axios.post(`${API_URL}/finance/fee-waivers/${waiverId}/deactivate`, {}, { withCredentials: true });
+      await api.post(`/finance/fee-waivers/${waiverId}/deactivate`, {});
       toast('Waiver removed', 'success');
       await loadData();
       await loadActiveWaivers();
@@ -122,10 +120,10 @@ const StudentWaiversTab = () => {
     if (!editExpected) { toast('Enter expected amount', 'error'); return; }
     try {
       // Immutable: deactivate old, create new
-      await axios.post(`${API_URL}/finance/fee-waivers/${w.id}/deactivate`, {}, { withCredentials: true });
-      await axios.post(`${API_URL}/finance/fee-waivers`, {
+      await api.post(`/finance/fee-waivers/${w.id}/deactivate`, {});
+      await api.post('/finance/fee-waivers', {
         studentId: w.studentId, feeScheduleId: w.feeScheduleId, value: Number(editExpected), reason: editReason || w.reason, approvedBy: editApprovedBy || w.approvedBy,
-      }, { withCredentials: true });
+      });
       toast('Waiver updated ✓', 'success');
       setEditingId(null);
       setEditExpected('');

@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useSchoolStore } from '../store';
-import axios from 'axios';
+import { useSchoolStore, api } from '../store';
 import { toast } from '../components/Toast';
 import { Search, CheckSquare, Square } from 'lucide-react';
-import { API_URL } from '../lib/config';
 
 interface FeeSchedule {
   id: string;
@@ -40,7 +38,7 @@ const OptionalFeesTab = () => {
     setLoading(true);
     try {
       const asRes = selectedScheduleId
-        ? await axios.get(`${API_URL}/finance/student-fee-assignments`, { params: { feeScheduleId: selectedScheduleId, active: 'true' }, withCredentials: true })
+        ? await api.get('/finance/student-fee-assignments', { params: { feeScheduleId: selectedScheduleId, active: 'true' } })
         : { data: [] };
       setAssignments(asRes.data);
     } catch { toast('Failed to load data', 'error'); }
@@ -63,14 +61,13 @@ const OptionalFeesTab = () => {
     if (!selectedScheduleId) return;
     const edits = dateEdits[dateKey(studentId)];
     try {
-      await axios.post(`${API_URL}/finance/student-fee-assignments/toggle`,
+      await api.post('/finance/student-fee-assignments/toggle',
         {
           studentId,
           feeScheduleId: selectedScheduleId,
           ...(edits?.startsAt ? { startsAt: edits.startsAt } : {}),
           ...(edits?.endsAt ? { endsAt: edits.endsAt } : {}),
-        },
-        { withCredentials: true });
+        });
       toast('Updated', 'success');
       load();
     } catch { toast('Failed to update', 'error'); }
@@ -82,9 +79,8 @@ const OptionalFeesTab = () => {
   const bulkToggle = async (active: boolean) => {
     if (!selectedScheduleId || !classStudents.length) return;
     try {
-      await axios.post(`${API_URL}/finance/student-fee-assignments/bulk`,
-        { feeScheduleId: selectedScheduleId, studentIds: classStudents.map((s: any) => s.id), active, startsAt: bulkStartsAt || undefined, endsAt: bulkEndsAt || undefined },
-        { withCredentials: true });
+      await api.post('/finance/student-fee-assignments/bulk',
+        { feeScheduleId: selectedScheduleId, studentIds: classStudents.map((s: any) => s.id), active, startsAt: bulkStartsAt || undefined, endsAt: bulkEndsAt || undefined });
       toast(`Assigned to ${classStudents.length} students`, 'success');
       load();
     } catch { toast('Bulk assign failed', 'error'); }

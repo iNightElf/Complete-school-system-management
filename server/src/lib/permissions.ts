@@ -4,8 +4,8 @@ export type Permission =
   | "staff:read" | "staff:write"
   | "books:read" | "books:write"
   | "classes:read" | "classes:write"
-  | "subjects:read" | "subjects:write"
-  | "results:read" | "results:write"
+  | "subjects:read" | "subjects:write" | "subjects:admin"
+  | "results:read" | "results:write" | "results:admin"
   | "finance:read" | "finance:write" | "finance:admin"
   | "users:read" | "users:write"
   | "audit:read"
@@ -28,7 +28,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "books:read", "books:write",
     "classes:read", "classes:write",
     "subjects:read", "subjects:write",
-    "results:read", "results:write",
+    "results:read", "results:write", "results:admin", "subjects:admin",
     "finance:read", "finance:write", "finance:admin",
     "users:read", "users:write",
     "audit:read",

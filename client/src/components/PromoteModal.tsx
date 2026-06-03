@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
+import { api } from '../store';
 import { toast } from './Toast';
-import { API_URL } from '../lib/config';
 import { Loader2, Check, AlertTriangle, GraduationCap, ArrowRight, X } from 'lucide-react';
 
 interface Props {
@@ -20,24 +20,17 @@ export default function PromoteModal({ open, targetYearName, targetAcademicYearI
   useEffect(() => {
     if (!open) { setPreview(null); setConfirming(false); setResult(null); return; }
     setLoading(true);
-    fetch(`${API_URL}/classes/promote-all?dryRun=true`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ targetYearName, targetAcademicYearId }),
-    })
-      .then(r => r.json())
-      .then(d => { setPreview(d); setLoading(false); })
+    api.post('/classes/promote-all?dryRun=true', { targetYearName, targetAcademicYearId })
+      .then(r => { setPreview(r.data); setLoading(false); })
       .catch(() => { toast('Failed to load preview', 'error'); setLoading(false); onClose(); });
   }, [open]);
 
   const handleConfirm = async () => {
     setConfirming(true);
     try {
-      const res = await fetch(`${API_URL}/classes/promote-all`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ targetYearName, targetAcademicYearId }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error);
+      const res = await api.post('/classes/promote-all', { targetYearName, targetAcademicYearId });
+      const d = res.data;
+      if (d.error) throw new Error(d.error);
       setResult(d);
       toast('Promotion complete ✓', 'success');
       onDone();

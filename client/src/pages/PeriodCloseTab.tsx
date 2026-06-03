@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
 import { Lock, Unlock, Plus, X } from 'lucide-react';
 import { toast } from '../components/Toast';
-import { useAuthStore } from '../store';
-import { API_URL } from '../lib/config';
+import { useAuthStore, api } from '../store';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -19,7 +17,7 @@ export default function PeriodCloseTab() {
 
   const fetchPeriods = async () => {
     try {
-      const res = await axios.get(`${API_URL}/finance/period-closes`, { withCredentials: true });
+      const res = await api.get('/finance/period-closes');
       setPeriods(res.data);
     } catch { /* empty */ }
     finally { setLoading(false); }
@@ -31,7 +29,7 @@ export default function PeriodCloseTab() {
     if (!fiscalYear) return;
     setClosing(true);
     try {
-      await axios.post(`${API_URL}/finance/period-closes`, { fiscalYear, notes }, { withCredentials: true });
+      await api.post('/finance/period-closes', { fiscalYear, notes });
       toast(`Fiscal year ${fiscalYear} closed`, 'success');
       setShowForm(false);
       setNotes('');
@@ -45,7 +43,7 @@ export default function PeriodCloseTab() {
 
   const handleReopen = async (year: number) => {
     try {
-      await axios.delete(`${API_URL}/finance/period-closes/${year}`, { withCredentials: true });
+      await api.delete(`/finance/period-closes/${year}`);
       toast(`Fiscal year ${year} reopened`, 'success');
       fetchPeriods();
     } catch (e: any) {

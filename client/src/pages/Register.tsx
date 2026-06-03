@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
-import axios from 'axios';
+import { api } from '../store';
 import { Link } from 'react-router-dom';
 import { UserPlus, ShieldAlert, MailCheck, School, KeyRound } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
-import { API_URL } from '../lib/config';
 
 const Register = () => {
   const [name, setName] = useState('');
@@ -19,7 +18,7 @@ const Register = () => {
 
   useEffect(() => { document.title = 'Register - AL RAWA English School'; }, []);
   useEffect(() => {
-    axios.get(`${API_URL}/setup/status`)
+    api.get('/setup/status')
       .then(res => setSetupMode(!res.data.adminExists && res.data.setupTokenRequired))
       .catch(() => setSetupMode(false));
   }, []);
@@ -35,8 +34,8 @@ const Register = () => {
 
     setLoading(true);
     try {
-      const res = await axios.post(
-        `${API_URL}/setup/init`,
+      const res = await api.post(
+        '/setup/init',
         { name, email, password, token: setupToken }
       );
       if (res.data?.error) {

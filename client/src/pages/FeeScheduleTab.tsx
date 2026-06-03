@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-import { useSchoolStore } from '../store';
+import { useSchoolStore, api } from '../store';
 import { Plus, Save, Trash2, BookOpen, ChevronDown, ChevronRight, Pencil, CalendarPlus, Copy, GraduationCap } from 'lucide-react';
 import { toast } from '../components/Toast';
 import PromoteModal from '../components/PromoteModal';
@@ -55,10 +54,10 @@ const FeeScheduleTab = () => {
         applicability: form.applicability,
       };
       if (editingId) {
-        await axios.put(`/api/finance/fee-schedules/${editingId}`, payload);
+        await api.put(`/finance/fee-schedules/${editingId}`, payload);
         toast('Fee schedule updated', 'success');
       } else {
-        await axios.post('/api/finance/fee-schedules', { ...payload, academicYearId: activeYear.id });
+        await api.post('/finance/fee-schedules', { ...payload, academicYearId: activeYear.id });
         toast('Fee schedule created', 'success');
       }
       setShowForm(false);
@@ -70,7 +69,7 @@ const FeeScheduleTab = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      await axios.delete(`/api/finance/fee-schedules/${id}`);
+      await api.delete(`/finance/fee-schedules/${id}`);
       toast('Fee schedule deleted', 'success');
       fetchFeeSchedules();
     } catch { toast('Failed to delete', 'error'); }
@@ -82,7 +81,7 @@ const FeeScheduleTab = () => {
       return;
     }
     try {
-      const res = await axios.post('/api/academic-years', { ...yearForm, isActive: true });
+      const res = await api.post('/academic-years', { ...yearForm, isActive: true });
       toast('Academic year created', 'success');
       setShowYearForm(false);
       setYearForm({ name: '', startDate: '', endDate: '' });
@@ -97,7 +96,7 @@ const FeeScheduleTab = () => {
   const handleCopyFromPreviousYear = async () => {
     if (!activeYear || !previousYear) return;
     try {
-      const res = await axios.post('/api/finance/fee-schedules/copy-from-year', {
+      const res = await api.post('/finance/fee-schedules/copy-from-year', {
         sourceAcademicYearId: previousYear.id,
         targetAcademicYearId: activeYear.id,
       });
@@ -108,7 +107,7 @@ const FeeScheduleTab = () => {
 
   const handleSetActive = async (id: string) => {
     try {
-      await axios.put(`/api/academic-years/${id}`, { isActive: true });
+      await api.put(`/academic-years/${id}`, { isActive: true });
       toast('Active year changed', 'success');
       fetchAcademicYears();
     } catch { toast('Failed to update', 'error'); }

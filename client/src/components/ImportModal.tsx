@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
+import { api } from '../store';
 import { X, Upload, FileText, Download, AlertTriangle } from 'lucide-react';
 import { toast } from './Toast';
-import { API_URL } from '../lib/config';
 
 interface ImportResult {
   created: number;
@@ -80,14 +80,8 @@ export default function ImportModal({ open, onClose, onImported, entity = 'stude
     setLoading(true);
     setResult(null);
     try {
-      const res = await fetch(`${API_URL}${cfg.endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ [BODY_KEY[entity]]: items }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Import failed');
+      const res = await api.post(cfg.endpoint, { [BODY_KEY[entity]]: items });
+      const data = res.data;
       setResult(data);
       if (data.created > 0) {
         toast(`${data.created} ${cfg.label.toLowerCase()} imported ✓`, 'success');

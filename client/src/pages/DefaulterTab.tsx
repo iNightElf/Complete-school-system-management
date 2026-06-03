@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useSchoolStore } from '../store';
-import axios from 'axios';
+import { useSchoolStore, api } from '../store';
 import { toast } from '../components/Toast';
 import { AlertTriangle, Download, Printer, Check, X } from 'lucide-react';
 import { defaulterPDF } from '../lib/defaulterPdf';
-import { API_URL } from '../lib/config';
 
 function getMonthName(m: number) { return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m]; }
 
@@ -53,7 +51,7 @@ const DefaulterTab: React.FC = () => {
       params.monthFrom = monthFrom;
       params.monthTo = monthTo;
       params.year = yearFilter;
-      const res = await axios.get(`${API_URL}/finance/defaulter`, { params, withCredentials: true, signal });
+      const res = await api.get('/finance/defaulter', { params, signal });
       setDefaulterData(res.data);
     } catch { if (!signal?.aborted) toast('Failed to load defaulter data', 'error'); }
     finally { setLoading(false); }

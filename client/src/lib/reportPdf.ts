@@ -1,6 +1,8 @@
 import jsPDF from 'jspdf';
 import { gradeFromMarks, gpaToGrade, calcYearSummary, calcTermRanks, calcYearRanks, calcAttendPct } from './grading';
-import { API_URL, TERM_NAMES } from './config';
+import { TERM_NAMES } from './config';
+import { api } from '../store';
+import { SCHOOL_LOGO } from './logo';
 
 export function _pdfGradeChip(doc: jsPDF, cx: number, cy: number, grade: string) {
   const map: Record<string, [number[], number[]]> = {
@@ -26,7 +28,7 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
   // Fetch photo on-demand
   let photoDataUri: string | null = null;
   if (student.hasPhoto) {
-    try { const r = await fetch(`${API_URL}/students/${student.id}/photo`, { credentials: 'include' }); const blob = await r.blob(); photoDataUri = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch { console.debug('Photo fetch skipped'); }
+    try { const r = await api.get(`/students/${student.id}/photo`, { responseType: 'blob' }); const blob = r.data; photoDataUri = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch { console.debug('Photo fetch skipped'); }
   }
 
   const W = 210, M = 12, CW = W - M * 2;
@@ -42,11 +44,8 @@ export async function downloadReportCardPDF(student: any, clsName: string, subje
 
   // HEADER with logo
   try {
-    const logoEl = document.getElementById('school-logo') as HTMLImageElement;
-    if (logoEl?.src) {
-      const raw = logoEl.src.includes(',') ? logoEl.src.split(',')[1] : logoEl.src;
-      doc.addImage(raw, 'UNKNOWN', M, y, 22, 22);
-    }
+    const raw = SCHOOL_LOGO.includes(',') ? SCHOOL_LOGO.split(',')[1] : SCHOOL_LOGO;
+    doc.addImage(raw, 'UNKNOWN', M, y, 22, 22);
   } catch { console.debug('Image add skipped'); }
   doc.text('AL RAWA English School', M + 26, y + 10);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
