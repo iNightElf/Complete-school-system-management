@@ -1,3 +1,4 @@
+import { exec } from "child_process";
 import app from "./app.js";
 import { prisma } from "./lib/prisma.js";
 import { verifySMTP } from "./lib/email.js";
@@ -12,6 +13,11 @@ app.listen(PORT, async () => {
   try {
     await waitForDatabase(prisma, 15, 2000);
     log("info", "Database connected");
+    // Run migrations asynchronously once DB is up
+    exec("npx prisma migrate deploy 2>&1", { cwd: process.cwd(), timeout: 30000 }, (err) => {
+      if (err) log("warn", `Migration skipped or failed: ${err.message?.slice(0, 100)}`);
+      else log("info", "Migrations applied");
+    });
   } catch {
     log("error", "Database unreachable — server running but DB queries will fail");
   }
