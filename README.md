@@ -1,3 +1,12 @@
+---
+title: AL RAWA School Management
+emoji: 🏫
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+---
+
 # AL RAWA English School — School Management System
 
 A full-featured school management system for **AL RAWA English School** (Bangladesh). Manages students, teachers, staff, results, finance, books, and ID cards.
