@@ -4,6 +4,7 @@ import { useSchoolStore, useAuthStore, useUIStore } from '../store';
 import axios from 'axios';
 import { Clock, BarChart3, AlertTriangle, Users, Upload, Ban, ChevronLeft, ChevronRight, DollarSign, TrendingDown, RefreshCw, BookOpen, Shield, Lock, Scale } from 'lucide-react';
 import { toast } from '../components/Toast';
+import DatePicker from '../components/DatePicker';
 import FinanceReports from './FinanceReports';
 import DefaulterTab from './DefaulterTab';
 import OptionalFeesTab from './OptionalFeesTab';
@@ -50,7 +51,7 @@ const ACCOUNTS_LEDGER = [
   { id: 'AL_RAWA_BANK' as const, label: 'AL RAWA Bank', short: 'Bank', color: 'bg-blue-500' },
 ];
 
-function Ledger({ fmt, fetchFinance }: { fmt: (n: number) => string; fetchFinance: () => void }) {
+function Ledger({ fmt, fetchFinance, refreshKey }: { fmt: (n: number) => string; fetchFinance: () => void; refreshKey: number }) {
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
   const [ledgerAccount, setLedgerAccount] = useState<'AL_RAWA_BANK' | 'CASH_IN_HAND'>('CASH_IN_HAND');
@@ -92,7 +93,7 @@ function Ledger({ fmt, fetchFinance }: { fmt: (n: number) => string; fetchFinanc
     finally { setLoading(false); }
   }, [ledgerAccount, dateFrom, dateTo]);
 
-  useEffect(() => { setPage(1); fetchData(1); }, [ledgerAccount, dateFrom, dateTo]);
+  useEffect(() => { setPage(1); fetchData(1); }, [ledgerAccount, dateFrom, dateTo, refreshKey]);
   useEffect(() => { fetchData(page); }, [page, fetchData]);
 
   const handleCancel = async () => {
@@ -165,14 +166,8 @@ function Ledger({ fmt, fetchFinance }: { fmt: (n: number) => string; fetchFinanc
 
       {/* Filters */}
       <div className="px-5 py-3 border-b border-school-border flex flex-wrap gap-3 items-end">
-        <div>
-          <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">From</label>
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border border-school-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-school-accent" />
-        </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">To</label>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border border-school-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-school-accent" />
-        </div>
+        <DatePicker type="date" value={dateFrom} onChange={setDateFrom} label="From" />
+        <DatePicker type="date" value={dateTo} onChange={setDateTo} label="To" />
         {(dateFrom || dateTo) && (
           <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-xs text-school-accent hover:underline">Clear</button>
         )}
@@ -213,20 +208,26 @@ function Ledger({ fmt, fetchFinance }: { fmt: (n: number) => string; fetchFinanc
                   ? `${prefix}-${entry.fiscalYear}-${String(entry.receiptSequence).padStart(4, '0')}`
                   : '—';
                 return (
-              <tr key={entry.id} className={`hover:bg-school-paper/30 text-xs ${entry.isCancelled ? 'line-through opacity-50 bg-rose-50/30' : ''}`}>
+              <tr key={entry.id} className={`hover:bg-school-paper/30 text-xs ${entry.isCancelled || entry.reversalOfId ? 'line-through opacity-50 bg-rose-50/30' : ''}`}>
                 <td className="px-4 py-2.5 whitespace-nowrap font-mono font-bold">{new Date(entry.date).toLocaleDateString()}</td>
                 <td className="px-4 py-2.5 whitespace-nowrap font-mono text-[10px] text-school-muted">{receiptStr}</td>
                 <td className="px-4 py-2.5">
+                  {entry.reversalOfId ? (
+                    <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-purple-100 text-purple-700">
+                      Reversal
+                    </span>
+                  ) : (
                   <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${entry.isCancelled ? 'bg-rose-100 text-rose-500' : entry.transactionType === 'INCOME' ? 'bg-emerald-50 text-emerald-700' : entry.transactionType === 'EXPENSE' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}`}>
                     {entry.isCancelled ? 'Cancelled' : entry.transactionType === 'INTERNAL_TRANSFER' ? 'Transfer' : entry.transactionType}
                   </span>
+                  )}
                 </td>
-                <td className={`px-4 py-2.5 max-w-[200px] truncate ${entry.isCancelled ? 'text-rose-400' : 'text-school-muted'}`}>{entry.description}</td>
+                <td className={`px-4 py-2.5 max-w-[200px] truncate ${entry.isCancelled || entry.reversalOfId ? 'text-rose-400' : 'text-school-muted'}`}>{entry.description}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-emerald-600">{entry.debit ? fmt(entry.debit) : '—'}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-rose-600">{entry.credit ? fmt(entry.credit) : '—'}</td>
                 <td className="px-4 py-2.5 text-right font-bold font-mono">{fmt(entry.runningBalance)}</td>
                 {canWrite && <td className="px-4 py-2.5 text-center">
-                  {!entry.isCancelled ? (
+                  {!entry.isCancelled && !entry.reversalOfId ? (
                     <button onClick={() => setCancelId(entry.id)} title="Cancel transaction"
                       className="p-1 rounded-lg text-school-muted hover:text-red-600 hover:bg-red-50 transition-all">
                       <Ban size={14} />
@@ -320,6 +321,7 @@ const FinanceSection = () => {
   const [selectedStudent, setSelectedStudent] = useState('');
   const [feeMonth, setFeeMonth] = useState('');
   const [feeMonthTo, setFeeMonthTo] = useState('');
+  const [ledgerRefreshKey, setLedgerRefreshKey] = useState(0);
   const [showManageCategories, setShowManageCategories] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
@@ -378,16 +380,20 @@ const FinanceSection = () => {
   useEffect(() => {
     if (!selectedStudent || !feeMonth) { setFeeStatusList([]); return; }
     const ctrl = new AbortController();
-    axios.get('/api/finance/fee-status', { signal: ctrl.signal, params: { studentId: selectedStudent, feeMonth }, withCredentials: true })
+    const params: Record<string, string> = { studentId: selectedStudent, feeMonth };
+    if (feeMonthTo) params.feeMonthTo = feeMonthTo;
+    axios.get('/api/finance/fee-status', { signal: ctrl.signal, params, withCredentials: true })
       .then(res => {
         setFeeStatusList(res.data || []);
         const defaultChecked: Record<string, boolean> = {};
-        (res.data || []).forEach((f: any) => { if (!f.paid) defaultChecked[f.feeScheduleId] = true; });
+        (res.data || []).forEach((f: any) => {
+          if (!f.paid) defaultChecked[f.feeScheduleId] = true;
+        });
         setSelectedAllocations(defaultChecked);
       })
       .catch(() => setFeeStatusList([]));
     return () => ctrl.abort();
-  }, [selectedStudent, feeMonth]);
+  }, [selectedStudent, feeMonth, feeMonthTo]);
 
   // Auto-fill amount from checked allocations
   useEffect(() => {
@@ -500,6 +506,7 @@ const FinanceSection = () => {
       resetForm();
       fetchFinance();
       fetchTransactions();
+      setLedgerRefreshKey(k => k + 1);
     } catch (err: any) {
       const msg = err?.response?.data?.error;
       toast(msg || 'Failed to save transaction', 'error');
@@ -611,11 +618,7 @@ const FinanceSection = () => {
           {/* Form */}
           <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-school-border p-5 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Date</label>
-                <input type="date" required value={date} onChange={e => setDate(e.target.value)}
-                  className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent" />
-              </div>
+              <DatePicker type="date" value={date} onChange={setDate} label="Date" required />
               <div>
                 <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">Amount (৳)</label>
                 <input type="number" required min="1" placeholder="0" value={amount} onChange={e => setAmount(e.target.value)}
@@ -664,16 +667,8 @@ const FinanceSection = () => {
                 {selectedStudent && (
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">From Month</label>
-                        <input type="month" value={feeMonth} onChange={e => setFeeMonth(e.target.value)}
-                          className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase text-school-muted mb-1 block">To Month</label>
-                        <input type="month" value={feeMonthTo} onChange={e => setFeeMonthTo(e.target.value)}
-                          className="w-full border border-school-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-school-accent" />
-                      </div>
+                      <DatePicker type="month" value={feeMonth} onChange={setFeeMonth} label="From Month" />
+                      <DatePicker type="month" value={feeMonthTo} onChange={setFeeMonthTo} label="To Month" />
                     </div>
 
                     {feeStatusList.length > 0 ? (
@@ -703,9 +698,21 @@ const FinanceSection = () => {
                                         className="w-4 h-4 rounded border-school-border accent-school-primary cursor-pointer" />
                                     </td>
                                     <td className="px-4 py-2.5 text-sm">
-                                      <span className="font-medium text-school-primary">{f.category}</span>
-                                      <span className="ml-2 text-[10px] text-school-muted uppercase">({f.frequency})</span>
-                                      {f.paid && <span className="ml-2 text-[10px] text-emerald-600 font-bold">PAID</span>}
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-medium text-school-primary">{f.category}</span>
+                                        <span className="text-[10px] text-school-muted uppercase">({f.frequency})</span>
+                                        {f.paid && !f.unpaidMonths && <span className="text-[10px] text-emerald-600 font-bold">PAID</span>}
+                                      </div>
+                                      {f.unpaidMonths && f.unpaidMonths.length > 0 && (
+                                        <div className="mt-1 text-[11px] text-amber-700 font-medium">
+                                          Due: {f.unpaidMonths.join(', ')}
+                                        </div>
+                                      )}
+                                      {f.paid && f.unpaidMonths && f.unpaidMonths.length === 0 && (
+                                        <div className="mt-1 text-[10px] text-emerald-600 font-medium">
+                                          All months paid
+                                        </div>
+                                      )}
                                     </td>
                                     <td className="px-4 py-2.5 text-right">{isMonthly ? Number(f.amount).toLocaleString() : '—'}</td>
                                     <td className="px-4 py-2.5 text-right font-bold">{totalAmount.toLocaleString()}</td>
@@ -870,7 +877,7 @@ const FinanceSection = () => {
           )}
 
       {/* Ledger */}
-      <Ledger fmt={fmt} fetchFinance={fetchFinance} />
+      <Ledger fmt={fmt} fetchFinance={fetchFinance} refreshKey={ledgerRefreshKey} />
       </div>)}
 
     </div>

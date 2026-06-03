@@ -293,26 +293,54 @@ export const getLedger = async (req: Request, res: Response) => {
     const openingRow = await prisma.openingBalance.findFirst({
       where: { fiscalYear, account: account as string },
     });
-    const openingBalance = openingRow ? Number(openingRow.amount) : 0;
+    const fiscalOpening = openingRow ? Number(openingRow.amount) : 0;
 
-    const [total, raw] = await Promise.all([
+    // If a custom dateFrom is set, compute the actual opening balance at that date
+    // by summing all transactions from fiscal year start up to (but not including) dateFrom
+    let openingBalance = fiscalOpening;
+    if (dateFrom) {
+      const prior = await prisma.$queryRawUnsafe<[{ total: string | null }]>(`
+        SELECT COALESCE(SUM(
+          CASE WHEN destination_account = $1::text THEN amount
+               WHEN source_account = $1::text THEN -amount ELSE 0 END
+        ), 0) AS total
+        FROM transactions
+        WHERE transaction_date >= $2::timestamptz AND transaction_date < $3::timestamptz
+          AND (destination_account = $1::text OR source_account = $1::text)
+      `, account, start, dateFromDate);
+      openingBalance = fiscalOpening + Number(prior[0]?.total || 0);
+    }
+
+    const [total, raw, totals] = await Promise.all([
       prisma.transaction.count({ where }),
       prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(`
-        SELECT id, transaction_date, amount, transaction_type, source_account,
-               destination_account, category, description, student_id, class_name,
-               fee_month, is_cancelled, receipt_sequence, fiscal_year, created_at,
-          $1::numeric + COALESCE(SUM(
-            CASE WHEN is_cancelled = false THEN
+        WITH ledger AS (
+          SELECT id, transaction_date, amount, transaction_type, source_account,
+                 destination_account, category, description, student_id, class_name,
+                 fee_month, is_cancelled, receipt_sequence, fiscal_year, created_at,
+                 reversal_of_id,
+            $1::numeric + COALESCE(SUM(
               CASE WHEN destination_account = $2::text THEN amount
                    WHEN source_account = $2::text THEN -amount ELSE 0 END
-            ELSE 0 END
-          ) OVER (ORDER BY transaction_date ASC, created_at ASC), 0) AS running_balance
-        FROM transactions
-        WHERE transaction_date >= $3::timestamptz AND transaction_date <= $4::timestamptz
-          AND (destination_account = $2::text OR source_account = $2::text)
-        ORDER BY transaction_date DESC, created_at DESC
+            ) OVER (ORDER BY transaction_date ASC, created_at ASC), 0) AS running_balance
+          FROM transactions
+          WHERE transaction_date >= $3::timestamptz AND transaction_date <= $4::timestamptz
+            AND (destination_account = $2::text OR source_account = $2::text)
+        )
+        SELECT * FROM ledger
+        ORDER BY transaction_date ASC, created_at ASC
         LIMIT $5 OFFSET $6
       `, openingBalance, account, dateFromDate, dateToDate, limit, offset),
+      prisma.$queryRawUnsafe<[{ dr: string | null; cr: string | null }]>(`
+        SELECT
+          COALESCE(SUM(CASE WHEN destination_account = $1::text THEN amount ELSE 0 END), 0) AS dr,
+          COALESCE(SUM(CASE WHEN source_account = $1::text THEN amount ELSE 0 END), 0) AS cr
+        FROM transactions
+        WHERE transaction_date >= $2::timestamptz AND transaction_date <= $3::timestamptz
+          AND (destination_account = $1::text OR source_account = $1::text)
+          AND is_cancelled = false
+          AND reversal_of_id IS NULL
+      `, account, dateFromDate, dateToDate),
     ]);
 
     // Batch-fetch student names for rows on this page
@@ -326,20 +354,19 @@ export const getLedger = async (req: Request, res: Response) => {
       students.forEach(s => studentMap.set(s.id, { name: s.name, class: s.class || '' }));
     }
 
-    let totalDebits = 0;
-    let totalCredits = 0;
+    const totalDebits = Number(totals[0]?.dr || 0);
+    const totalCredits = Number(totals[0]?.cr || 0);
     const entries = raw.map((t: any) => {
       const isDebit = t.destination_account === account;
-      const debit = !t.is_cancelled && isDebit ? Number(t.amount) : 0;
-      const credit = !t.is_cancelled && !isDebit ? Number(t.amount) : 0;
-      totalDebits += debit;
-      totalCredits += credit;
+      const debitAmt = isDebit ? Number(t.amount) : 0;
+      const creditAmt = !isDebit ? Number(t.amount) : 0;
       const student = t.student_id ? studentMap.get(t.student_id) : undefined;
       return {
         id: t.id,
         date: t.transaction_date,
         transactionType: t.transaction_type,
         isCancelled: t.is_cancelled,
+        reversalOfId: t.reversal_of_id || null,
         receiptSequence: t.receipt_sequence,
         fiscalYear: t.fiscal_year,
         description: [
@@ -347,14 +374,14 @@ export const getLedger = async (req: Request, res: Response) => {
           student ? `${student.name}${student.class ? ` (${student.class})` : ''}` : '',
           t.description || '',
         ].filter(Boolean).join(' — ') || `${(t.source_account || 'External').replace(/_/g, ' ')} → ${(t.destination_account || 'External').replace(/_/g, ' ')}`,
-        debit: debit || null,
-        credit: credit || null,
+        debit: debitAmt || null,
+        credit: creditAmt || null,
         runningBalance: Number(t.running_balance),
       };
     });
 
     const totalPages = Math.max(1, Math.ceil(total / limit));
-    const closingBalance = entries.length > 0 ? entries[entries.length - 1].runningBalance : openingBalance;
+    const closingBalance = openingBalance + totalDebits - totalCredits;
 
     res.json({
       data: entries,
@@ -461,9 +488,21 @@ export const cancelTransaction = async (req: AuthRequest, res: Response) => {
   }
 };
 
+function monthsInRange(from: string, to: string): string[] {
+  const months: string[] = [];
+  let [y, m] = from.split('-').map(Number);
+  const [y2, m2] = to.split('-').map(Number);
+  while (y < y2 || (y === y2 && m <= m2)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return months;
+}
+
 export const getFeeStatus = async (req: Request, res: Response) => {
   try {
-    const { studentId, feeMonth, classId } = req.query;
+    const { studentId, feeMonth, feeMonthTo, classId } = req.query;
     if (!studentId || !feeMonth) return res.status(400).json({ error: "studentId and feeMonth are required" });
 
     const student = await prisma.student.findUnique({
@@ -489,33 +528,47 @@ export const getFeeStatus = async (req: Request, res: Response) => {
     const period = String(feeMonth);
     const year = period.split('-')[0];
 
-    const [monthlyPaid, onetimePaid] = await Promise.all([
-      prisma.paymentAllocation.findMany({
-        where: {
-          studentId: String(studentId),
-          period: { in: [period, year] },
-          feeScheduleId: { in: monthlyIds },
-        },
-        include: { transaction: { select: { isCancelled: true, reversalOfId: true } } },
-      }),
-      onetimeIds.length > 0 ? prisma.paymentAllocation.findMany({
-        where: {
-          studentId: String(studentId),
-          feeScheduleId: { in: onetimeIds },
-        },
-        include: { transaction: { select: { isCancelled: true, reversalOfId: true } } },
-      }) : [],
-    ]);
+    const range = feeMonthTo && String(feeMonthTo) > period
+      ? monthsInRange(period, String(feeMonthTo))
+      : [period];
 
-    const paidSet = new Set([
-      ...monthlyPaid.filter(a => !a.transaction.isCancelled && !a.transaction.reversalOfId).map(a => a.feeScheduleId),
-      ...onetimePaid.filter(a => !a.transaction.isCancelled && !a.transaction.reversalOfId).map(a => a.feeScheduleId),
-    ]);
+    const allocations = await prisma.paymentAllocation.findMany({
+      where: {
+        studentId: String(studentId),
+        feeScheduleId: { in: monthlyIds },
+        period: { in: range },
+      },
+      include: { transaction: { select: { isCancelled: true, reversalOfId: true } } },
+    });
+
+    const onetimePaid = onetimeIds.length > 0 ? await prisma.paymentAllocation.findMany({
+      where: {
+        studentId: String(studentId),
+        feeScheduleId: { in: onetimeIds },
+      },
+      include: { transaction: { select: { isCancelled: true, reversalOfId: true } } },
+    }) : [];
+
+    const paidMap = new Map<string, Set<string>>();
+    for (const a of allocations) {
+      if (a.transaction.isCancelled || a.transaction.reversalOfId) continue;
+      const fsId = a.feeScheduleId;
+      const prd = a.period;
+      if (!fsId || !prd) continue;
+      if (!paidMap.has(fsId)) paidMap.set(fsId, new Set());
+      paidMap.get(fsId)!.add(prd);
+    }
+
+    const onetimePaidSet = new Set(
+      onetimePaid.filter(a => !a.transaction.isCancelled && !a.transaction.reversalOfId && a.feeScheduleId).map(a => a.feeScheduleId as string)
+    );
 
     const activeWaivers = await prisma.feeWaiver.findMany({
       where: { active: true, studentId: String(studentId) },
     });
     const waiverMap = new Map(activeWaivers.map(w => [w.feeScheduleId, w]));
+
+    const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
     const result = feeSchedules
       .filter(fs => {
@@ -526,12 +579,35 @@ export const getFeeStatus = async (req: Request, res: Response) => {
         const waiver = waiverMap.get(fs.id);
         let amount = Number(fs.amount);
         if (waiver && waiver.type === 'CUSTOM_AMOUNT') amount = Number(waiver.value);
+
+        const isMonthly = fs.frequency === 'MONTHLY';
+        let paidMonths: string[] = [];
+        let unpaidMonths: string[] = [];
+        if (isMonthly && range.length > 1) {
+          const paid = paidMap.get(fs.id) || new Set();
+          for (const m of range) {
+            if (paid.has(m)) {
+              paidMonths.push(m);
+            } else {
+              unpaidMonths.push(m);
+            }
+          }
+        }
+
         return {
           feeScheduleId: fs.id,
           category: fs.category,
           frequency: fs.frequency,
           amount,
-          paid: paidSet.has(fs.id),
+          paid: isMonthly ? unpaidMonths.length === 0 : onetimePaidSet.has(fs.id),
+          months: isMonthly && range.length > 1 ? range.map(m => ({
+            period: m,
+            label: MONTH_NAMES[parseInt(m.split('-')[1]) - 1],
+            paid: (paidMap.get(fs.id) || new Set()).has(m),
+          })) : undefined,
+          unpaidMonths: isMonthly && unpaidMonths.length > 0
+            ? unpaidMonths.map(m => MONTH_NAMES[parseInt(m.split('-')[1]) - 1])
+            : undefined,
         };
       });
 

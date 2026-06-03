@@ -239,7 +239,7 @@ const AccessoriesSection = () => {
         <>
           {/* Fee Structure Card */}
           <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
-            <button onClick={() => setFeeOpen(!feeOpen)} className="flex items-center justify-between w-full p-4 border-b border-school-border text-left">
+            <div onClick={() => setFeeOpen(!feeOpen)} className="flex items-center justify-between w-full p-4 border-b border-school-border text-left cursor-pointer" role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFeeOpen(!feeOpen); } }}>
               <h4 className="font-bold text-sm text-school-primary">Fee Structure — {selectedClass.name}</h4>
               <div className="flex items-center gap-1.5">
                 <div className="flex gap-1.5 no-print" onClick={e => e.stopPropagation()}>
@@ -248,7 +248,7 @@ const AccessoriesSection = () => {
                 </div>
                 <ChevronDown size={16} className={`text-school-muted transition-transform ${feeOpen ? '' : '-rotate-90'}`} />
               </div>
-            </button>
+            </div>
 
             {/* Doc for print/pdf (hidden visually, used by ref) */}
             <div className="hidden">
@@ -336,7 +336,7 @@ const AccessoriesSection = () => {
 
           {/* Book List Card */}
           <div className="bg-white rounded-2xl border border-school-border overflow-hidden">
-            <button onClick={() => setBooksOpen(!booksOpen)} className="flex items-center justify-between w-full p-4 border-b border-school-border text-left">
+            <div onClick={() => setBooksOpen(!booksOpen)} className="flex items-center justify-between w-full p-4 border-b border-school-border text-left cursor-pointer" role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setBooksOpen(!booksOpen); } }}>
               <h4 className="font-bold text-sm text-school-primary">Books — {selectedClass.name}</h4>
               <div className="flex items-center gap-1.5">
                 <div className="flex gap-1.5 no-print" onClick={e => e.stopPropagation()}>
@@ -350,7 +350,7 @@ const AccessoriesSection = () => {
                 </div>
                 <ChevronDown size={16} className={`text-school-muted transition-transform ${booksOpen ? '' : '-rotate-90'}`} />
               </div>
-            </button>
+            </div>
 
             {/* Doc for print/pdf (hidden visually, used by ref) */}
             <div className="hidden">

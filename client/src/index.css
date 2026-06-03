@@ -150,6 +150,27 @@ table thead { position: sticky; top: 0; z-index: 1; }
   display: none;
 }
 
+/* ── Date / Month picker polish ── */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator {
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: opacity 0.15s, background 0.15s;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="month"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  background: rgba(200, 75, 49, 0.08);
+}
+
+/* Hide native calendar icon when using DatePicker wrapper (icon is inside pseudo-element toggled by data-no-native) */
+input[type="date"].hide-native-indicator::-webkit-calendar-picker-indicator,
+input[type="month"].hide-native-indicator::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
 @media print {
   header, footer, .no-print { display: none !important; }
   main { padding: 0 !important; }

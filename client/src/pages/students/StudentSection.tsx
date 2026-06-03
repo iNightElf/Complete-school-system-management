@@ -235,7 +235,7 @@ export default function StudentSection() {
           {s.hasGraduated ? (
             <button onClick={async () => {
               try {
-                await api.post(`/api/students/${s.id}/ungraduate`);
+                await api.post(`/students/${s.id}/ungraduate`);
                 toast('Student unarchived ✓', 'success');
                 fetchStudents(showGraduated ? { showGraduated: 'true' } : undefined);
               } catch (e: any) { toast(e.response?.data?.error || e.message || 'Error', 'error'); }
@@ -243,7 +243,7 @@ export default function StudentSection() {
           ) : (
             <button onClick={async () => {
               try {
-                await api.post(`/api/students/${s.id}/graduate`);
+                await api.post(`/students/${s.id}/graduate`);
                 toast('Student archived ✓', 'success');
                 fetchStudents(showGraduated ? { showGraduated: 'true' } : undefined);
               } catch (e: any) { toast(e.response?.data?.error || e.message || 'Error', 'error'); }
