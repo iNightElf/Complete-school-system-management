@@ -240,7 +240,7 @@ app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
 // ── Serve client build in production ──
 const clientDist = join(__dirname, '../../client/dist');
 app.use(express.static(clientDist));
-app.get('/{*path}', (_req, res) => {
+app.get('*', (_req, res) => {
   res.sendFile(join(clientDist, 'index.html'));
 });
 
