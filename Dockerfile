@@ -1,3 +1,6 @@
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+
 FROM node:20-alpine AS builder
 WORKDIR /app
 
@@ -16,6 +19,8 @@ COPY client/index.html ./client/
 COPY client/public ./client/public
 
 RUN cd server && npx prisma generate
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 RUN cd client && npm run build
 RUN cd server && npm run build
 
