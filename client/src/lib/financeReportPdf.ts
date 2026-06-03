@@ -96,7 +96,7 @@ export function pdfHeadwiseExpense(categories: { category: string; total: number
   doc.save(`Headwise_Expense_${dateFrom}_to_${dateTo}.pdf`);
 }
 
-export function pdfMonthly(type: 'income' | 'expense', data: any[], precomputedTotal: number, dateFrom: string, dateTo: string) {
+export function pdfMonthly(type: 'income' | 'expense', data: any[], _precomputedTotal: number, dateFrom: string, dateTo: string) {
   const doc = new jsPDF({ format: 'a4', unit: 'mm' });
   const title = type === 'income' ? 'MONTHLY INCOME REPORT' : 'MONTHLY EXPENSE REPORT';
   let y = addHeader(doc, title, subtitleForRange(dateFrom, dateTo), 10);

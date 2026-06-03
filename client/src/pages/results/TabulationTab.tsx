@@ -3,7 +3,7 @@ import { useSchoolStore } from '../../store';
 import ClassSelect from '../../components/ClassSelect';
 import { tabulationPDF } from '../../lib/tabulationPdf';
 import { ClipboardList, Download } from 'lucide-react';
-import { API_URL, TERM_NAMES } from '../../lib/config';
+import { TERM_NAMES } from '../../lib/config';
 
 export default function TabulationTab() {
   const { students, fetchStudents, subjects, fetchSubjects, academicYears, fetchAcademicYears, classResults, fetchClassResults } = useSchoolStore();

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { DollarSign, TrendingDown, RefreshCw, Upload } from 'lucide-react';
-import DatePicker from './DatePicker';
+import { DollarSign, TrendingDown, RefreshCw } from 'lucide-react';
 
 type TxTab = 'income' | 'expense' | 'transfer';
 

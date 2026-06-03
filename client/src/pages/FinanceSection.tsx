@@ -328,10 +328,6 @@ const FinanceSection = () => {
   const [feeStatusList, setFeeStatusList] = useState<any[]>([]);
   const [selectedAllocations, setSelectedAllocations] = useState<Record<string, boolean>>({});
 
-  const matchedSchedule = selectedFeeScheduleId
-    ? feeSchedules.find((f: any) => f.id === selectedFeeScheduleId)
-    : feeSchedules.find((f: any) => f.category === category && (!f.classId || f.classRel?.name === selectedClass));
-  const isMonthlyFee = matchedSchedule?.frequency === 'MONTHLY';
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -431,7 +427,7 @@ const FinanceSection = () => {
     }
   }, [availableStudents, selectedStudent]);
 
-  const { totalIncome, totalDepositedToBank, depositRemaining } = dashboardSummary;
+  const { totalIncome, depositRemaining } = dashboardSummary;
 
   const resetForm = () => {
     setAmount(''); setCategory(''); setDesc('');

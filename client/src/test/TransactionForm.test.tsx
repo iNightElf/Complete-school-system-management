@@ -96,7 +96,7 @@ describe('TransactionForm', () => {
   });
 
   it('does not call onSubmit when form has validation errors', async () => {
-    mockOnSubmit.mockResolvedValueOnce();
+    mockOnSubmit.mockResolvedValueOnce(undefined);
     const { container } = render(
       <TransactionForm
         activeTab="income"
@@ -114,7 +114,7 @@ describe('TransactionForm', () => {
   });
 
   it('validates same-account transfer', async () => {
-    mockOnSubmit.mockResolvedValueOnce();
+    mockOnSubmit.mockResolvedValueOnce(undefined);
     const { container } = render(
       <TransactionForm
         activeTab="transfer"
@@ -139,7 +139,7 @@ describe('TransactionForm', () => {
   });
 
   it('calls onSubmit with correct data when valid', async () => {
-    mockOnSubmit.mockResolvedValueOnce();
+    mockOnSubmit.mockResolvedValueOnce(undefined);
 
     const { container } = render(
       <TransactionForm
@@ -189,7 +189,7 @@ describe('TransactionForm', () => {
   });
 
   it('shows class and student dropdowns for income tab when class is selected', async () => {
-    mockOnSubmit.mockResolvedValueOnce();
+    mockOnSubmit.mockResolvedValueOnce(undefined);
     render(
       <TransactionForm
         activeTab="income"

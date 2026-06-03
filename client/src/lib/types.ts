@@ -70,6 +70,7 @@ export interface FeeSchedule {
   category: string;
   amount: number;
   frequency: string;
+  applicability: string;
   classRel?: { name: string } | null;
 }
 

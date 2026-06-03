@@ -4,7 +4,7 @@ import { toast } from '../../components/Toast';
 import ClassSelect from '../../components/ClassSelect';
 import { gradeFromMarks, gradeChip } from '../../lib/grading';
 import { Save } from 'lucide-react';
-import { API_URL, TERM_NAMES } from '../../lib/config';
+import { TERM_NAMES } from '../../lib/config';
 
 export default function EnterBySubject() {
   const { students, fetchStudents, subjects, fetchSubjects, saveStudentResult, academicYears, fetchAcademicYears, classResults, fetchClassResults } = useSchoolStore();

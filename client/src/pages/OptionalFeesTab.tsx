@@ -3,15 +3,6 @@ import { useSchoolStore, api } from '../store';
 import { toast } from '../components/Toast';
 import { Search, CheckSquare, Square } from 'lucide-react';
 
-interface FeeSchedule {
-  id: string;
-  category: string;
-  amount: number;
-  frequency: string;
-  applicability: string;
-  classId: string | null;
-  classRel: { name: string } | null;
-}
 
 interface StudentFeeAssignment {
   id: string;
