@@ -40,6 +40,8 @@ const supabaseUrl = process.env.SUPABASE_URL || "https://elpruxjzepvyhbtdlyck.su
 
 const app = express();
 
+app.get("/healthz", (_req, res) => res.send("ok"));
+
 app.use(requestIdMiddleware);
 
 app.use((req, res, next) => {
