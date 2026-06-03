@@ -1,35 +1,30 @@
-# ── Stage 1: Build client ──
-FROM node:22-alpine AS client-builder
-
-WORKDIR /app/client
-COPY client/package.json client/package-lock.json ./
-RUN npm ci
-COPY client/ .
-RUN npm run build
-
-# ── Stage 2: Build server ──
-FROM node:22-alpine AS server-builder
-
-WORKDIR /app/server
-COPY server/package.json server/package-lock.json ./
-RUN npm ci
-COPY server/ .
-COPY --from=client-builder /app/client/dist ../client/dist
-RUN npx prisma generate
-RUN npm run build
-
-# ── Stage 3: Production image ──
-FROM node:22-alpine
-
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-COPY --from=server-builder /app/server/dist ./server/dist
-COPY --from=server-builder /app/server/node_modules ./server/node_modules
-COPY --from=server-builder /app/server/package.json ./server/
-COPY --from=server-builder /app/server/prisma ./server/prisma
-COPY --from=server-builder /app/client/dist ./client/dist
+COPY package.json package-lock.json ./
+COPY server/package.json server/package-lock.json ./server/
+COPY client/package.json client/package-lock.json ./client/
+RUN npm ci && cd server && npm ci && cd ../client && npm ci
 
-ENV NODE_ENV=production
+COPY server/prisma ./server/prisma
+COPY server/src ./server/src
+COPY server/tsconfig.json ./server/
+COPY client/src ./client/src
+COPY client/tsconfig.json client/tsconfig.app.json client/tsconfig.node.json ./client/
+COPY client/vite.config.ts ./client/
+COPY client/index.html ./client/
+COPY client/public ./client/public
+
+RUN cd server && npx prisma generate
+RUN cd client && npm run build
+RUN cd server && npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/server/dist ./server/dist
+COPY --from=builder /app/client/dist ./client/dist
+COPY --from=builder /app/server/prisma ./server/prisma
+COPY --from=builder /app/server/node_modules ./server/node_modules
+COPY --from=builder /app/server/package.json ./server/
 EXPOSE 5000
-
-CMD ["node", "server/dist/server.js"]
+CMD sh -c "cd server && npx prisma migrate deploy && node dist/server.js"
