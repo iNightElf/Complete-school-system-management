@@ -15,4 +15,4 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git push --force https://iNightElf:$HF_TOKEN@huggingface.co/spaces/iNightElf/school-management main
+          git push --force https://inightelf:$HF_TOKEN@huggingface.co/spaces/inightelf/aresmanagement main
