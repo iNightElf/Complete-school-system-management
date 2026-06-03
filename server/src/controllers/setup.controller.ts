@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { timingSafeEqual } from "crypto";
-import { createAdminUser, generateAndSendVerification } from "../lib/supabase-auth.js";
+import { createAdminUser } from "../lib/supabase-auth.js";
 import { createClient } from "@supabase/supabase-js";
 import ws from "ws";
 
@@ -111,11 +111,6 @@ export const initSetup = async (req: Request, res: Response) => {
     if (role === "viewer") {
       await prisma.user.update({ where: { id: supabaseUser.id }, data: { role: "viewer" } });
     }
-
-    // Send verification email (best-effort)
-    generateAndSendVerification(email, password).catch((e) => {
-      console.error("[setup] verification email failed:", e);
-    });
 
     const user = await prisma.user.findUnique({
       where: { id: supabaseUser.id },

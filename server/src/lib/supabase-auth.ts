@@ -53,7 +53,7 @@ export async function createAdminUser(email: string, password: string, name: str
   const { data, error } = await getAdmin().auth.admin.createUser({
     email,
     password,
-    email_confirm: false,
+    email_confirm: true,
     user_metadata: { name },
   });
   if (error) throw error;
