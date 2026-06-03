@@ -91,10 +91,12 @@ export const initSetup = async (req: Request, res: Response) => {
     // Check if email is already registered in Supabase Auth (orphaned)
     if (client) {
       // listUsers is O(n) but this runs only during registration, not on every request
-      const { data: users } = await client.auth.admin.listUsers({ page: 1, perPage: 10000 });
+      const { data: users, error: listErr } = await client.auth.admin.listUsers({ page: 1, perPage: 10000 });
+      if (listErr) console.error("[setup] listUsers error:", listErr);
       const orphaned = users?.users?.find(u => u.email === email);
       if (orphaned) {
-        await client.auth.admin.deleteUser(orphaned.id);
+        const { error: delErr } = await client.auth.admin.deleteUser(orphaned.id);
+        if (delErr) console.error("[setup] deleteUser error:", delErr);
       }
     }
 
@@ -110,7 +112,9 @@ export const initSetup = async (req: Request, res: Response) => {
     }
 
     // Send verification email (best-effort)
-    generateAndSendVerification(email, password).catch(() => {});
+    generateAndSendVerification(email, password).catch((e) => {
+      console.error("[setup] verification email failed:", e);
+    });
 
     const user = await prisma.user.findUnique({
       where: { id: supabaseUser.id },
@@ -126,9 +130,10 @@ export const initSetup = async (req: Request, res: Response) => {
 
     res.json({ user, message: "User created successfully. You can now sign in." });
   } catch (err: any) {
+    console.error("[setup] initSetup error:", err?.message || err, err?.stack?.slice(0, 300));
     if (err?.code === 'P2002') {
       return res.status(409).json({ error: "A user with this email already exists" });
     }
-    res.status(500).json({ error: "Failed to create user" });
+    res.status(500).json({ error: err?.message || "Failed to create user" });
   }
 };
