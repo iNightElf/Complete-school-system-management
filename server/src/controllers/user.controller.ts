@@ -3,23 +3,34 @@ import { prisma } from "../lib/prisma.js";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { ALL_ROLES, ROLE_LABELS, Role } from "../lib/permissions.js";
 import { updateUserRole as supabaseUpdateRole, deleteAuthUser as supabaseDeleteUser } from "../lib/supabase-auth.js";
+import { handleControllerError } from "../lib/errors.js";
 
 export const getAllUsers = async (req: AuthRequest, res: Response) => {
   try {
+    const pageStr = req.query.page as string | undefined;
+    const limitStr = req.query.limit as string | undefined;
+    const page = pageStr ? Math.max(1, parseInt(pageStr, 10) || 1) : undefined;
+    const limit = page ? Math.min(200, Math.max(1, parseInt(limitStr || '50', 10) || 50)) : undefined;
+    if (page) {
+      const [users, total] = await Promise.all([
+        prisma.user.findMany({
+          select: { id: true, name: true, email: true, role: true, emailVerified: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+          skip: (page - 1) * limit!,
+          take: limit!,
+        }),
+        prisma.user.count(),
+      ]);
+      return res.json({ data: users, total, page, totalPages: Math.ceil(total / limit!) });
+    }
     const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        emailVerified: true,
-        createdAt: true,
-      },
+      select: { id: true, name: true, email: true, role: true, emailVerified: true, createdAt: true },
       orderBy: { createdAt: "asc" },
+      take: 5000,
     });
     res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch users" });
+  } catch (error: any) {
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -54,11 +65,13 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    await supabaseUpdateRole(id, role).catch(() => {});
+    await supabaseUpdateRole(id, role).catch((e: any) => {
+      console.error(`[userController] supabaseUpdateRole failed for ${id}: ${e?.message}`);
+    });
 
     res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to update role" });
+  } catch (error: any) {
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -78,8 +91,8 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     await supabaseDeleteUser(id);
 
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to delete user" });
+  } catch (error: any) {
+    handleControllerError(res, error, req.path);
   }
 };
 

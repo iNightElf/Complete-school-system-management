@@ -4,35 +4,34 @@ import { API_URL } from './lib/config';
 import { supabase } from './lib/supabase';
 import type { Student, Teacher, Staff, Transaction, SchoolClass, Subject, FeeSchedule, SchoolSettings } from './lib/types';
 
-// ── Global axios interceptor: attach Supabase token to every request ──
+// ── Global interceptor for ALL axios requests (covers components that use raw axios) ──
+
 axios.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    config.headers.Authorization = `Bearer ${session.access_token}`;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
+    }
+  } catch {
+    // proceed without token
   }
   return config;
 });
 
-axios.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      useAuthStore.setState({ user: null });
-    }
-    return Promise.reject(error);
-  }
-);
+// ── API instance (single source of truth for all HTTP calls) ──
 
-// ── API ──
-
-const api = axios.create({
+export const api = axios.create({
   baseURL: API_URL,
 });
 
 api.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    config.headers.Authorization = `Bearer ${session.access_token}`;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
+    }
+  } catch {
+    // Session fetch failure — proceed without token
   }
   return config;
 });
@@ -85,7 +84,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       const res = await api.get('/auth/get-session');
       set({ user: res.data?.user ?? null, loading: false });
-    } catch {
+    } catch (e) {
+      if (import.meta.env.DEV) console.warn("[store] fetchSession failed", e);
       set({ user: null, loading: false });
     } finally {
       fetching = false;
@@ -181,7 +181,7 @@ interface SchoolState {
   transactionPage: number;
   transactionTotalPages: number;
   lastFetched: number | null;
-  loading: { classes: boolean; students: boolean; teachers: boolean; staff: boolean; books: boolean; finance: boolean; transactions: boolean };
+  loading: Record<string, boolean>;
 
   fetchClasses: () => Promise<void>;
   fetchStudents: (params?: Record<string, string>) => Promise<void>;
@@ -208,6 +208,7 @@ interface SchoolState {
   deleteSubject: (id: string) => Promise<void>;
 
   saveStudentResult: (studentId: string, term: string, marks: any, attendance?: any, comment?: string, session?: string) => Promise<void>;
+  studentResultsCache: Record<string, { data: any[]; ts: number }>;
   getStudentResults: (studentId: string, session?: string) => Promise<any[]>;
 
   academicYears: any[];
@@ -241,40 +242,41 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   lastFetched: null,
   academicYears: [],
   classResults: {},
+  studentResultsCache: {},
   expenseCategories: [],
-  loading: { classes: false, students: false, teachers: false, staff: false, books: false, finance: false, transactions: false },
+  loading: {},
 
   fetchClasses: async () => {
     set((s) => ({ loading: { ...s.loading, classes: true } }));
-    try { const res = await api.get('/classes'); set({ classes: res.data, lastFetched: Date.now() }); } catch { /* silent */ }
+    try { const res = await api.get('/classes'); set({ classes: res.data, lastFetched: Date.now() }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
     finally { set((s) => ({ loading: { ...s.loading, classes: false } })); }
   },
   fetchStudents: async (params) => {
     set((s) => ({ loading: { ...s.loading, students: true } }));
-    try { const res = await api.get('/students', { params }); set({ students: res.data.data || res.data, studentTotal: res.data.total ?? 0, lastFetched: Date.now() }); } catch { /* silent */ }
+    try { const res = await api.get('/students', { params }); set({ students: res.data.data || res.data, studentTotal: res.data.total ?? 0, lastFetched: Date.now() }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
     finally { set((s) => ({ loading: { ...s.loading, students: false } })); }
   },
   fetchTeachers: async (params) => {
     set((s) => ({ loading: { ...s.loading, teachers: true } }));
-    try { const res = await api.get('/teachers', { params }); set({ teachers: res.data.data || res.data, teacherTotal: res.data.total ?? 0, lastFetched: Date.now() }); } catch { /* silent */ }
+    try { const res = await api.get('/teachers', { params }); set({ teachers: res.data.data || res.data, teacherTotal: res.data.total ?? 0, lastFetched: Date.now() }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
     finally { set((s) => ({ loading: { ...s.loading, teachers: false } })); }
   },
   fetchStaff: async (params) => {
     set((s) => ({ loading: { ...s.loading, staff: true } }));
-    try { const res = await api.get('/staff', { params }); set({ staff: res.data.data || res.data, staffTotal: res.data.total ?? 0, lastFetched: Date.now() }); } catch { /* silent */ }
+    try { const res = await api.get('/staff', { params }); set({ staff: res.data.data || res.data, staffTotal: res.data.total ?? 0, lastFetched: Date.now() }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
     finally { set((s) => ({ loading: { ...s.loading, staff: false } })); }
   },
   fetchBooks: async (params) => {
     set((s) => ({ loading: { ...s.loading, books: true } }));
-    try { const res = await api.get('/books', { params }); set({ books: res.data.data || res.data, bookTotal: res.data.total ?? 0, lastFetched: Date.now() }); } catch { /* silent */ }
+    try { const res = await api.get('/books', { params }); set({ books: res.data.data || res.data, bookTotal: res.data.total ?? 0, lastFetched: Date.now() }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
     finally { set((s) => ({ loading: { ...s.loading, books: false } })); }
   },
   fetchSubjects: async (classId: string) => {
-    try { const res = await api.get(`/classes/${classId}/subjects`); set({ subjects: res.data, lastFetched: Date.now() }); } catch { /* silent */ }
+    try { const res = await api.get(`/classes/${classId}/subjects`); set({ subjects: res.data, lastFetched: Date.now() }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
   },
   fetchFinance: async () => {
     set((s) => ({ loading: { ...s.loading, finance: true } }));
-    try { const res = await api.get('/finance/balances'); set({ balances: res.data, lastFetched: Date.now() }); } catch { /* silent */ }
+    try { const res = await api.get('/finance/balances'); set({ balances: res.data, lastFetched: Date.now() }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
     finally { set((s) => ({ loading: { ...s.loading, finance: false } })); }
   },
   fetchTransactions: async (params?: Record<string, string>) => {
@@ -286,15 +288,15 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
       } else if (res.data?.data) {
         set({ transactions: res.data.data, transactionTotal: res.data.total, transactionPage: res.data.page, transactionTotalPages: res.data.totalPages, lastFetched: Date.now() });
       }
-    } catch { /* silent */ }
+    } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
     finally { set((s) => ({ loading: { ...s.loading, transactions: false } })); }
   },
 
   fetchFeeSchedules: async () => {
-    try { const res = await api.get('/finance/fee-schedules'); set({ feeSchedules: res.data }); } catch { /* silent */ }
+    try { const res = await api.get('/finance/fee-schedules'); set({ feeSchedules: res.data }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
   },
   fetchOpeningBalances: async (year) => {
-    try { const res = await api.get('/finance/opening-balances', { params: { year } }); set({ openingBalances: res.data }); } catch { /* silent */ }
+    try { const res = await api.get('/finance/opening-balances', { params: { year } }); set({ openingBalances: res.data }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
   },
   setOpeningBalances: async (year, balances) => {
     const res = await api.put('/finance/opening-balances', { year, balances });
@@ -302,7 +304,7 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
     return res.data;
   },
   fetchOpeningBalanceHistory: async (year) => {
-    try { const res = await api.get('/finance/opening-balances/history', { params: { year } }); set({ openingBalancesHistory: res.data }); } catch { /* silent */ }
+    try { const res = await api.get('/finance/opening-balances/history', { params: { year } }); set({ openingBalancesHistory: res.data }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
   },
   revertOpeningBalance: async (historyId) => {
     await api.post(`/finance/opening-balances/revert/${historyId}`);
@@ -311,7 +313,7 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   },
 
   fetchSettings: async () => {
-    try { const res = await api.get('/settings'); set({ settings: res.data }); } catch { /* silent */ }
+    try { const res = await api.get('/settings'); set({ settings: res.data }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
   },
   updateSettings: async (data) => {
     const res = await api.put('/settings', data);
@@ -339,27 +341,51 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   },
   updateSubject: async (id: string, data: Partial<Subject>) => {
     await api.put(`/subjects/${id}`, data);
+    const currentSubjects = get().subjects;
+    const updated = currentSubjects.find((s) => s.id === id);
+    if (updated) await get().fetchSubjects(updated.classId);
   },
   deleteSubject: async (id: string) => {
+    const currentSubjects = get().subjects;
+    const deleted = currentSubjects.find((s) => s.id === id);
     await api.delete(`/subjects/${id}`);
+    if (deleted) await get().fetchSubjects(deleted.classId);
   },
 
   fetchAcademicYears: async () => {
-    try { const res = await api.get('/academic-years'); set({ academicYears: res.data }); } catch { /* silent */ }
+    set((s) => ({ loading: { ...s.loading, academicYears: true } }));
+    try { const res = await api.get('/academic-years'); set({ academicYears: res.data }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
+    finally { set((s) => ({ loading: { ...s.loading, academicYears: false } })); }
   },
   fetchClassResults: async (classId: string, session: string) => {
-    try { const res = await api.get(`/classes/${classId}/results`, { params: { session } }); set((s) => ({ classResults: { ...s.classResults, [`${classId}-${session}`]: res.data } })); } catch { /* silent */ }
+    set((s) => ({ loading: { ...s.loading, classResults: true } }));
+    try { const res = await api.get(`/classes/${classId}/results`, { params: { session } }); set((s) => ({ classResults: { ...s.classResults, [`${classId}-${session}`]: res.data } })); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
+    finally { set((s) => ({ loading: { ...s.loading, classResults: false } })); }
   },
   fetchExpenseCategories: async () => {
-    try { const res = await api.get('/categories?type=EXPENSE'); set({ expenseCategories: res.data.map((c: any) => c.name) }); } catch { /* silent */ }
+    set((s) => ({ loading: { ...s.loading, expenseCategories: true } }));
+    try { const res = await api.get('/categories?type=EXPENSE'); set({ expenseCategories: res.data.map((c: any) => c.name) }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
+    finally { set((s) => ({ loading: { ...s.loading, expenseCategories: false } })); }
   },
 
   saveStudentResult: async (studentId: string, term: string, marks: any, attendance?: any, comment?: string, session?: string) => {
     await api.post(`/students/${studentId}/results`, { term, marks, attendance, session, ...(comment !== undefined && { comment }) });
+    // Invalidate cached results for this student
+    set((s) => {
+      const next = { ...s.studentResultsCache };
+      for (const key of Object.keys(next)) {
+        if (key.startsWith(studentId)) delete next[key];
+      }
+      return { studentResultsCache: next };
+    });
   },
   getStudentResults: async (studentId: string, session?: string) => {
+    const key = `${studentId}${session ? '-' + session : ''}`;
+    const cached = get().studentResultsCache[key];
+    if (cached && Date.now() - cached.ts < 30000) return cached.data;
     const params = session ? { session } : {};
     const res = await api.get(`/students/${studentId}/results`, { params });
+    set((s) => ({ studentResultsCache: { ...s.studentResultsCache, [key]: { data: res.data, ts: Date.now() } } }));
     return res.data;
   },
 }));
@@ -394,10 +420,10 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
   roles: [],
 
   fetchUsers: async () => {
-    try { const res = await api.get('/users'); set({ users: res.data }); } catch { /* silent */ }
+    try { const res = await api.get('/users'); set({ users: res.data }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
   },
   fetchRoles: async () => {
-    try { const res = await api.get('/users/roles'); set({ roles: res.data }); } catch { /* silent */ }
+    try { const res = await api.get('/users/roles'); set({ roles: res.data }); } catch (e) { if (import.meta.env.DEV) console.warn("[store]", e) }
   },
   updateRole: async (userId: string, role: string) => {
     await api.put(`/users/${userId}/role`, { role });

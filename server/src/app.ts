@@ -12,7 +12,10 @@ import { prisma } from "./lib/prisma.js";
 import { sanitizeError, waitForDatabase } from "./lib/errors.js";
 import { requestIdMiddleware, log } from "./lib/logger.js";
 import * as students from "./controllers/student.controller.js";
-import * as finance from "./controllers/finance.controller.js";
+import * as transactionCtrl from "./controllers/transaction.controller.js";
+import * as openingBalanceCtrl from "./controllers/openingBalance.controller.js";
+import * as reportCtrl from "./controllers/report.controller.js";
+import * as closureCtrl from "./controllers/closure.controller.js";
 import * as ops from "./controllers/ops.controller.js";
 import * as classes from "./controllers/class.controller.js";
 import * as results from "./controllers/result.controller.js";
@@ -24,7 +27,10 @@ import * as studentFeeAssignment from "./controllers/studentFeeAssignment.contro
 import * as setup from "./controllers/setup.controller.js";
 import * as audit from "./controllers/audit.controller.js";
 import * as authCtrl from "./controllers/auth.controller.js";
+import * as academicYear from "./controllers/academicYear.controller.js";
+import * as category from "./controllers/category.controller.js";
 import { authenticate, authorizePermission } from "./middleware/auth.middleware.js";
+import { idempotent } from "./lib/idempotency.js";
 
 const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",").map(s => s.trim())
@@ -64,16 +70,18 @@ app.use(compression());
 app.use(express.json({ limit: "2mb" }));
 
 const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 500, standardHeaders: true, legacyHeaders: false });
+const setupLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: "Too many registration attempts. Try again later." } });
+const financeWriteLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { error: "Too many requests. Try again later." } });
 
 app.use("/api/", globalLimiter);
 
 // ── Setup (no auth — first-admin bootstrap) ──
 app.get("/api/setup/status", setup.getSetupStatus);
-app.post("/api/setup/init", setup.initSetup);
+app.post("/api/setup/init", setupLimiter, idempotent(setup.initSetup));
 
 // ── School Settings ──
-app.get("/api/settings", settings.getSettings);
-app.put("/api/settings", authenticate, authorizePermission("finance:admin"), settings.updateSettings);
+app.get("/api/settings", authenticate, settings.getSettings);
+app.put("/api/settings", authenticate, authorizePermission("finance:admin"), idempotent(settings.updateSettings));
 
 // Auth routes — session verification via Supabase JWT
 app.get("/api/auth/get-session", authenticate, authCtrl.getSession);
@@ -86,20 +94,20 @@ app.delete("/api/users/:id", authenticate, authorizePermission("users:write"), u
 
 // ── Students ──
 app.get("/api/students", authenticate, authorizePermission("students:read"), students.getAllStudents);
-app.post("/api/students", authenticate, authorizePermission("students:write"), students.createStudent);
-app.post("/api/students/import", authenticate, authorizePermission("students:write"), students.importStudents);
+app.post("/api/students", authenticate, authorizePermission("students:write"), idempotent(students.createStudent));
+app.post("/api/students/import", authenticate, authorizePermission("students:write"), idempotent(students.importStudents));
 app.put("/api/students/:id", authenticate, authorizePermission("students:write"), students.updateStudent);
 app.delete("/api/students/:id", authenticate, authorizePermission("students:write"), students.deleteStudent);
 app.get("/api/students/:id/photo", authenticate, authorizePermission("students:read"), students.getStudentPhoto);
 app.post("/api/students/:id/restore", authenticate, authorizePermission("students:write"), students.restoreStudent);
-app.post("/api/students/:id/graduate", authenticate, authorizePermission("students:write"), students.graduateStudent);
-app.post("/api/students/:id/ungraduate", authenticate, authorizePermission("students:write"), students.ungraduateStudent);
-app.post("/api/classes/:classId/graduate", authenticate, authorizePermission("students:write"), students.graduateClass);
+app.post("/api/students/:id/graduate", authenticate, authorizePermission("students:write"), idempotent(students.graduateStudent));
+app.post("/api/students/:id/ungraduate", authenticate, authorizePermission("students:write"), idempotent(students.ungraduateStudent));
+app.post("/api/classes/:classId/graduate", authenticate, authorizePermission("students:write"), idempotent(students.graduateClass));
 
 // ── Teachers ──
 app.get("/api/teachers", authenticate, authorizePermission("teachers:read"), ops.getAllTeachers);
-app.post("/api/teachers", authenticate, authorizePermission("teachers:write"), ops.createTeacher);
-app.post("/api/teachers/import", authenticate, authorizePermission("teachers:write"), ops.importTeachers);
+app.post("/api/teachers", authenticate, authorizePermission("teachers:write"), idempotent(ops.createTeacher));
+app.post("/api/teachers/import", authenticate, authorizePermission("teachers:write"), idempotent(ops.importTeachers));
 app.put("/api/teachers/:id", authenticate, authorizePermission("teachers:write"), ops.updateTeacher);
 app.delete("/api/teachers/:id", authenticate, authorizePermission("teachers:write"), ops.deleteTeacher);
 app.get("/api/teachers/:id/photo", authenticate, authorizePermission("teachers:read"), ops.getTeacherPhoto);
@@ -107,8 +115,8 @@ app.post("/api/teachers/:id/restore", authenticate, authorizePermission("teacher
 
 // ── Staff ──
 app.get("/api/staff", authenticate, authorizePermission("staff:read"), ops.getAllStaff);
-app.post("/api/staff", authenticate, authorizePermission("staff:write"), ops.createStaff);
-app.post("/api/staff/import", authenticate, authorizePermission("staff:write"), ops.importStaff);
+app.post("/api/staff", authenticate, authorizePermission("staff:write"), idempotent(ops.createStaff));
+app.post("/api/staff/import", authenticate, authorizePermission("staff:write"), idempotent(ops.importStaff));
 app.put("/api/staff/:id", authenticate, authorizePermission("staff:write"), ops.updateStaff);
 app.delete("/api/staff/:id", authenticate, authorizePermission("staff:write"), ops.deleteStaff);
 app.get("/api/staff/:id/photo", authenticate, authorizePermission("staff:read"), ops.getStaffPhoto);
@@ -116,20 +124,20 @@ app.post("/api/staff/:id/restore", authenticate, authorizePermission("staff:writ
 
 // ── Books (Accessories) ──
 app.get("/api/books", authenticate, authorizePermission("books:read"), ops.getAllBooks);
-app.post("/api/books", authenticate, authorizePermission("books:write"), ops.createBook);
+app.post("/api/books", authenticate, authorizePermission("books:write"), idempotent(ops.createBook));
 app.put("/api/books/:id", authenticate, authorizePermission("books:write"), ops.updateBook);
 app.delete("/api/books/:id", authenticate, authorizePermission("books:write"), ops.deleteBook);
 
 // ── Classes ──
 app.get("/api/classes", authenticate, authorizePermission("classes:read"), classes.getAllClasses);
-app.post("/api/classes", authenticate, authorizePermission("classes:write"), classes.createClass);
+app.post("/api/classes", authenticate, authorizePermission("classes:write"), idempotent(classes.createClass));
 app.delete("/api/classes/:id", authenticate, authorizePermission("classes:write"), classes.deleteClass);
 app.put("/api/classes/reorder", authenticate, authorizePermission("classes:write"), classes.reorderClasses);
-app.post("/api/classes/promote-all", authenticate, authorizePermission("classes:write"), classes.promoteAll);
+app.post("/api/classes/promote-all", authenticate, authorizePermission("classes:write"), idempotent(classes.promoteAll));
 
 // ── Subjects ──
 app.get("/api/classes/:classId/subjects", authenticate, authorizePermission("subjects:read"), results.getSubjectsByClass);
-app.post("/api/classes/:classId/subjects", authenticate, authorizePermission("subjects:write"), results.createSubject);
+app.post("/api/classes/:classId/subjects", authenticate, authorizePermission("subjects:write"), idempotent(results.createSubject));
 app.put("/api/subjects/:id", authenticate, authorizePermission("subjects:write"), results.updateSubject);
 app.delete("/api/subjects/:id", authenticate, authorizePermission("subjects:write"), results.deleteSubject);
 
@@ -141,118 +149,61 @@ app.delete("/api/classes/:classId/results", authenticate, authorizePermission("r
 app.delete("/api/classes/:classId/subjects", authenticate, authorizePermission("subjects:write"), results.deleteClassSubjects);
 
 // ── Academic Years ──
-app.get("/api/academic-years", authenticate, async (_req, res) => {
-  const years = await prisma.academicYear.findMany({ orderBy: { startDate: "desc" } });
-  res.json(years);
-});
-
-app.post("/api/academic-years", authenticate, async (req, res) => {
-  const { name, startDate, endDate, isActive } = req.body;
-  if (!name || !startDate || !endDate) {
-    return res.status(400).json({ error: "name, startDate, and endDate are required" });
-  }
-  const existing = await prisma.academicYear.findUnique({ where: { name } });
-  if (existing) return res.status(409).json({ error: "Academic year with this name already exists" });
-  if (isActive) {
-    await prisma.academicYear.updateMany({ where: { isActive: true }, data: { isActive: false } });
-  }
-  const year = await prisma.academicYear.create({ data: { name, startDate: new Date(startDate), endDate: new Date(endDate), isActive: !!isActive } });
-  res.status(201).json(year);
-});
-
-app.put("/api/academic-years/:id", authenticate, async (req, res) => {
-  const id = String(req.params.id);
-  const { name, startDate, endDate, isActive } = req.body;
-  const data: any = {};
-  if (name !== undefined) data.name = name;
-  if (startDate !== undefined) data.startDate = new Date(startDate);
-  if (endDate !== undefined) data.endDate = new Date(endDate);
-  if (isActive !== undefined) {
-    if (isActive) {
-      await prisma.academicYear.updateMany({ where: { isActive: true }, data: { isActive: false } });
-    }
-    data.isActive = isActive;
-  }
-  const year = await prisma.academicYear.update({ where: { id }, data });
-  res.json(year);
-});
+app.get("/api/academic-years", authenticate, authorizePermission("academic-years:read"), academicYear.getAcademicYears);
+app.post("/api/academic-years", authenticate, authorizePermission("academic-years:write"), academicYear.createAcademicYear);
+app.put("/api/academic-years/:id", authenticate, authorizePermission("academic-years:write"), academicYear.updateAcademicYear);
 
 // ── Categories ──
-app.get("/api/categories", authenticate, async (req, res) => {
-  const type = req.query.type as string | undefined;
-  const where = type ? { type: type.toUpperCase() } : {};
-  const cats = await prisma.category.findMany({ where, orderBy: { name: "asc" } });
-  res.json(cats);
-});
-
-app.post("/api/categories", authenticate, authorizePermission("finance:write"), async (req, res) => {
-  const { type, name } = req.body;
-  if (!type || !name) return res.status(400).json({ error: "type and name are required" });
-  const existing = await prisma.category.findUnique({ where: { type_name: { type: type.toUpperCase(), name } } });
-  if (existing) return res.status(409).json({ error: "Category already exists" });
-  const cat = await prisma.category.create({ data: { type: type.toUpperCase(), name } });
-  res.status(201).json(cat);
-});
-
-app.put("/api/categories/:id", authenticate, authorizePermission("finance:write"), async (req, res) => {
-  const id = String(req.params.id);
-  const { name } = req.body;
-  if (!name) return res.status(400).json({ error: "name is required" });
-  const cat = await prisma.category.update({ where: { id }, data: { name } });
-  res.json(cat);
-});
-
-app.delete("/api/categories/:id", authenticate, authorizePermission("finance:write"), async (req, res) => {
-  const id = String(req.params.id);
-  await prisma.category.delete({ where: { id } });
-  res.json({ message: "Category deleted" });
-});
+app.get("/api/categories", authenticate, category.getCategories);
+app.post("/api/categories", authenticate, authorizePermission("finance:write"), category.createCategory);
+app.put("/api/categories/:id", authenticate, authorizePermission("finance:write"), category.updateCategory);
+app.delete("/api/categories/:id", authenticate, authorizePermission("finance:write"), category.deleteCategory);
 
 // ── Fee Schedules ──
 app.get("/api/finance/fee-schedules", authenticate, authorizePermission("finance:read"), feeSchedule.getFeeSchedules);
-app.post("/api/finance/fee-schedules", authenticate, authorizePermission("finance:write"), feeSchedule.createFeeSchedule);
-app.post("/api/finance/fee-schedules/copy-from-year", authenticate, authorizePermission("finance:write"), feeSchedule.copyFeeSchedulesFromYear);
+app.post("/api/finance/fee-schedules", authenticate, authorizePermission("finance:write"), idempotent(feeSchedule.createFeeSchedule));
+app.post("/api/finance/fee-schedules/copy-from-year", authenticate, authorizePermission("finance:write"), idempotent(feeSchedule.copyFeeSchedulesFromYear));
 app.put("/api/finance/fee-schedules/:id", authenticate, authorizePermission("finance:write"), feeSchedule.updateFeeSchedule);
 app.delete("/api/finance/fee-schedules/:id", authenticate, authorizePermission("finance:write"), feeSchedule.deleteFeeSchedule);
 
 // ── Fee Waivers ──
 app.get("/api/finance/fee-waivers", authenticate, authorizePermission("finance:read"), feeWaiver.getFeeWaivers);
-app.post("/api/finance/fee-waivers", authenticate, authorizePermission("finance:write"), feeWaiver.createFeeWaiver);
+app.post("/api/finance/fee-waivers", authenticate, authorizePermission("finance:write"), idempotent(feeWaiver.createFeeWaiver));
 app.put("/api/finance/fee-waivers/:id", authenticate, authorizePermission("finance:write"), feeWaiver.updateFeeWaiver);
 app.post("/api/finance/fee-waivers/:id/deactivate", authenticate, authorizePermission("finance:write"), feeWaiver.deactivateFeeWaiver);
 
 // ── Finance ──
-app.get("/api/finance/balances", authenticate, authorizePermission("finance:read"), finance.getBalances);
-app.get("/api/finance/ledger", authenticate, authorizePermission("finance:read"), finance.getLedger);
-app.get("/api/finance/transactions", authenticate, authorizePermission("finance:read"), finance.getTransactions);
-app.post("/api/finance/transactions", authenticate, authorizePermission("finance:write"), finance.createTransaction);
-app.post("/api/finance/transactions/:id/cancel", authenticate, authorizePermission("finance:write"), finance.cancelTransaction);
-app.get("/api/finance/fee-status", authenticate, authorizePermission("finance:read"), finance.getFeeStatus);
+app.get("/api/finance/balances", authenticate, authorizePermission("finance:read"), transactionCtrl.getBalances);
+app.get("/api/finance/ledger", authenticate, authorizePermission("finance:read"), transactionCtrl.getLedger);
+app.get("/api/finance/transactions", authenticate, authorizePermission("finance:read"), transactionCtrl.getTransactions);
+app.post("/api/finance/transactions", financeWriteLimiter, authenticate, authorizePermission("finance:write"), idempotent(transactionCtrl.createTransaction));
+app.post("/api/finance/transactions/:id/cancel", authenticate, authorizePermission("finance:write"), idempotent(transactionCtrl.cancelTransaction));
+app.get("/api/finance/fee-status", authenticate, authorizePermission("finance:read"), transactionCtrl.getFeeStatus);
 
 // ── Student Fee Assignments ──
 app.get("/api/finance/student-fee-assignments", authenticate, authorizePermission("finance:read"), studentFeeAssignment.getStudentFeeAssignments);
-app.post("/api/finance/student-fee-assignments/toggle", authenticate, authorizePermission("finance:write"), studentFeeAssignment.toggleStudentFeeAssignment);
-app.post("/api/finance/student-fee-assignments/bulk", authenticate, authorizePermission("finance:write"), studentFeeAssignment.bulkAssign);
+app.post("/api/finance/student-fee-assignments/toggle", authenticate, authorizePermission("finance:write"), idempotent(studentFeeAssignment.toggleStudentFeeAssignment));
+app.post("/api/finance/student-fee-assignments/bulk", authenticate, authorizePermission("finance:write"), idempotent(studentFeeAssignment.bulkAssign));
 
 // ── Opening Balances ──
-app.get("/api/finance/opening-balances", authenticate, authorizePermission("finance:read"), finance.getOpeningBalances);
-app.put("/api/finance/opening-balances", authenticate, authorizePermission("finance:write"), finance.setOpeningBalances);
-app.get("/api/finance/opening-balances/history", authenticate, authorizePermission("finance:read"), finance.getOpeningBalanceHistory);
-app.post("/api/finance/opening-balances/revert/:id", authenticate, authorizePermission("finance:write"), finance.revertOpeningBalance);
+app.get("/api/finance/opening-balances", authenticate, authorizePermission("finance:read"), openingBalanceCtrl.getOpeningBalances);
+app.put("/api/finance/opening-balances", authenticate, authorizePermission("finance:write"), openingBalanceCtrl.setOpeningBalances);
+app.get("/api/finance/opening-balances/history", authenticate, authorizePermission("finance:read"), openingBalanceCtrl.getOpeningBalanceHistory);
+app.post("/api/finance/opening-balances/revert/:id", authenticate, authorizePermission("finance:write"), idempotent(openingBalanceCtrl.revertOpeningBalance));
 
 // ── Reports ──
-app.get("/api/finance/reports/agm", authenticate, authorizePermission("finance:read"), finance.getAGMReport);
-app.get("/api/finance/defaulter", authenticate, authorizePermission("finance:read"), finance.getDefaulterReport);
+app.get("/api/finance/reports/agm", authenticate, authorizePermission("finance:read"), reportCtrl.getAGMReport);
+app.get("/api/finance/defaulter", authenticate, authorizePermission("finance:read"), reportCtrl.getDefaulterReport);
 
 // ── Period Close ──
-app.get("/api/finance/period-closes", authenticate, authorizePermission("finance:write"), finance.getPeriodCloses);
-app.post("/api/finance/period-closes", authenticate, authorizePermission("finance:admin"), finance.closePeriod);
-app.delete("/api/finance/period-closes/:fiscalYear", authenticate, authorizePermission("finance:admin"), finance.reopenPeriod);
+app.get("/api/finance/period-closes", authenticate, authorizePermission("finance:read"), closureCtrl.getPeriodCloses);
+app.post("/api/finance/period-closes", authenticate, authorizePermission("finance:admin"), idempotent(closureCtrl.closePeriod));
+app.delete("/api/finance/period-closes/:fiscalYear", authenticate, authorizePermission("finance:admin"), closureCtrl.reopenPeriod);
 
 // ── Reconciliation ──
-app.get("/api/finance/reconciliations", authenticate, authorizePermission("finance:read"), finance.getReconciliations);
-app.post("/api/finance/reconciliations", authenticate, authorizePermission("finance:admin"), finance.createReconciliation);
-app.get("/api/finance/reconciliations/:id", authenticate, authorizePermission("finance:read"), finance.getReconciliationDetail);
+app.get("/api/finance/reconciliations", authenticate, authorizePermission("finance:read"), closureCtrl.getReconciliations);
+app.post("/api/finance/reconciliations", authenticate, authorizePermission("finance:admin"), idempotent(closureCtrl.createReconciliation));
+app.get("/api/finance/reconciliations/:id", authenticate, authorizePermission("finance:read"), closureCtrl.getReconciliationDetail);
 
 // ── Audit Logs ──
 app.get("/api/audit", authenticate, authorizePermission("audit:read"), audit.getAuditLogs);

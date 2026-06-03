@@ -9,7 +9,7 @@ export async function logAudit(params: {
 }) {
   try {
     await prisma.auditLog.create({ data: params });
-  } catch {
-    // Don't let audit logging break the main operation
+  } catch (err: any) {
+    console.error("[logAudit] Failed to write audit log:", err?.message || err);
   }
 }

@@ -2,10 +2,11 @@ import type { Request, Response } from "express";
 import { createHash } from "crypto";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError, errorStatus } from "../lib/errors.js";
+import { sanitizeError, errorStatus, handleControllerError } from "../lib/errors.js";
 import { validate, createTeacherSchema, createStaffSchema, createBookSchema } from "../lib/validate.js";
 import { parsePhoto, detectMimeType } from "../lib/photo.js";
-import { uploadPhoto, getSignedUrl, deletePhoto } from "../lib/supabase.js";
+import { uploadPhoto, getSignedUrl, getPhotoUrl, deletePhoto } from "../lib/supabase.js";
+import { uploadPhotoAsync } from "../lib/queue.js";
 import { logAudit } from "../lib/audit.js";
 
 const PHOTO_BUCKET = "student-photos";
@@ -20,8 +21,8 @@ export const importTeachers = async (req: Request, res: Response) => {
     }
     if (teachers.length > 500) return res.status(400).json({ error: "Maximum 500 per import" });
 
-    const created: any[] = [];
     const errors: { row: number; error: string }[] = [];
+    const valid: any[] = [];
 
     for (let i = 0; i < teachers.length; i++) {
       const t = teachers[i];
@@ -29,20 +30,20 @@ export const importTeachers = async (req: Request, res: Response) => {
         errors.push({ row: i + 1, error: !t.name ? "Name is required" : "Designation is required" });
         continue;
       }
-      try {
-        const teacher = await prisma.teacher.create({
-          data: { designation: t.designation, name: t.name, email: t.email || null, contact: t.contact || null },
-        });
-        created.push({ id: teacher.id, name: teacher.name, designation: teacher.designation });
-      } catch (e: any) {
-        errors.push({ row: i + 1, error: sanitizeError(e) });
-      }
+      valid.push(t);
     }
+
+    const created = valid.length > 0
+      ? await prisma.teacher.createManyAndReturn({
+          data: valid.map((t: any) => ({ designation: t.designation, name: t.name, email: t.email || null, contact: t.contact || null })),
+          select: { id: true, name: true, designation: true },
+        })
+      : [];
 
     logAudit({ action: "IMPORT", entityType: "Teacher", entityId: `batch-${created.length}`, details: JSON.stringify({ created: created.length, errors: errors.length }) });
     res.status(201).json({ created: created.length, errors, teachers: created });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -60,13 +61,13 @@ export const getAllTeachers = async (req: Request, res: Response) => {
       name: t.name,
       email: t.email,
       contact: t.contact,
-      photoUrl: t.photoPath ? await getSignedUrl(PHOTO_BUCKET, t.photoPath) : null,
+      photoUrl: t.photoPath ? await getPhotoUrl(PHOTO_BUCKET, t.photoPath) : null,
       hasPhoto: !!(t.photoPath || t.photo),
       createdAt: t.createdAt,
     })));
     res.json({ data: result, total, skip, take });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -86,13 +87,8 @@ export const createTeacher = async (req: Request, res: Response) => {
       },
     });
 
-    let photoUrl: string | null = null;
     if (parsed) {
-      const { path, error } = await uploadPhoto(PHOTO_BUCKET, "teachers", teacher.id, parsed.buffer, parsed.mimeType);
-      if (!error && path) {
-        await prisma.teacher.update({ where: { id: teacher.id }, data: { photoPath: path } });
-        photoUrl = await getSignedUrl(PHOTO_BUCKET, path);
-      }
+      uploadPhotoAsync(PHOTO_BUCKET, "teachers", teacher.id, parsed.buffer, parsed.mimeType);
     }
 
     res.status(201).json({
@@ -101,11 +97,11 @@ export const createTeacher = async (req: Request, res: Response) => {
       name: teacher.name,
       email: teacher.email,
       contact: teacher.contact,
-      photoUrl,
+      photoUrl: null,
       createdAt: teacher.createdAt,
     });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -128,8 +124,7 @@ export const updateTeacher = async (req: Request, res: Response) => {
 
     if (parsed) {
       if (existing?.photoPath) await deletePhoto(PHOTO_BUCKET, existing.photoPath);
-      const { path, error } = await uploadPhoto(PHOTO_BUCKET, "teachers", id, parsed.buffer, parsed.mimeType);
-      if (!error && path) data.photoPath = path;
+      uploadPhotoAsync(PHOTO_BUCKET, "teachers", id, parsed.buffer, parsed.mimeType);
     } else if (req.body.clearPhoto === true && existing?.photoPath) {
       await deletePhoto(PHOTO_BUCKET, existing.photoPath);
       data.photoPath = null;
@@ -142,11 +137,11 @@ export const updateTeacher = async (req: Request, res: Response) => {
       name: teacher.name,
       email: teacher.email,
       contact: teacher.contact,
-      photoUrl: teacher.photoPath ? await getSignedUrl(PHOTO_BUCKET, teacher.photoPath) : null,
+      photoUrl: teacher.photoPath ? await getPhotoUrl(PHOTO_BUCKET, teacher.photoPath) : null,
       createdAt: teacher.createdAt,
     });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -156,7 +151,7 @@ export const deleteTeacher = async (req: Request, res: Response) => {
     await prisma.teacher.update({ where: { id }, data: { deletedAt: new Date() } });
     res.json({ message: "Teacher deleted", id });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -166,7 +161,7 @@ export const restoreTeacher = async (req: Request, res: Response) => {
     await prisma.teacher.update({ where: { id }, data: { deletedAt: null } });
     res.json({ message: "Teacher restored", id });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -190,7 +185,7 @@ export const getTeacherPhoto = async (req: Request, res: Response) => {
     res.set("ETag", etag);
     res.send(buf);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -202,8 +197,8 @@ export const importStaff = async (req: Request, res: Response) => {
     }
     if (staff.length > 500) return res.status(400).json({ error: "Maximum 500 per import" });
 
-    const created: any[] = [];
     const errors: { row: number; error: string }[] = [];
+    const valid: any[] = [];
 
     for (let i = 0; i < staff.length; i++) {
       const s = staff[i];
@@ -211,20 +206,20 @@ export const importStaff = async (req: Request, res: Response) => {
         errors.push({ row: i + 1, error: !s.name ? "Name is required" : "Role is required" });
         continue;
       }
-      try {
-        const member = await prisma.staff.create({
-          data: { role: s.role, name: s.name, email: s.email || null, contact: s.contact || null },
-        });
-        created.push({ id: member.id, name: member.name, role: member.role });
-      } catch (e: any) {
-        errors.push({ row: i + 1, error: sanitizeError(e) });
-      }
+      valid.push(s);
     }
+
+    const created = valid.length > 0
+      ? await prisma.staff.createManyAndReturn({
+          data: valid.map((s: any) => ({ role: s.role, name: s.name, email: s.email || null, contact: s.contact || null })),
+          select: { id: true, name: true, role: true },
+        })
+      : [];
 
     logAudit({ action: "IMPORT", entityType: "Staff", entityId: `batch-${created.length}`, details: JSON.stringify({ created: created.length, errors: errors.length }) });
     res.status(201).json({ created: created.length, errors, staff: created });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -242,13 +237,13 @@ export const getAllStaff = async (req: Request, res: Response) => {
       name: s.name,
       email: s.email,
       contact: s.contact,
-      photoUrl: s.photoPath ? await getSignedUrl(PHOTO_BUCKET, s.photoPath) : null,
+      photoUrl: s.photoPath ? await getPhotoUrl(PHOTO_BUCKET, s.photoPath) : null,
       hasPhoto: !!(s.photoPath || s.photo),
       createdAt: s.createdAt,
     })));
     res.json({ data: result, total, skip, take });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -268,13 +263,8 @@ export const createStaff = async (req: Request, res: Response) => {
       },
     });
 
-    let photoUrl: string | null = null;
     if (parsed) {
-      const { path, error } = await uploadPhoto(PHOTO_BUCKET, "staff", staff.id, parsed.buffer, parsed.mimeType);
-      if (!error && path) {
-        await prisma.staff.update({ where: { id: staff.id }, data: { photoPath: path } });
-        photoUrl = await getSignedUrl(PHOTO_BUCKET, path);
-      }
+      uploadPhotoAsync(PHOTO_BUCKET, "staff", staff.id, parsed.buffer, parsed.mimeType);
     }
 
     res.status(201).json({
@@ -283,11 +273,11 @@ export const createStaff = async (req: Request, res: Response) => {
       name: staff.name,
       email: staff.email,
       contact: staff.contact,
-      photoUrl,
+      photoUrl: null,
       createdAt: staff.createdAt,
     });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -310,8 +300,7 @@ export const updateStaff = async (req: Request, res: Response) => {
 
     if (parsed) {
       if (existing?.photoPath) await deletePhoto(PHOTO_BUCKET, existing.photoPath);
-      const { path, error } = await uploadPhoto(PHOTO_BUCKET, "staff", id, parsed.buffer, parsed.mimeType);
-      if (!error && path) data.photoPath = path;
+      uploadPhotoAsync(PHOTO_BUCKET, "staff", id, parsed.buffer, parsed.mimeType);
     } else if (req.body.clearPhoto === true && existing?.photoPath) {
       await deletePhoto(PHOTO_BUCKET, existing.photoPath);
       data.photoPath = null;
@@ -324,11 +313,11 @@ export const updateStaff = async (req: Request, res: Response) => {
       name: staff.name,
       email: staff.email,
       contact: staff.contact,
-      photoUrl: staff.photoPath ? await getSignedUrl(PHOTO_BUCKET, staff.photoPath) : null,
+      photoUrl: null,
       createdAt: staff.createdAt,
     });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -338,7 +327,7 @@ export const deleteStaff = async (req: Request, res: Response) => {
     await prisma.staff.update({ where: { id }, data: { deletedAt: new Date() } });
     res.json({ message: "Staff deleted", id });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -348,7 +337,7 @@ export const restoreStaff = async (req: Request, res: Response) => {
     await prisma.staff.update({ where: { id }, data: { deletedAt: null } });
     res.json({ message: "Staff restored", id });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -372,7 +361,7 @@ export const getStaffPhoto = async (req: Request, res: Response) => {
     res.set("ETag", etag);
     res.send(buf);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -393,7 +382,7 @@ export const getAllBooks = async (req: Request, res: Response) => {
     ]);
     res.json({ data: books, total, skip, take });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -420,7 +409,7 @@ export const createBook = async (req: Request, res: Response) => {
 
     res.status(201).json(book);
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -447,7 +436,7 @@ export const updateBook = async (req: Request, res: Response) => {
 
     res.json(book);
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -457,6 +446,6 @@ export const deleteBook = async (req: Request, res: Response) => {
     await prisma.book.delete({ where: { id } });
     res.json({ message: "Book deleted" });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };

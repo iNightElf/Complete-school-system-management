@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError, errorStatus } from "../lib/errors.js";
+import { sanitizeError, errorStatus, handleControllerError } from "../lib/errors.js";
 import { logAudit } from "../lib/audit.js";
 import { param } from "../lib/param.js";
 
@@ -9,18 +9,34 @@ const VALID_FREQUENCIES = ["MONTHLY", "YEARLY", "ONETIME"];
 
 export const getFeeSchedules = async (req: Request, res: Response) => {
   try {
-    const { academicYearId, classId } = req.query;
+    const { academicYearId, classId, page: pageStr, limit: limitStr } = req.query;
     const where: any = {};
     if (academicYearId) where.academicYearId = String(academicYearId);
     if (classId) where.classId = String(classId);
+    const page = pageStr ? Math.max(1, parseInt(String(pageStr), 10) || 1) : undefined;
+    const limit = page ? Math.min(500, Math.max(1, parseInt(String(limitStr || '100'), 10) || 100)) : undefined;
+    if (page) {
+      const [schedules, total] = await Promise.all([
+        prisma.feeSchedule.findMany({
+          where,
+          include: { academicYear: { select: { name: true } }, classRel: { select: { name: true } } },
+          orderBy: [{ classId: "asc" }, { category: "asc" }],
+          skip: (page - 1) * limit!,
+          take: limit!,
+        }),
+        prisma.feeSchedule.count({ where }),
+      ]);
+      return res.json({ data: schedules, total, page, totalPages: Math.ceil(total / limit!) });
+    }
     const schedules = await prisma.feeSchedule.findMany({
       where,
       include: { academicYear: { select: { name: true } }, classRel: { select: { name: true } } },
       orderBy: [{ classId: "asc" }, { category: "asc" }],
+      take: 5000,
     });
     res.json(schedules);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -46,7 +62,7 @@ export const createFeeSchedule = async (req: AuthRequest, res: Response) => {
     logAudit({ userId: req.user?.id, action: "CREATE", entityType: "FeeSchedule", entityId: schedule.id, details: JSON.stringify({ academicYearId, classId, category, amount }) });
     res.status(201).json(schedule);
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -69,7 +85,7 @@ export const updateFeeSchedule = async (req: AuthRequest, res: Response) => {
     logAudit({ userId: req.user?.id, action: "UPDATE", entityType: "FeeSchedule", entityId: id, details: JSON.stringify(data) });
     res.json(schedule);
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -83,37 +99,29 @@ export const copyFeeSchedulesFromYear = async (req: AuthRequest, res: Response) 
     if (sourceSchedules.length === 0) {
       return res.status(404).json({ error: "No fee schedules found in the source year" });
     }
-    let copied = 0;
-    let skipped = 0;
-    for (const s of sourceSchedules) {
-      try {
-        await prisma.feeSchedule.create({
-          data: {
-            academicYearId: targetAcademicYearId,
-            classId: s.classId,
-            category: s.category,
-            amount: s.amount,
-            frequency: s.frequency,
-            applicability: s.applicability,
-            effectiveFrom: s.effectiveFrom,
-            effectiveTo: s.effectiveTo,
-          },
-        });
-        copied++;
-      } catch (e: any) {
-        if (e.code === 'P2002') { skipped++; continue; }
-        throw e;
-      }
-    }
-    logAudit({ userId: req.user?.id, action: "CREATE", entityType: "FeeSchedule", details: `Copied ${copied} schedules from year ${sourceAcademicYearId} to ${targetAcademicYearId} (${skipped} skipped)` });
+    const { count } = await prisma.feeSchedule.createMany({
+      data: sourceSchedules.map(s => ({
+        academicYearId: targetAcademicYearId,
+        classId: s.classId,
+        category: s.category,
+        amount: s.amount,
+        frequency: s.frequency,
+        applicability: s.applicability,
+        effectiveFrom: s.effectiveFrom,
+        effectiveTo: s.effectiveTo,
+      })),
+      skipDuplicates: true,
+    });
+    const skipped = sourceSchedules.length - count;
+    logAudit({ userId: req.user?.id, action: "CREATE", entityType: "FeeSchedule", details: `Copied ${count} schedules from year ${sourceAcademicYearId} to ${targetAcademicYearId} (${skipped} skipped)` });
     const targetSchedules = await prisma.feeSchedule.findMany({
       where: { academicYearId: targetAcademicYearId },
       include: { academicYear: { select: { name: true } }, classRel: { select: { name: true } } },
       orderBy: [{ classId: "asc" }, { category: "asc" }],
     });
-    res.json({ copied, skipped, schedules: targetSchedules });
+    res.json({ copied: count, skipped, schedules: targetSchedules });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -124,6 +132,6 @@ export const deleteFeeSchedule = async (req: AuthRequest, res: Response) => {
     logAudit({ userId: req.user?.id, action: "DELETE", entityType: "FeeSchedule", entityId: id });
     res.json({ message: "Fee schedule deleted" });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };

@@ -35,6 +35,18 @@ export const initSetup = async (req: Request, res: Response) => {
     if (!name || !email || !password) {
       return res.status(400).json({ error: "name, email, and password are required" });
     }
+    if (password.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters long" });
+    }
+    if (!/[A-Z]/.test(password)) {
+      return res.status(400).json({ error: "Password must contain at least one uppercase letter" });
+    }
+    if (!/[a-z]/.test(password)) {
+      return res.status(400).json({ error: "Password must contain at least one lowercase letter" });
+    }
+    if (!/[0-9]/.test(password)) {
+      return res.status(400).json({ error: "Password must contain at least one digit" });
+    }
 
     const hasAdmin = await hasValidAdmin();
     const setupToken = process.env.SETUP_TOKEN;
@@ -56,10 +68,11 @@ export const initSetup = async (req: Request, res: Response) => {
       }
     }
 
-    // Clean up orphaned DB record if Supabase Auth user doesn't exist
+    // Clean up orphaned DB & Supabase Auth records for this email
     const existingUser = await prisma.user.findUnique({ where: { email } });
+    const client = adminClient();
+
     if (existingUser) {
-      const client = adminClient();
       if (client) {
         const { data: authUser } = await client.auth.admin.getUserById(existingUser.id);
         if (authUser?.user) {
@@ -69,13 +82,13 @@ export const initSetup = async (req: Request, res: Response) => {
       await prisma.user.delete({ where: { id: existingUser.id } }).catch(() => {});
     }
 
-    // Clean up orphaned Supabase Auth user if email already registered there
-    const client = adminClient();
+    // Check if email is already registered in Supabase Auth (orphaned)
     if (client) {
-      const { data: users } = await client.auth.admin.listUsers();
-      const existing = users?.users?.find(u => u.email === email);
-      if (existing) {
-        await client.auth.admin.deleteUser(existing.id);
+      // listUsers is O(n) but this runs only during registration, not on every request
+      const { data: users } = await client.auth.admin.listUsers({ page: 1, perPage: 10000 });
+      const orphaned = users?.users?.find(u => u.email === email);
+      if (orphaned) {
+        await client.auth.admin.deleteUser(orphaned.id);
       }
     }
 

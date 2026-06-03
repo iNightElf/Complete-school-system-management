@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError, errorStatus } from "../lib/errors.js";
+import { sanitizeError, errorStatus, handleControllerError } from "../lib/errors.js";
 import { validate, saveStudentResultSchema, createSubjectSchema, updateSubjectSchema } from "../lib/validate.js";
 
 export const getSubjectsByClass = async (req: Request, res: Response) => {
@@ -17,7 +17,7 @@ export const getSubjectsByClass = async (req: Request, res: Response) => {
 
     res.json(subjects);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -40,7 +40,7 @@ export const createSubject = async (req: Request, res: Response) => {
 
     res.status(201).json(subject);
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -57,7 +57,7 @@ export const updateSubject = async (req: Request, res: Response) => {
 
     res.json(subject);
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -67,7 +67,7 @@ export const deleteSubject = async (req: Request, res: Response) => {
     await prisma.subject.delete({ where: { id } });
     res.json({ message: "Subject deleted" });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -86,7 +86,7 @@ export const getStudentResults = async (req: Request, res: Response) => {
 
     res.json(results);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -139,7 +139,7 @@ export const saveStudentResult = async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -160,7 +160,7 @@ export const getClassResults = async (req: Request, res: Response) => {
 
     res.json(results);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -183,7 +183,7 @@ export const deleteClassResultsOnly = async (req: Request, res: Response) => {
 
     res.json({ message: "All results for this class deleted" });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -197,6 +197,6 @@ export const deleteClassSubjects = async (req: Request, res: Response) => {
 
     res.json({ message: "All subjects for this class deleted" });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };

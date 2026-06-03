@@ -9,7 +9,11 @@ let adminClient: ReturnType<typeof createClient> | null = null;
 function getAdmin() {
   if (!adminClient) {
     if (!supabaseUrl || !supabaseServiceKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
-    adminClient = createClient(supabaseUrl, supabaseServiceKey);
+    adminClient = createClient(supabaseUrl, supabaseServiceKey, {
+      global: {
+        fetch: (url: any, opts: any) => fetch(url, { ...opts, signal: AbortSignal.timeout(10000) }),
+      },
+    });
   }
   return adminClient;
 }
@@ -61,7 +65,7 @@ export async function createAdminUser(email: string, password: string, name: str
   return data.user;
 }
 
-const APP_URL = process.env.BETTER_AUTH_URL || "http://localhost:5173";
+const APP_URL = process.env.APP_URL || "http://localhost:5173";
 
 export async function generateAndSendVerification(email: string, password: string) {
   const { data, error } = await getAdmin().auth.admin.generateLink({
@@ -73,8 +77,12 @@ export async function generateAndSendVerification(email: string, password: strin
   if (error) throw error;
   const link = data?.properties?.action_link;
   if (!link) throw new Error("No verification link returned");
-  const { sendVerificationEmail } = await import("./email.js");
-  await sendVerificationEmail(email, link);
+  // Fire email asynchronously — don't block the registration response
+  import("./email.js").then(({ sendVerificationEmail }) => {
+    sendVerificationEmail(email, link).catch(e => {
+      console.error(`[email] Failed to send verification to ${email}:`, e);
+    });
+  });
   return link;
 }
 
@@ -84,7 +92,10 @@ export async function updateUserRole(userId: string, role: string) {
 }
 
 export async function deleteAuthUser(userId: string) {
-  // Supabase Auth delete is best-effort (user may not exist in Supabase)
-  await getAdmin().auth.admin.deleteUser(userId).catch(() => {});
+  // Delete from Supabase Auth first; log failure but still remove DB record
+  const { error } = await getAdmin().auth.admin.deleteUser(userId);
+  if (error) {
+    console.error(`[deleteAuthUser] Supabase Auth delete failed for ${userId}: ${error.message}`);
+  }
   await prisma.user.delete({ where: { id: userId } });
 }

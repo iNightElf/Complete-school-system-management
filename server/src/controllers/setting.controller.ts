@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError } from "../lib/errors.js";
+import { sanitizeError, handleControllerError } from "../lib/errors.js";
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   school_name: "AL RAWA English School",
@@ -20,7 +20,7 @@ export const getSettings = async (_req: Request, res: Response) => {
     }
     res.json(settings);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, _req.path);
   }
 };
 
@@ -30,13 +30,15 @@ export const updateSettings = async (req: AuthRequest, res: Response) => {
     const allowed = Object.keys(DEFAULT_SETTINGS);
     const entries = Object.entries(body).filter(([k]) => allowed.includes(k));
 
-    for (const [key, value] of entries) {
-      await prisma.schoolSetting.upsert({
-        where: { key },
-        update: { value: String(value) },
-        create: { key, value: String(value) },
-      });
-    }
+    await prisma.$transaction(
+      entries.map(([key, value]) =>
+        prisma.schoolSetting.upsert({
+          where: { key },
+          update: { value: String(value) },
+          create: { key, value: String(value) },
+        })
+      )
+    );
 
     const rows = await prisma.schoolSetting.findMany();
     const settings = { ...DEFAULT_SETTINGS };
@@ -45,6 +47,6 @@ export const updateSettings = async (req: AuthRequest, res: Response) => {
     }
     res.json(settings);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };

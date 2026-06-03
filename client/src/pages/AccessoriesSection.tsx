@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSchoolStore, useAuthStore } from '../store';
+import { api } from '../store';
 import { toast } from '../components/Toast';
 import { Settings, RefreshCw, Plus, Pencil, Trash2, Printer, Download, BookOpen, Check, X, ChevronDown } from 'lucide-react';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
@@ -132,18 +133,13 @@ const AccessoriesSection = () => {
       const existing = feeSchedules.find((fs: any) => fs.category === category && (!fs.classId || fs.classId === selectedClassId));
       const amount = Number(editFee.amount) || 0;
       if (existing) {
-        await fetch(`${API_URL}/finance/fee-schedules/${existing.id}`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ amount }),
-        });
+        await api.put(`${API_URL}/finance/fee-schedules/${existing.id}`, { amount });
       } else {
         await fetchAcademicYears();
         const activeYear = useSchoolStore.getState().academicYears;
         const year = activeYear.find((y: any) => y.isActive) || activeYear[0];
         if (!year) { toast('No academic year found', 'error'); return; }
-        await fetch(`${API_URL}/finance/fee-schedules`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-          body: JSON.stringify({ academicYearId: year.id, classId: selectedClassId, category, amount, frequency: 'YEARLY' }),
-        });
+        await api.post(`${API_URL}/finance/fee-schedules`, { academicYearId: year.id, classId: selectedClassId, category, amount, frequency: 'YEARLY' });
       }
       toast('Fee updated ✓', 'success');
       setEditFee(null);
@@ -156,10 +152,7 @@ const AccessoriesSection = () => {
   const handleUpdateBook = async (id: string) => {
     if (!editBook) return;
     try {
-      await fetch(`${API_URL}/books/${id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ name: editBook.name, sell: Number(editBook.sell) || 0 }),
-      });
+      await api.put(`${API_URL}/books/${id}`, { name: editBook.name, sell: Number(editBook.sell) || 0 });
       toast('Book updated ✓', 'success');
       setEditBook(null);
       fetchBooks();
@@ -171,10 +164,7 @@ const AccessoriesSection = () => {
   const handleAddBook = async () => {
     if (!newBookData.name.trim() || !selectedClassId) return;
     try {
-      await fetch(`${API_URL}/books`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ name: newBookData.name.trim(), sell: Number(newBookData.sell) || 0, classId: selectedClassId }),
-      });
+      await api.post(`${API_URL}/books`, { name: newBookData.name.trim(), sell: Number(newBookData.sell) || 0, classId: selectedClassId });
       toast('Book added ✓', 'success');
       setNewBook(false);
       setNewBookData({ name: '', sell: '' });
@@ -188,8 +178,7 @@ const AccessoriesSection = () => {
     if (!deleteId) return;
     setDeleteLoading(true);
     try {
-      const res = await fetch(`${API_URL}/books/${deleteId}`, { method: 'DELETE', credentials: 'include' });
-      if (!res.ok) throw new Error();
+      await api.delete(`${API_URL}/books/${deleteId}`);
       toast('Book deleted', 'success');
       setDeleteId(null);
       fetchBooks();

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSchoolStore, useAuthStore } from '../../store';
+import { api } from '../../store';
 import { toast } from '../../components/Toast';
 import CameraModal from '../../components/CameraModal';
 import ImportModal from '../../components/ImportModal';
@@ -56,19 +57,16 @@ export default function TeacherSection() {
     const body = { ...form, photo: photo || undefined };
 
     try {
-      const url = editingId ? `${API_URL}/teachers/${editingId}` : `${API_URL}/teachers`;
-      const res = await fetch(url, {
-        method: editingId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Save failed'); }
+      if (editingId) {
+        await api.put(`${API_URL}/teachers/${editingId}`, body);
+      } else {
+        await api.post(`${API_URL}/teachers`, body);
+      }
       toast(editingId ? 'Teacher updated ✓' : 'Teacher added ✓', 'success');
       resetForm();
       fetchTeachers();
     } catch (e: any) {
-      toast(e.message || 'Error', 'error');
+      toast(e.response?.data?.error || e.message || 'Error', 'error');
     }
   };
 
@@ -80,16 +78,15 @@ export default function TeacherSection() {
     const idToRestore = deleteId;
     setDeleteLoading(true);
     try {
-      const res = await fetch(`${API_URL}/teachers/${deleteId}`, { method: 'DELETE', credentials: 'include' });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Delete failed'); }
+      await api.delete(`${API_URL}/teachers/${deleteId}`);
       toast('Teacher deleted', '', { label: 'Undo', onClick: async () => {
         try {
-          await fetch(`${API_URL}/teachers/${idToRestore}/restore`, { method: 'POST', credentials: 'include' });
+          await api.post(`${API_URL}/teachers/${idToRestore}/restore`);
           toast('Teacher restored ✓', 'success');
           fetchTeachers();
         } catch { toast('Could not undo', 'error'); }
       }});
-    } catch (e: any) { toast(e.message || 'Error', 'error'); }
+    } catch (e: any) { toast(e.response?.data?.error || e.message || 'Error', 'error'); }
     setDeleteId(null);
     setDeleteLoading(false);
     fetchTeachers();
@@ -182,7 +179,7 @@ export default function TeacherSection() {
             onClick={async () => {
               const photoCache: Record<string, string> = {};
               await Promise.all(filtered.filter((t: any) => t.photoUrl).map(async (t: any) => {
-                try { const r = await fetch(t.photoUrl, { credentials: 'include' }); const blob = await r.blob(); photoCache[t.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+                try { const r = await api.get(t.photoUrl, { responseType: 'blob' }); photoCache[t.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(r.data); }); } catch {}
               }));
               const doc = new jsPDF();
               doc.setFont('helvetica', 'bold'); doc.setFontSize(16);

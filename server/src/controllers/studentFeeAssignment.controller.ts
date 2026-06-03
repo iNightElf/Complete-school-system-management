@@ -1,26 +1,46 @@
 import type { Response } from "express";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError, errorStatus } from "../lib/errors.js";
+import { sanitizeError, errorStatus, handleControllerError } from "../lib/errors.js";
 import { logAudit } from "../lib/audit.js";
 import { param } from "../lib/param.js";
 
 export const getStudentFeeAssignments = async (req: AuthRequest, res: Response) => {
   try {
-    const { studentId, feeScheduleId, className, active } = req.query;
+    const { studentId, feeScheduleId, className, active, page: pageStr, limit: limitStr } = req.query;
     const where: any = {};
     if (studentId) where.studentId = String(studentId);
     if (feeScheduleId) where.feeScheduleId = String(feeScheduleId);
     if (active !== undefined) where.active = active === "true";
 
-    let assignments = await prisma.studentFeeAssignment.findMany({
-      where,
-      include: {
-        student: { select: { id: true, name: true, class: true, studentId: true } },
-        feeSchedule: { select: { id: true, category: true, amount: true, frequency: true, classRel: { select: { name: true } } } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const page = pageStr ? Math.max(1, parseInt(String(pageStr), 10) || 1) : undefined;
+    const limit = page ? Math.min(200, Math.max(1, parseInt(String(limitStr || '50'), 10) || 50)) : undefined;
+
+    let assignments: any[];
+    if (page) {
+      [assignments] = await Promise.all([
+        prisma.studentFeeAssignment.findMany({
+          where,
+          include: {
+            student: { select: { id: true, name: true, class: true, studentId: true } },
+            feeSchedule: { select: { id: true, category: true, amount: true, frequency: true, classRel: { select: { name: true } } } },
+          },
+          orderBy: { createdAt: "desc" },
+          skip: (page - 1) * limit!,
+          take: limit!,
+        }),
+      ]);
+    } else {
+      assignments = await prisma.studentFeeAssignment.findMany({
+        where,
+        include: {
+          student: { select: { id: true, name: true, class: true, studentId: true } },
+          feeSchedule: { select: { id: true, category: true, amount: true, frequency: true, classRel: { select: { name: true } } } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5000,
+      });
+    }
 
     if (className) {
       const classStudents = await prisma.student.findMany({ where: { class: String(className) }, select: { id: true } });
@@ -30,7 +50,7 @@ export const getStudentFeeAssignments = async (req: AuthRequest, res: Response) 
 
     res.json(assignments);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -41,14 +61,12 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
       return res.status(400).json({ error: "studentId and feeScheduleId are required" });
     }
 
-    // Find existing active record
     const existing = await prisma.studentFeeAssignment.findFirst({
       where: { studentId, feeScheduleId, active: true },
     });
 
-    // No active param = toggle mode. Explicit active = set to that state.
+    // Explicit deactivation
     if (active === false) {
-      // Explicitly requested to deactivate
       if (existing) {
         const updated = await prisma.studentFeeAssignment.update({
           where: { id: existing.id },
@@ -60,9 +78,9 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
       return res.json({ message: "Already inactive" });
     }
 
-    if (active === true || active === undefined) {
-      if (existing && active === undefined && startsAt === undefined && endsAt === undefined && note === undefined) {
-        // Pure toggle (no params) with existing active record → deactivate
+    // Pure toggle (no params) — flip off if currently active
+    if (active === undefined && startsAt === undefined && endsAt === undefined && note === undefined) {
+      if (existing) {
         const updated = await prisma.studentFeeAssignment.update({
           where: { id: existing.id },
           data: { active: false },
@@ -70,26 +88,24 @@ export const toggleStudentFeeAssignment = async (req: AuthRequest, res: Response
         logAudit({ userId: req.user?.id, action: "DEACTIVATE", entityType: "StudentFeeAssignment", entityId: updated.id, details: JSON.stringify({ studentId, feeScheduleId }) });
         return res.json(updated);
       }
-
-      if (existing) {
-        // Deactivate old (immutable history)
-        await prisma.studentFeeAssignment.update({
-          where: { id: existing.id },
-          data: { active: false },
-        });
-      }
-
-      const created = await prisma.studentFeeAssignment.create({
-        data: { studentId, feeScheduleId, active: true, startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null, note },
-      });
-      logAudit({ userId: req.user?.id, action: "CREATE", entityType: "StudentFeeAssignment", entityId: created.id, details: JSON.stringify({ studentId, feeScheduleId }) });
-      return res.status(201).json(created);
+      return res.json({ message: "Already inactive" });
     }
 
-    // Shouldn't reach here
-    return res.status(400).json({ error: "Invalid active value" });
+    // Activate or update — deactivate old, create new
+    if (existing) {
+      await prisma.studentFeeAssignment.update({
+        where: { id: existing.id },
+        data: { active: false },
+      });
+    }
+
+    const created = await prisma.studentFeeAssignment.create({
+      data: { studentId, feeScheduleId, active: true, startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null, note },
+    });
+    logAudit({ userId: req.user?.id, action: "CREATE", entityType: "StudentFeeAssignment", entityId: created.id, details: JSON.stringify({ studentId, feeScheduleId }) });
+    res.status(201).json(created);
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -100,30 +116,25 @@ export const bulkAssign = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "feeScheduleId and studentIds array are required" });
     }
 
-    const count = await prisma.$transaction(async (tx) => {
-      let done = 0;
-      for (const sid of studentIds) {
-        await tx.studentFeeAssignment.updateMany({
-          where: { studentId: sid, feeScheduleId, active: true },
-          data: { active: false },
-        });
-        await tx.studentFeeAssignment.create({
-          data: {
-            studentId: sid,
-            feeScheduleId,
-            active: active !== undefined ? active : true,
-            ...(startsAt?.trim() ? { startsAt: new Date(startsAt) } : {}),
-            ...(endsAt?.trim() ? { endsAt: new Date(endsAt) } : {}),
-          },
-        });
-        done++;
-      }
-      return done;
+    await prisma.$transaction(async (tx) => {
+      await tx.studentFeeAssignment.updateMany({
+        where: { studentId: { in: studentIds }, feeScheduleId, active: true },
+        data: { active: false },
+      });
+      await tx.studentFeeAssignment.createMany({
+        data: studentIds.map((sid: string) => ({
+          studentId: sid,
+          feeScheduleId,
+          active: active !== undefined ? active : true,
+          ...(startsAt?.trim() ? { startsAt: new Date(startsAt) } : {}),
+          ...(endsAt?.trim() ? { endsAt: new Date(endsAt) } : {}),
+        })),
+      });
     });
 
-    logAudit({ userId: req.user?.id, action: "BULK_ASSIGN", entityType: "StudentFeeAssignment", entityId: feeScheduleId, details: JSON.stringify({ studentIds: studentIds.length, count }) });
-    res.json({ count });
+    logAudit({ userId: req.user?.id, action: "BULK_ASSIGN", entityType: "StudentFeeAssignment", entityId: feeScheduleId, details: JSON.stringify({ studentIds: studentIds.length, count: studentIds.length }) });
+    res.json({ count: studentIds.length });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };

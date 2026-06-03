@@ -8,7 +8,8 @@ export type Permission =
   | "results:read" | "results:write"
   | "finance:read" | "finance:write" | "finance:admin"
   | "users:read" | "users:write"
-  | "audit:read";
+  | "audit:read"
+  | "academic-years:read" | "academic-years:write";
 
 export type Role = "admin" | "teacher" | "accountant" | "viewer";
 
@@ -31,6 +32,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "finance:read", "finance:write", "finance:admin",
     "users:read", "users:write",
     "audit:read",
+    "academic-years:read", "academic-years:write",
   ],
   teacher: [
     "students:read", "students:write",
@@ -40,6 +42,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "classes:read",
     "subjects:read",
     "results:read", "results:write",
+    "academic-years:read",
   ],
   accountant: [
     "students:read",
@@ -48,6 +51,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "books:read",
     "classes:read",
     "finance:read", "finance:write",
+    "academic-years:read",
   ],
   viewer: [
     "students:read",
@@ -58,6 +62,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "subjects:read",
     "results:read",
     "finance:read",
+    "academic-years:read",
   ],
 };
 

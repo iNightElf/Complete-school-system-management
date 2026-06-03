@@ -12,7 +12,11 @@ function isConfigured(): boolean {
 function getSupabase() {
   if (!supabase) {
     if (!isConfigured()) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
-    supabase = createClient(supabaseUrl, supabaseKey);
+    supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        fetch: (url: any, opts: any) => fetch(url, { ...opts, signal: AbortSignal.timeout(10000) }),
+      },
+    });
   }
   return supabase;
 }
@@ -58,4 +62,31 @@ export async function getSignedUrl(bucket: string, path: string, expiresIn = 864
 
   if (error || !data) return null;
   return data.signedUrl;
+}
+
+const signedUrlCache = new Map<string, { url: string; expires: number }>();
+const SIGNED_URL_TTL = 86_400_000; // 24h
+
+export async function getPhotoUrl(bucket: string, path: string): Promise<string | null> {
+  if (!isConfigured() || !path) return null;
+  const key = `${bucket}/${path}`;
+  const cached = signedUrlCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.url;
+
+  const { data, error } = await getSupabase().storage
+    .from(bucket)
+    .createSignedUrl(path, 86400);
+
+  if (error || !data) return null;
+  const url = data.signedUrl;
+  signedUrlCache.set(key, { url, expires: Date.now() + SIGNED_URL_TTL });
+  return url;
+}
+
+export function getPublicUrl(bucket: string, path: string): string | null {
+  if (!isConfigured() || !path) return null;
+  const { data } = getSupabase().storage
+    .from(bucket)
+    .getPublicUrl(path);
+  return data?.publicUrl || null;
 }

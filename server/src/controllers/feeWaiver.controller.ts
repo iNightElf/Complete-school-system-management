@@ -1,18 +1,37 @@
 import type { Response } from "express";
 import type { AuthRequest } from "../middleware/auth.middleware.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError, errorStatus } from "../lib/errors.js";
+import { sanitizeError, errorStatus, handleControllerError } from "../lib/errors.js";
 import { logAudit } from "../lib/audit.js";
 import { param } from "../lib/param.js";
 
 export const getFeeWaivers = async (req: AuthRequest, res: Response) => {
   try {
-    const { studentId, feeScheduleId, active } = req.query;
+    const { studentId, feeScheduleId, active, page: pageStr, limit: limitStr } = req.query;
     const where: any = {};
     if (studentId) where.studentId = String(studentId);
     if (feeScheduleId) where.feeScheduleId = String(feeScheduleId);
     if (active !== undefined) where.active = active === "true";
 
+    const page = pageStr ? Math.max(1, parseInt(String(pageStr), 10) || 1) : undefined;
+    const limit = page ? Math.min(200, Math.max(1, parseInt(String(limitStr || '50'), 10) || 50)) : undefined;
+
+    if (page) {
+      const [waivers, total] = await Promise.all([
+        prisma.feeWaiver.findMany({
+          where,
+          include: {
+            student: { select: { id: true, name: true, class: true, studentId: true } },
+            feeSchedule: { select: { id: true, category: true, amount: true, frequency: true, classRel: { select: { name: true } } } },
+          },
+          orderBy: { createdAt: "desc" },
+          skip: (page - 1) * limit!,
+          take: limit!,
+        }),
+        prisma.feeWaiver.count({ where }),
+      ]);
+      return res.json({ data: waivers, total, page, totalPages: Math.ceil(total / limit!) });
+    }
     const waivers = await prisma.feeWaiver.findMany({
       where,
       include: {
@@ -20,10 +39,11 @@ export const getFeeWaivers = async (req: AuthRequest, res: Response) => {
         feeSchedule: { select: { id: true, category: true, amount: true, frequency: true, classRel: { select: { name: true } } } },
       },
       orderBy: { createdAt: "desc" },
+      take: 5000,
     });
     res.json(waivers);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -47,7 +67,7 @@ export const createFeeWaiver = async (req: AuthRequest, res: Response) => {
     logAudit({ userId: req.user?.id, action: "CREATE", entityType: "FeeWaiver", entityId: waiver.id, details: JSON.stringify({ studentId, feeScheduleId, value }) });
     res.status(201).json(waiver);
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -64,6 +84,6 @@ export const deactivateFeeWaiver = async (req: AuthRequest, res: Response) => {
     logAudit({ userId: req.user?.id, action: "DEACTIVATE", entityType: "FeeWaiver", entityId: id });
     res.json(waiver);
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };

@@ -2,11 +2,12 @@ import type { Request, Response } from "express";
 import { createHash } from "crypto";
 import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeError, errorStatus } from "../lib/errors.js";
+import { sanitizeError, errorStatus, handleControllerError } from "../lib/errors.js";
 import { validate, createStudentSchema } from "../lib/validate.js";
 import { logAudit } from "../lib/audit.js";
 import { parsePhoto, detectMimeType } from "../lib/photo.js";
-import { uploadPhoto, getSignedUrl, deletePhoto } from "../lib/supabase.js";
+import { uploadPhoto, getSignedUrl, getPhotoUrl, deletePhoto } from "../lib/supabase.js";
+import { uploadPhotoAsync } from "../lib/queue.js";
 
 const BUCKET = "student-photos";
 
@@ -16,15 +17,21 @@ async function resolveClassId(className: string): Promise<string | null> {
 }
 
 async function nextStudentId(): Promise<string> {
-  const all = await prisma.student.findMany({
-    select: { studentId: true },
+  const result = await prisma.student.aggregate({
+    _max: { studentId: true },
   });
-  let max = 0;
-  for (const s of all) {
-    const n = parseInt(s.studentId.replace(/\D/g, ''), 10);
-    if (!isNaN(n) && n > max) max = n;
+  const maxId = result._max.studentId || 'S000000';
+  const num = parseInt(maxId.replace(/\D/g, ''), 10) || 0;
+  return `S${String(num + 1).padStart(6, '0')}`;
+}
+
+async function generateStudentIdWithRetry(maxAttempts = 5): Promise<string> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const id = await nextStudentId();
+    const exists = await prisma.student.findUnique({ where: { studentId: id }, select: { id: true } });
+    if (!exists) return id;
   }
-  return `S${String(max + 1).padStart(6, '0')}`;
+  throw new Error('Failed to generate unique student ID after ' + maxAttempts + ' attempts');
 }
 
 export const getAllStudents = async (req: Request, res: Response) => {
@@ -54,14 +61,14 @@ export const getAllStudents = async (req: Request, res: Response) => {
       fatherName: s.fatherName,
       motherName: s.motherName,
       contact: s.contact,
-      photoUrl: s.photoPath ? await getSignedUrl(BUCKET, s.photoPath) : null,
+      photoUrl: s.photoPath ? await getPhotoUrl(BUCKET, s.photoPath) : null,
       hasPhoto: !!(s.photoPath || s.photo),
       hasGraduated: !!s.graduatedAt,
       createdAt: s.createdAt,
     })));
     res.json({ data: result, total, skip, take });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -72,48 +79,58 @@ export const createStudent = async (req: Request, res: Response) => {
     const { class: className, roll, name, fatherName, motherName, contact, session } = v.data;
     const parsed = parsePhoto(req.body);
     const classId = await resolveClassId(className);
-    const studentId = await nextStudentId();
 
-    const student = await prisma.student.create({
-      data: {
-        class: className,
-        classId,
-        studentId,
-        roll: roll || null,
-        session: session || null,
-        name,
-        fatherName: fatherName || null,
-        motherName: motherName || null,
-        contact: contact || null,
-      },
-    });
+    // Retry loop to handle concurrent studentId race
+    let lastError: any;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        const studentId = await generateStudentIdWithRetry();
+        const student = await prisma.student.create({
+          data: {
+            class: className,
+            classId,
+            studentId,
+            roll: roll || null,
+            session: session || null,
+            name,
+            fatherName: fatherName || null,
+            motherName: motherName || null,
+            contact: contact || null,
+          },
+        });
 
-    if (parsed) {
-      const { path, error } = await uploadPhoto(BUCKET, "students", student.id, parsed.buffer, parsed.mimeType);
-      if (!error && path) {
-        await prisma.student.update({ where: { id: student.id }, data: { photoPath: path } });
+        if (parsed) {
+          uploadPhotoAsync(BUCKET, "students", student.id, parsed.buffer, parsed.mimeType);
+        }
+
+        logAudit({ action: "CREATE", entityType: "Student", entityId: student.id, details: JSON.stringify({ name, class: className }) });
+        return res.status(201).json({
+          id: student.id,
+          classId: student.classId,
+          class: student.class,
+          studentId: student.studentId,
+          roll: student.roll,
+          session: student.session,
+          name: student.name,
+          fatherName: student.fatherName,
+          motherName: student.motherName,
+          contact: student.contact,
+          photoUrl: null,
+          hasPhoto: false,
+          hasGraduated: false,
+          createdAt: student.createdAt,
+        });
+      } catch (err: any) {
+        lastError = err;
+        if (err?.code === 'P2002' && err?.meta?.target?.includes('studentId')) {
+          continue; // retry with new ID
+        }
+        throw err;
       }
     }
-
-    logAudit({ action: "CREATE", entityType: "Student", entityId: student.id, details: JSON.stringify({ name, class: className }) });
-    res.status(201).json({
-      id: student.id,
-      classId: student.classId,
-      class: student.class,
-      studentId: student.studentId,
-      roll: student.roll,
-      session: student.session,
-      name: student.name,
-      fatherName: student.fatherName,
-      motherName: student.motherName,
-      contact: student.contact,
-      photoUrl: null,
-      hasPhoto: false,
-      hasGraduated: false,
-      createdAt: student.createdAt,
-    });
+    throw lastError || new Error('Failed to create student after retries');
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -140,8 +157,7 @@ export const updateStudent = async (req: Request, res: Response) => {
 
     if (parsed) {
       if (existing?.photoPath) await deletePhoto(BUCKET, existing.photoPath);
-      const { path, error } = await uploadPhoto(BUCKET, "students", id, parsed.buffer, parsed.mimeType);
-      if (!error && path) data.photoPath = path;
+      uploadPhotoAsync(BUCKET, "students", id, parsed.buffer, parsed.mimeType);
     } else if (req.body.clearPhoto === true && existing?.photoPath) {
       await deletePhoto(BUCKET, existing.photoPath);
       data.photoPath = null;
@@ -170,7 +186,7 @@ export const updateStudent = async (req: Request, res: Response) => {
       createdAt: student.createdAt,
     });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -180,7 +196,7 @@ export const deleteStudent = async (req: Request, res: Response) => {
     await prisma.student.update({ where: { id }, data: { deletedAt: new Date() } });
     res.json({ message: "Student deleted", id });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -190,7 +206,7 @@ export const restoreStudent = async (req: Request, res: Response) => {
     await prisma.student.update({ where: { id }, data: { deletedAt: null } });
     res.json({ message: "Student restored", id });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -201,7 +217,7 @@ export const graduateStudent = async (req: Request, res: Response) => {
     logAudit({ action: "GRADUATE", entityType: "Student", entityId: id, details: "Student graduated" });
     res.json({ message: "Student graduated" });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -212,7 +228,7 @@ export const ungraduateStudent = async (req: Request, res: Response) => {
     logAudit({ action: "UNGRADUATE", entityType: "Student", entityId: id, details: "Student graduation undone" });
     res.json({ message: "Student graduation undone" });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -228,7 +244,7 @@ export const graduateClass = async (req: Request, res: Response) => {
     logAudit({ action: "GRADUATE_CLASS", entityType: "Student", entityId: classId, details: `Graduated ${result.count} students from ${cls.name}` });
     res.json({ message: `${result.count} students graduated` });
   } catch (error: any) {
-    res.status(errorStatus(error)).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -249,8 +265,8 @@ export const importStudents = async (req: Request, res: Response) => {
     });
     const classMap = new Map(existingClasses.map((c) => [c.name, c.id]));
 
-    const created: any[] = [];
     const errors: { row: number; error: string }[] = [];
+    const valid: any[] = [];
 
     for (let i = 0; i < students.length; i++) {
       const s = students[i];
@@ -258,31 +274,38 @@ export const importStudents = async (req: Request, res: Response) => {
         errors.push({ row: i + 1, error: !s.name ? "Name is required" : "Class is required" });
         continue;
       }
-      try {
-        const studentId = await nextStudentId();
-        const student = await prisma.student.create({
-          data: {
-            class: s.class,
-            classId: classMap.get(s.class) || null,
-            studentId,
-            roll: s.roll || null,
-            session: s.session || null,
-            name: s.name,
-            fatherName: s.fatherName || null,
-            motherName: s.motherName || null,
-            contact: s.contact || null,
-          },
-        });
-        created.push({ id: student.id, name: student.name, class: student.class, studentId: student.studentId, roll: student.roll });
-      } catch (e: any) {
-        errors.push({ row: i + 1, error: sanitizeError(e) });
-      }
+      valid.push(s);
     }
+
+    if (valid.length === 0) {
+      return res.status(400).json({ created: 0, errors, students: [] });
+    }
+
+    const result = await prisma.student.aggregate({ _max: { studentId: true } });
+    const maxId = result._max.studentId || 'S000000';
+    const startNum = parseInt(maxId.replace(/\D/g, ''), 10) || 0;
+
+    const data = valid.map((s: any, i: number) => ({
+      class: s.class,
+      classId: classMap.get(s.class) || null,
+      studentId: `S${String(startNum + 1 + i).padStart(6, '0')}`,
+      roll: s.roll || null,
+      session: s.session || null,
+      name: s.name,
+      fatherName: s.fatherName || null,
+      motherName: s.motherName || null,
+      contact: s.contact || null,
+    }));
+
+    const created = await prisma.student.createManyAndReturn({
+      data,
+      select: { id: true, name: true, class: true, studentId: true, roll: true },
+    });
 
     logAudit({ action: "IMPORT", entityType: "Student", entityId: `batch-${created.length}`, details: JSON.stringify({ created: created.length, errors: errors.length }) });
     res.status(201).json({ created: created.length, errors, students: created });
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };
 
@@ -308,6 +331,6 @@ export const getStudentPhoto = async (req: Request, res: Response) => {
     res.set("ETag", etag);
     res.send(buf);
   } catch (error: any) {
-    res.status(500).json({ error: sanitizeError(error) });
+    handleControllerError(res, error, req.path);
   }
 };

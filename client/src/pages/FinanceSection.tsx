@@ -345,13 +345,15 @@ const FinanceSection = () => {
     }
     const sched = feeSchedules.find((fs: any) => fs.category === category && (!fs.classId || fs.classRel?.name === selectedClass));
     if (!sched) return;
-    axios.get(`/api/finance/fee-waivers`, { params: { studentId: selectedStudent, feeScheduleId: sched.id, active: 'true' }, withCredentials: true })
+    const ctrl = new AbortController();
+    axios.get(`/api/finance/fee-waivers`, { signal: ctrl.signal, params: { studentId: selectedStudent, feeScheduleId: sched.id, active: 'true' }, withCredentials: true })
       .then(res => {
         const waiver = res.data?.[0];
         const amount = waiver ? Number(waiver.value) : Number(sched.amount);
         setAmount(String(amount));
       })
       .catch(() => {});
+    return () => ctrl.abort();
   }, [category, selectedStudent, selectedClass, feeSchedules]);
 
   // When category or class changes, determine if ASSIGNED_ONLY and fetch assignments
@@ -362,9 +364,11 @@ const FinanceSection = () => {
     }
     const sched = feeSchedules.find((fs: any) => fs.category === category && (!fs.classId || fs.classRel?.name === selectedClass));
     if (sched?.applicability === 'ASSIGNED_ONLY') {
-      axios.get(`/api/finance/student-fee-assignments`, { params: { feeScheduleId: sched.id }, withCredentials: true })
+      const ctrl = new AbortController();
+      axios.get(`/api/finance/student-fee-assignments`, { signal: ctrl.signal, params: { feeScheduleId: sched.id }, withCredentials: true })
         .then(res => setAssignedStudentIds(res.data.map((a: any) => a.studentId)))
         .catch(() => setAssignedStudentIds(null));
+      return () => ctrl.abort();
     } else {
       setAssignedStudentIds(null);
     }
@@ -373,7 +377,8 @@ const FinanceSection = () => {
   // Fetch fee status when student + feeMonth selected
   useEffect(() => {
     if (!selectedStudent || !feeMonth) { setFeeStatusList([]); return; }
-    axios.get('/api/finance/fee-status', { params: { studentId: selectedStudent, feeMonth }, withCredentials: true })
+    const ctrl = new AbortController();
+    axios.get('/api/finance/fee-status', { signal: ctrl.signal, params: { studentId: selectedStudent, feeMonth }, withCredentials: true })
       .then(res => {
         setFeeStatusList(res.data || []);
         const defaultChecked: Record<string, boolean> = {};
@@ -381,6 +386,7 @@ const FinanceSection = () => {
         setSelectedAllocations(defaultChecked);
       })
       .catch(() => setFeeStatusList([]));
+    return () => ctrl.abort();
   }, [selectedStudent, feeMonth]);
 
   // Auto-fill amount from checked allocations

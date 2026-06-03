@@ -1,3 +1,6 @@
+import type { Response } from "express";
+import { log } from "./logger.js";
+
 const isDev = process.env.NODE_ENV !== 'production';
 
 const PRISMA_MESSAGES: Record<string, string> = {
@@ -28,6 +31,15 @@ export function sanitizeError(error: any): string {
 
 export function errorStatus(error: any, defaultStatus = 400): number {
   return error?.code === 'P2025' ? 404 : defaultStatus;
+}
+
+export function handleControllerError(res: Response, error: any, path?: string) {
+  log("error", error?.message || "Unknown error", {
+    path,
+    stack: isDev ? error?.stack : undefined,
+    code: error?.code,
+  });
+  res.status(errorStatus(error)).json({ error: sanitizeError(error) });
 }
 
 export async function waitForDatabase(prisma: any, maxRetries = 10, delayMs = 2000): Promise<void> {

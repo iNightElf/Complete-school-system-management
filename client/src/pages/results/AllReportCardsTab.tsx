@@ -5,7 +5,7 @@ import ClassSelect from '../../components/ClassSelect';
 import { downloadReportCardPDF } from '../../lib/reportPdf';
 import jsPDF from 'jspdf';
 import { FileSpreadsheet, PenLine, Award } from 'lucide-react';
-import { API_URL, TERM_NAMES } from '../../lib/config';
+import { TERM_NAMES } from '../../lib/config';
 
 export default function AllReportCardsTab() {
   const { students, fetchStudents, subjects, fetchSubjects, academicYears, fetchAcademicYears, classResults, fetchClassResults } = useSchoolStore();

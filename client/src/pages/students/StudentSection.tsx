@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSchoolStore, useAuthStore } from '../../store';
+import { api } from '../../store';
 import { toast } from '../../components/Toast';
 import ClassManagerModal from '../../components/ClassManagerModal';
 import CameraModal from '../../components/CameraModal';
@@ -100,24 +101,16 @@ export default function StudentSection() {
 
     try {
       if (editingId) {
-        const res = await fetch(`${API_URL}/students/${editingId}`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Update failed'); }
+        await api.put(`${API_URL}/students/${editingId}`, body);
         toast('Student updated ✓', 'success');
       } else {
-        const res = await fetch(`${API_URL}/students`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Create failed'); }
+        await api.post(`${API_URL}/students`, body);
         toast('Student added ✓', 'success');
       }
       resetForm();
       fetchStudents();
     } catch (e: any) {
-      toast(e.message || 'Error', 'error');
+      toast(e.response?.data?.error || e.message || 'Error', 'error');
     }
   };
 
@@ -132,16 +125,15 @@ export default function StudentSection() {
     const idToRestore = deleteId;
     setDeleteLoading(true);
     try {
-      const res = await fetch(`${API_URL}/students/${deleteId}`, { method: 'DELETE', credentials: 'include' });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Delete failed'); }
+      await api.delete(`${API_URL}/students/${deleteId}`);
       toast('Student deleted', '', { label: 'Undo', onClick: async () => {
         try {
-          await fetch(`${API_URL}/students/${idToRestore}/restore`, { method: 'POST', credentials: 'include' });
+          await api.post(`${API_URL}/students/${idToRestore}/restore`);
           toast('Student restored ✓', 'success');
           fetchStudents();
         } catch { toast('Could not undo', 'error'); }
       }});
-    } catch (e: any) { toast(e.message || 'Error', 'error'); }
+    } catch (e: any) { toast(e.response?.data?.error || e.message || 'Error', 'error'); }
     setDeleteId(null);
     setDeleteLoading(false);
     fetchStudents();
@@ -151,11 +143,9 @@ export default function StudentSection() {
     if (!archiveId) return;
     setArchiveLoading(true);
     try {
-      const res = await fetch(`${API_URL}/classes/${archiveId}/graduate`, { method: 'POST', credentials: 'include' });
-      const d = await res.json();
-      if (res.ok) { toast(d.message, 'success'); fetchStudents(); fetchClasses(); }
-      else throw new Error(d.error);
-    } catch (e: any) { toast(e.message || 'Error', 'error'); }
+      const d = (await api.post(`${API_URL}/classes/${archiveId}/graduate`)).data;
+      toast(d.message, 'success'); fetchStudents(); fetchClasses();
+    } catch (e: any) { toast(e.response?.data?.error || e.message || 'Error', 'error'); }
     setArchiveId(null);
     setArchiveName('');
     setArchiveLoading(false);
@@ -245,20 +235,18 @@ export default function StudentSection() {
           {s.hasGraduated ? (
             <button onClick={async () => {
               try {
-                const res = await fetch(`/api/students/${s.id}/ungraduate`, { method: 'POST', credentials: 'include' });
-                if (!res.ok) throw new Error((await res.json()).error);
+                await api.post(`/api/students/${s.id}/ungraduate`);
                 toast('Student unarchived ✓', 'success');
                 fetchStudents(showGraduated ? { showGraduated: 'true' } : undefined);
-              } catch (e: any) { toast(e.message || 'Error', 'error'); }
+              } catch (e: any) { toast(e.response?.data?.error || e.message || 'Error', 'error'); }
             }} className="flex-1 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-xs font-medium hover:bg-amber-100 flex items-center justify-center gap-1"><Archive size={14} /> Unarchive</button>
           ) : (
             <button onClick={async () => {
               try {
-                const res = await fetch(`/api/students/${s.id}/graduate`, { method: 'POST', credentials: 'include' });
-                if (!res.ok) throw new Error((await res.json()).error);
+                await api.post(`/api/students/${s.id}/graduate`);
                 toast('Student archived ✓', 'success');
                 fetchStudents(showGraduated ? { showGraduated: 'true' } : undefined);
-              } catch (e: any) { toast(e.message || 'Error', 'error'); }
+              } catch (e: any) { toast(e.response?.data?.error || e.message || 'Error', 'error'); }
             }} className="flex-1 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-xs font-medium hover:bg-amber-100 flex items-center justify-center gap-1"><Archive size={14} /> Archive</button>
           )}
           <button onClick={() => setDeleteId(s.id)} className="flex-1 py-1.5 bg-red-50 text-red-500 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center justify-center gap-1"><Trash2 size={14} /> Delete</button>
@@ -299,7 +287,7 @@ export default function StudentSection() {
               const list = activeClass ? (filtered.length > 0 ? filtered : classStudents) : students;
               const photoCache: Record<string, string> = {};
               await Promise.all(list.filter((s: any) => s.photoUrl).map(async (s: any) => {
-                try { const r = await fetch(s.photoUrl, { credentials: 'include' }); const blob = await r.blob(); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(blob); }); } catch {}
+                try { const r = await api.get(s.photoUrl, { responseType: 'blob' }); photoCache[s.id] = await new Promise<string>(res => { const reader = new FileReader(); reader.onload = () => res(reader.result as string); reader.readAsDataURL(r.data); }); } catch {}
               }));
               const doc = new jsPDF();
               const title = activeClass ? activeClass + ' — Students' : 'All Students';
