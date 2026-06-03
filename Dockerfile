@@ -20,12 +20,12 @@ RUN cd client && npm run build
 RUN cd server && npm run build
 
 FROM node:20-alpine
-WORKDIR /app/server
-COPY --from=builder /app/server/dist ./dist
-COPY --from=builder /app/client/dist ../client/dist
-COPY --from=builder /app/server/prisma ./prisma
-COPY --from=builder /app/server/node_modules ./node_modules
-COPY --from=builder /app/server/package.json ./
+WORKDIR /app
+COPY --from=builder /app/server/dist ./server/dist
+COPY --from=builder /app/client/dist ./client/dist
+COPY --from=builder /app/server/prisma ./server/prisma
+COPY --from=builder /app/server/node_modules ./server/node_modules
+COPY --from=builder /app/server/package.json ./server/
 ENV PORT=7860
 EXPOSE 7860
-CMD node dist/server.js
+CMD node server/dist/server.js
