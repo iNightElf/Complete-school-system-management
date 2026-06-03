@@ -26,8 +26,7 @@ interface StudentFeeAssignment {
 }
 
 const OptionalFeesTab = () => {
-  const { classes, students, fetchClasses, fetchStudents } = useSchoolStore();
-  const [feeSchedules, setFeeSchedules] = useState<FeeSchedule[]>([]);
+  const { classes, students, feeSchedules, fetchClasses, fetchStudents } = useSchoolStore();
   const [assignments, setAssignments] = useState<StudentFeeAssignment[]>([]);
   const [selectedScheduleId, setSelectedScheduleId] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
@@ -40,11 +39,9 @@ const OptionalFeesTab = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const [fsRes, asRes] = await Promise.all([
-        axios.get(`${API_URL}/finance/fee-schedules`, { withCredentials: true }),
-        selectedScheduleId ? axios.get(`${API_URL}/finance/student-fee-assignments`, { params: { feeScheduleId: selectedScheduleId, active: 'true' }, withCredentials: true }) : Promise.resolve({ data: [] }),
-      ]);
-      setFeeSchedules(fsRes.data);
+      const asRes = selectedScheduleId
+        ? await axios.get(`${API_URL}/finance/student-fee-assignments`, { params: { feeScheduleId: selectedScheduleId, active: 'true' }, withCredentials: true })
+        : { data: [] };
       setAssignments(asRes.data);
     } catch { toast('Failed to load data', 'error'); }
     finally { setLoading(false); }

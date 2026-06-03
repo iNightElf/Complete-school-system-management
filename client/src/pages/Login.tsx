@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
-import { useAuthStore } from '../store';
+import { useAuthStore, useDarkMode } from '../store';
 import { supabase } from '../lib/supabase';
 import { Link } from 'react-router-dom';
-import { LogIn, ShieldAlert, School, BookOpen } from 'lucide-react';
+import { LogIn, ShieldAlert, School, BookOpen, Sun, Moon } from 'lucide-react';
 import { SCHOOL_LOGO } from '../lib/logo';
 
 const Login = () => {
@@ -12,8 +12,10 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const fetchSession = useAuthStore((state) => state.fetchSession);
+  const { dark, toggle: toggleDark } = useDarkMode();
 
   useEffect(() => { document.title = 'Login - AL RAWA English School'; }, []);
+  useEffect(() => { document.documentElement.classList.toggle('dark', dark); }, [dark]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -51,6 +53,14 @@ const Login = () => {
           {/* Brand Header */}
           <div className="bg-gradient-to-r from-school-primary to-school-secondary p-8 text-white text-center relative overflow-hidden">
             <div className="absolute inset-0 bg-white/5 [mask-image:radial-gradient(ellipse_at_top,transparent_30%,black_70%)]" />
+            <button
+              onClick={toggleDark}
+              className="absolute top-3 right-3 p-2 hover:bg-white/10 rounded-full transition-colors group z-10"
+              title={dark ? 'Light Mode' : 'Dark Mode'}
+              aria-label={dark ? 'Light Mode' : 'Dark Mode'}
+            >
+              {dark ? <Sun size={18} className="group-hover:scale-110 transition-transform" /> : <Moon size={18} className="group-hover:scale-110 transition-transform" />}
+            </button>
             <div className="relative">
               <img src={SCHOOL_LOGO} alt="AL RAWA" className="w-16 h-16 rounded-full mx-auto mb-3 border-2 border-white/20 shadow-lg object-cover" />
               <h1 className="font-serif text-2xl">AL RAWA</h1>

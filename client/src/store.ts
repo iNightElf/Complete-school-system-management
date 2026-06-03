@@ -4,6 +4,25 @@ import { API_URL } from './lib/config';
 import { supabase } from './lib/supabase';
 import type { Student, Teacher, Staff, Transaction, SchoolClass, Subject, FeeSchedule, SchoolSettings } from './lib/types';
 
+// ── Global axios interceptor: attach Supabase token to every request ──
+axios.interceptors.request.use(async (config) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    config.headers.Authorization = `Bearer ${session.access_token}`;
+  }
+  return config;
+});
+
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      useAuthStore.setState({ user: null });
+    }
+    return Promise.reject(error);
+  }
+);
+
 // ── API ──
 
 const api = axios.create({
@@ -190,6 +209,13 @@ interface SchoolState {
 
   saveStudentResult: (studentId: string, term: string, marks: any, attendance?: any, comment?: string, session?: string) => Promise<void>;
   getStudentResults: (studentId: string, session?: string) => Promise<any[]>;
+
+  academicYears: any[];
+  fetchAcademicYears: () => Promise<void>;
+  classResults: Record<string, any[]>;
+  fetchClassResults: (classId: string, session: string) => Promise<void>;
+  expenseCategories: string[];
+  fetchExpenseCategories: () => Promise<void>;
 }
 
 export const useSchoolStore = create<SchoolState>((set, get) => ({
@@ -213,6 +239,9 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   transactionPage: 1,
   transactionTotalPages: 1,
   lastFetched: null,
+  academicYears: [],
+  classResults: {},
+  expenseCategories: [],
   loading: { classes: false, students: false, teachers: false, staff: false, books: false, finance: false, transactions: false },
 
   fetchClasses: async () => {
@@ -313,6 +342,16 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   },
   deleteSubject: async (id: string) => {
     await api.delete(`/subjects/${id}`);
+  },
+
+  fetchAcademicYears: async () => {
+    try { const res = await api.get('/academic-years'); set({ academicYears: res.data }); } catch { /* silent */ }
+  },
+  fetchClassResults: async (classId: string, session: string) => {
+    try { const res = await api.get(`/classes/${classId}/results`, { params: { session } }); set((s) => ({ classResults: { ...s.classResults, [`${classId}-${session}`]: res.data } })); } catch { /* silent */ }
+  },
+  fetchExpenseCategories: async () => {
+    try { const res = await api.get('/categories?type=EXPENSE'); set({ expenseCategories: res.data.map((c: any) => c.name) }); } catch { /* silent */ }
   },
 
   saveStudentResult: async (studentId: string, term: string, marks: any, attendance?: any, comment?: string, session?: string) => {

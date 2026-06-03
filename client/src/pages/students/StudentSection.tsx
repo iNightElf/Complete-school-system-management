@@ -13,7 +13,7 @@ import jsPDF from 'jspdf';
 import { API_URL } from '../../lib/config';
 
 export default function StudentSection() {
-  const { classes, students, fetchClasses, fetchStudents, loading } = useSchoolStore();
+  const { classes, students, fetchClasses, fetchStudents, academicYears, fetchAcademicYears, loading } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'admin';
 
@@ -23,7 +23,6 @@ export default function StudentSection() {
   const [showImport, setShowImport] = useState(false);
   const [showGraduated, setShowGraduated] = useState(false);
   const [sessionFilter, setSessionFilter] = useState('2026');
-  const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [showPromote, setShowPromote] = useState(false);
   const [promoteYear, setPromoteYear] = useState<{ name: string; id: string } | null>(null);
   const [search, setSearch] = useState('');
@@ -48,20 +47,12 @@ export default function StudentSection() {
   useEffect(() => { fetchClasses(); fetchStudents(); }, []);
   useEffect(() => { fetchStudents(showGraduated ? { showGraduated: 'true' } : undefined); }, [showGraduated]);
 
-  useEffect(() => { fetchAcademicYears(); }, []);
-
-  function fetchAcademicYears() {
-    fetch(`${API_URL}/academic-years`, { credentials: 'include' })
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setAcademicYears(data);
-          const active = data.find((y: any) => y.isActive);
-          if (active) setSessionFilter(active.name);
-        }
-      })
-      .catch(() => {});
-  }
+  useEffect(() => {
+    fetchAcademicYears().then(() => {
+      const active = useSchoolStore.getState().academicYears.find((y: any) => y.isActive);
+      if (active) setSessionFilter(active.name);
+    });
+  }, []);
 
   const sorted = [...classes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const sessionStudents = students.filter((s) => s.session === sessionFilter);

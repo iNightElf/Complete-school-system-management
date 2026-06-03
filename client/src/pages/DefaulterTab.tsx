@@ -24,14 +24,9 @@ function getMonthOptions(): { value: string; label: string }[] {
 const MONTH_OPTIONS = getMonthOptions();
 
 const DefaulterTab: React.FC = () => {
-  const { classes, students, fetchClasses, fetchStudents } = useSchoolStore();
+  const { classes, students, feeSchedules, fetchClasses, fetchStudents } = useSchoolStore();
   const [defaulterData, setDefaulterData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [feeSchedules, setFeeSchedules] = useState<any[]>([]);
-
-  useEffect(() => {
-    axios.get('/api/finance/fee-schedules', { withCredentials: true }).then(res => setFeeSchedules(res.data)).catch(() => {});
-  }, []);
 
   const [filterClass, setFilterClass] = useState('');
   const [filterStudent, setFilterStudent] = useState('');

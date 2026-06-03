@@ -6,10 +6,9 @@ import { toast } from '../components/Toast';
 import { API_URL } from '../lib/config';
 
 const StudentWaiversTab = () => {
-  const { classes, students, fetchClasses, fetchStudents } = useSchoolStore();
+  const { classes, students, feeSchedules: schedules, fetchClasses, fetchStudents, fetchFeeSchedules } = useSchoolStore();
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');
-  const [schedules, setSchedules] = useState<any[]>([]);
   const [waivers, setWaivers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -27,7 +26,7 @@ const StudentWaiversTab = () => {
   const [editReason, setEditReason] = useState('');
   const [editApprovedBy, setEditApprovedBy] = useState('');
 
-  useEffect(() => { fetchClasses(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchClasses(); fetchFeeSchedules(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (selectedClass) fetchStudents({ class: selectedClass }); }, [selectedClass]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadActiveWaivers = useCallback(async () => {
@@ -49,12 +48,10 @@ const StudentWaiversTab = () => {
     setApprovedBy('');
     setLoading(true);
     try {
-      const [schedRes, waiverRes, historyRes] = await Promise.all([
-        axios.get(`${API_URL}/finance/fee-schedules`),
+      const [waiverRes, historyRes] = await Promise.all([
         axios.get(`${API_URL}/finance/fee-waivers`, { params: { studentId: selectedStudent } }),
         axios.get(`${API_URL}/finance/fee-waivers`, { params: { studentId: selectedStudent, active: 'false' } }),
       ]);
-      setSchedules(schedRes.data);
       setWaivers(waiverRes.data);
       setHistory(historyRes.data);
     } catch { toast('Failed to load data', 'error'); }

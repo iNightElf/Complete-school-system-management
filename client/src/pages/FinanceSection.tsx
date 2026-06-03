@@ -297,7 +297,7 @@ function Ledger({ fmt, fetchFinance }: { fmt: (n: number) => string; fetchFinanc
 }
 
 const FinanceSection = () => {
-  const { balances, transactions, fetchFinance, fetchTransactions, classes, students, fetchClasses, fetchStudents } = useSchoolStore();
+  const { balances, transactions, feeSchedules, fetchFinance, fetchTransactions, fetchFeeSchedules, expenseCategories, fetchExpenseCategories, classes, students, fetchClasses, fetchStudents } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
   const canWrite = role === 'admin' || role === 'accountant';
 
@@ -306,17 +306,7 @@ const FinanceSection = () => {
   const [mainTab, setMainTab] = useState<MainTab>('transactions');
   const [activeTab, setActiveTab] = useState<TxTab>('income');
   const [loading, setLoading] = useState(false);
-  const [feeSchedules, setFeeSchedules] = useState<any[]>([]);
   const [assignedStudentIds, setAssignedStudentIds] = useState<string[] | null>(null);
-
-  useEffect(() => {
-    axios.get('/api/finance/fee-schedules', { withCredentials: true }).then(res => {
-      setFeeSchedules(res.data);
-    }).catch(() => {});
-    axios.get('/api/categories?type=EXPENSE').then(res => {
-      setExpenseCategories(res.data.map((c: any) => c.name));
-    }).catch(() => {});
-  }, []);
 
   // Form state
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -330,7 +320,6 @@ const FinanceSection = () => {
   const [selectedStudent, setSelectedStudent] = useState('');
   const [feeMonth, setFeeMonth] = useState('');
   const [feeMonthTo, setFeeMonthTo] = useState('');
-  const [expenseCategories, setExpenseCategories] = useState<string[]>([]);
   const [showManageCategories, setShowManageCategories] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
@@ -344,7 +333,7 @@ const FinanceSection = () => {
   const isMonthlyFee = matchedSchedule?.frequency === 'MONTHLY';
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); }, []);
+  useEffect(() => { fetchFinance(); fetchTransactions(); fetchClasses(); fetchStudents(); fetchFeeSchedules(); fetchExpenseCategories(); }, []);
   useEffect(() => { useUIStore.getState().registerSwipeBack(() => setMainTab('transactions')); }, []);
   // Re-fetch students when class changes (ensures student data is current)
   useEffect(() => { if (selectedClass) fetchStudents(); }, [selectedClass]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -810,8 +799,7 @@ const FinanceSection = () => {
                           if (!newCategoryName.trim()) return;
                           try {
                             await axios.post('/api/categories', { type: 'EXPENSE', name: newCategoryName.trim() });
-                            const res = await axios.get('/api/categories?type=EXPENSE');
-                            setExpenseCategories(res.data.map((c: any) => c.name));
+                            await fetchExpenseCategories();
                             setNewCategoryName('');
                             toast('Category added', 'success');
                           } catch { toast('Failed to add category', 'error'); }
@@ -828,7 +816,7 @@ const FinanceSection = () => {
                                 const res = await axios.get('/api/categories?type=EXPENSE');
                                 const cat = res.data.find((x: any) => x.name === c);
                                 if (cat) await axios.delete(`/api/categories/${cat.id}`);
-                                setExpenseCategories(expenseCategories.filter(x => x !== c));
+                                await fetchExpenseCategories();
                                 toast('Category deleted', 'success');
                               } catch { toast('Failed to delete', 'error'); }
                             }} className="text-rose-500 hover:text-rose-700 ml-1" title="Delete">

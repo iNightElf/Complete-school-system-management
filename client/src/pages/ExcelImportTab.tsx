@@ -59,26 +59,19 @@ function validateRow(row: ImportRow, feeCats: string[]): string[] {
 }
 
 export default function ExcelImportTab() {
-  const { fetchTransactions, fetchFinance, students, fetchStudents } = useSchoolStore();
+  const { fetchTransactions, fetchFinance, students, fetchStudents, feeSchedules, expenseCategories, fetchExpenseCategories } = useSchoolStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<ImportRow>>({});
   const [importing, setImporting] = useState(false);
-  const [feeScheduleCategories, setFeeScheduleCategories] = useState<string[]>([]);
-  const [expenseCategories, setExpenseCategories] = useState<string[]>(['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense']);
 
+  const feeScheduleCategories = useMemo(() => [...new Set(feeSchedules.map((fs: any) => fs.category))], [feeSchedules]);
   const incomeCategories = useMemo(() => [...feeScheduleCategories, 'Other Fee'], [feeScheduleCategories]);
+  const [fallbackCats] = useState<string[]>(['Salary', 'Rent', 'Bills', 'Supplies', 'Other Expense']);
+  const cats = expenseCategories.length > 0 ? expenseCategories : fallbackCats;
 
-  useEffect(() => {
-    axios.get('/api/finance/fee-schedules', { withCredentials: true }).then(res => {
-      const cats = [...new Set(res.data.map((fs: any) => fs.category))] as string[];
-      setFeeScheduleCategories(cats);
-    }).catch(() => {});
-    axios.get('/api/categories?type=EXPENSE').then(res => {
-      if (res.data.length) setExpenseCategories(res.data.map((c: any) => c.name));
-    }).catch(() => {});
-  }, []);
+  useEffect(() => { fetchExpenseCategories(); }, []);
 
   const rollMapRef = React.useRef<Record<string, any>>({});
 
@@ -363,7 +356,7 @@ export default function ExcelImportTab() {
                             <select value={editData.category || ''} onChange={e => setEditData({ ...editData, category: e.target.value })} className="w-full px-2 py-1 border border-school-border rounded text-xs">
                               <option value="">—</option>
                               <optgroup label="Income">{incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
-                              <optgroup label="Expense">{expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
+                              <optgroup label="Expense">{cats.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
                             </select>
                           </td>
                           <td className="px-2 py-1 text-center" data-label="Type">

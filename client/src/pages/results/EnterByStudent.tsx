@@ -8,7 +8,7 @@ import { FileText, Save, CalendarDays, MessageSquare, PenLine, Award, User } fro
 import { API_URL, TERM_NAMES } from '../../lib/config';
 
 export default function EnterByStudent() {
-  const { students, fetchStudents, subjects, fetchSubjects, saveStudentResult } = useSchoolStore();
+  const { students, fetchStudents, subjects, fetchSubjects, saveStudentResult, academicYears, fetchAcademicYears, classResults, fetchClassResults } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'admin';
   const [cls, setCls] = useState<any>(null);
@@ -21,7 +21,6 @@ export default function EnterByStudent() {
   const [reportTerm, setReportTerm] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | ''>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [sessionFilter, setSessionFilter] = useState('');
   const saveTimer = useRef<any>(null);
   const statusTimer = useRef<any>(null);
@@ -44,13 +43,15 @@ export default function EnterByStudent() {
   }, [hasUnsavedChanges]);
 
   const loadResults = async (clsId: string) => {
-    try { const params = sessionFilter ? `?session=${encodeURIComponent(sessionFilter)}` : ''; const res = await fetch(`${API_URL}/classes/${clsId}/results${params}`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
+    const key = `${clsId}-${sessionFilter}`;
+    if (classResults[key]) { setAllResults(classResults[key]); return; }
+    await fetchClassResults(clsId, sessionFilter);
+    setAllResults(useSchoolStore.getState().classResults[key] || []);
   };
 
   useEffect(() => {
-    fetch(`${API_URL}/academic-years`, { credentials: 'include' }).then(r => r.json()).then(years => {
-      setAcademicYears(years);
-      const active = years.find((y: any) => y.isActive);
+    fetchAcademicYears().then(() => {
+      const active = useSchoolStore.getState().academicYears.find((y: any) => y.isActive);
       setSessionFilter(active ? active.name : String(new Date().getFullYear()));
     }).catch(() => setSessionFilter(String(new Date().getFullYear())));
   }, []);

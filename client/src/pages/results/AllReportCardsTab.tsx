@@ -8,20 +8,21 @@ import { FileSpreadsheet, PenLine, Award } from 'lucide-react';
 import { API_URL, TERM_NAMES } from '../../lib/config';
 
 export default function AllReportCardsTab() {
-  const { students, fetchStudents, subjects, fetchSubjects } = useSchoolStore();
+  const { students, fetchStudents, subjects, fetchSubjects, academicYears, fetchAcademicYears, classResults, fetchClassResults } = useSchoolStore();
   const [cls, setCls] = useState<any>(null);
   const [allResults, setAllResults] = useState<any[]>([]);
-  const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [sessionFilter, setSessionFilter] = useState('');
 
   const loadResults = async (clsId: string) => {
-    try { const params = sessionFilter ? `?session=${encodeURIComponent(sessionFilter)}` : ''; const res = await fetch(`${API_URL}/classes/${clsId}/results${params}`, { credentials: 'include' }); setAllResults(await res.json()); } catch { setAllResults([]); }
+    const key = `${clsId}-${sessionFilter}`;
+    if (classResults[key]) { setAllResults(classResults[key]); return; }
+    await fetchClassResults(clsId, sessionFilter);
+    setAllResults(useSchoolStore.getState().classResults[key] || []);
   };
 
   useEffect(() => {
-    fetch(`${API_URL}/academic-years`, { credentials: 'include' }).then(r => r.json()).then(years => {
-      setAcademicYears(years);
-      const active = years.find((y: any) => y.isActive);
+    fetchAcademicYears().then(() => {
+      const active = useSchoolStore.getState().academicYears.find((y: any) => y.isActive);
       setSessionFilter(active ? active.name : String(new Date().getFullYear()));
     }).catch(() => setSessionFilter(String(new Date().getFullYear())));
   }, []);

@@ -30,7 +30,7 @@ const EMOJIS = ['👶', '🌸', '📚', '📖', '📘', '📗', '📕', '🎒', 
 
 const AccessoriesSection = () => {
   useEffect(() => { document.title = 'Fees & Books - AL RAWA English School'; }, []);
-  const { classes, books, feeSchedules, settings, loading, fetchClasses, fetchBooks, fetchSettings, fetchFeeSchedules } = useSchoolStore();
+  const { classes, books, feeSchedules, settings, loading, fetchClasses, fetchBooks, fetchSettings, fetchFeeSchedules, fetchAcademicYears } = useSchoolStore();
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'admin' || role === 'accountant';
 
@@ -136,7 +136,8 @@ const AccessoriesSection = () => {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ amount }),
         });
       } else {
-        const activeYear = await fetch(`${API_URL}/academic-years`).then(r => r.json());
+        await fetchAcademicYears();
+        const activeYear = useSchoolStore.getState().academicYears;
         const year = activeYear.find((y: any) => y.isActive) || activeYear[0];
         if (!year) { toast('No academic year found', 'error'); return; }
         await fetch(`${API_URL}/finance/fee-schedules`, {

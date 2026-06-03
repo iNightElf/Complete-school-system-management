@@ -9,9 +9,7 @@ const FREQUENCIES = ['MONTHLY', 'YEARLY', 'ONETIME'];
 const APPLICABILITIES = ['AUTO', 'ASSIGNED_ONLY'];
 
 const FeeScheduleTab = () => {
-  const { classes, fetchClasses } = useSchoolStore();
-  const [schedules, setSchedules] = useState<any[]>([]);
-  const [years, setYears] = useState<any[]>([]);
+  const { classes, feeSchedules: schedules, academicYears: years, fetchClasses, fetchFeeSchedules, fetchAcademicYears } = useSchoolStore();
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -31,20 +29,7 @@ const FeeScheduleTab = () => {
     ? schedules.filter((s: any) => s.academicYearId === previousYear.id)
     : [];
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [schedRes, yearsRes] = await Promise.all([
-        axios.get('/api/finance/fee-schedules', { withCredentials: true }),
-        axios.get('/api/academic-years'),
-      ]);
-      setSchedules(schedRes.data);
-      setYears(yearsRes.data);
-    } catch { toast('Failed to load data', 'error'); }
-    finally { setLoading(false); }
-  };
-
-  useEffect(() => { fetchClasses(); load(); }, []);
+  useEffect(() => { Promise.all([fetchClasses(), fetchFeeSchedules(), fetchAcademicYears()]).then(() => setLoading(false)); }, []);
 
   const handleEdit = (s: any) => {
     setEditingId(s.id);
@@ -79,7 +64,7 @@ const FeeScheduleTab = () => {
       setShowForm(false);
       setEditingId(null);
       setForm({ classId: '', category: '', amount: '', frequency: 'MONTHLY', applicability: 'AUTO' });
-      load();
+      fetchFeeSchedules();
     } catch { toast(editingId ? 'Failed to update' : 'Failed to create', 'error'); }
   };
 
@@ -87,7 +72,7 @@ const FeeScheduleTab = () => {
     try {
       await axios.delete(`/api/finance/fee-schedules/${id}`);
       toast('Fee schedule deleted', 'success');
-      load();
+      fetchFeeSchedules();
     } catch { toast('Failed to delete', 'error'); }
   };
 
@@ -103,7 +88,7 @@ const FeeScheduleTab = () => {
       setYearForm({ name: '', startDate: '', endDate: '' });
       setShowPromote(true);
       setPromoteTarget({ name: res.data.name, id: res.data.id });
-      load();
+      fetchAcademicYears();
     } catch (e: any) {
       toast(e?.response?.data?.error || 'Failed to create academic year', 'error');
     }
@@ -117,7 +102,7 @@ const FeeScheduleTab = () => {
         targetAcademicYearId: activeYear.id,
       });
       toast(`${res.data.copied} schedules copied from ${previousYear.name} to ${activeYear.name}${res.data.skipped ? ` (${res.data.skipped} skipped)` : ''}`, 'success');
-      load();
+      fetchFeeSchedules();
     } catch { toast('Failed to copy schedules', 'error'); }
   };
 
@@ -125,7 +110,7 @@ const FeeScheduleTab = () => {
     try {
       await axios.put(`/api/academic-years/${id}`, { isActive: true });
       toast('Active year changed', 'success');
-      load();
+      fetchAcademicYears();
     } catch { toast('Failed to update', 'error'); }
   };
 
