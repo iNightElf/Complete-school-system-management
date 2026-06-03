@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { prisma } from "./prisma.js";
+import ws from "ws";
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -13,6 +14,7 @@ function getAdmin() {
       global: {
         fetch: (url: any, opts: any) => fetch(url, { ...opts, signal: AbortSignal.timeout(10000) }),
       },
+      realtime: { transport: ws as any },
     });
   }
   return adminClient;
