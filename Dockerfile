@@ -28,4 +28,4 @@ COPY --from=builder /app/server/node_modules ./server/node_modules
 COPY --from=builder /app/server/package.json ./server/
 ENV PORT=7860
 EXPOSE 7860
-CMD sh -c "cd server && npx prisma migrate deploy && node dist/server.js"
+CMD cd server && npx prisma migrate deploy && node dist/server.js
