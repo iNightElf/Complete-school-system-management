@@ -36,6 +36,8 @@ const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",").map(s => s.trim())
   : ["http://localhost:5173", "http://localhost:3000"];
 
+const supabaseUrl = process.env.SUPABASE_URL || "https://elpruxjzepvyhbtdlyck.supabase.co";
+
 const app = express();
 
 app.use(requestIdMiddleware);
@@ -53,7 +55,7 @@ app.use(helmet({
       styleSrc: ["'self'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'", ...corsOrigins],
+      connectSrc: ["'self'", supabaseUrl, ...corsOrigins],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
     },
