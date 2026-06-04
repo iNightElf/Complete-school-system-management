@@ -4,6 +4,7 @@ import { timingSafeEqual } from "crypto";
 import { createAdminUser } from "../lib/supabase-auth.js";
 import { createClient } from "@supabase/supabase-js";
 import ws from "ws";
+import { log } from "../lib/logger.js";
 
 const adminClient = () => {
   const url = process.env.SUPABASE_URL || "";
@@ -125,10 +126,27 @@ export const initSetup = async (req: Request, res: Response) => {
 
     res.json({ user, message: "User created successfully. You can now sign in." });
   } catch (err: any) {
-    console.error("[setup] initSetup error:", err?.message || err, err?.stack?.slice(0, 300));
+    log("error", "Setup initialization failed", {
+      code: err?.code,
+      status: err?.status,
+      name: err?.name,
+      message: err?.message,
+    });
     if (err?.code === 'P2002') {
       return res.status(409).json({ error: "A user with this email already exists" });
     }
-    res.status(500).json({ error: err?.message || "Failed to create user" });
+    if (err?.code === 'P1001') {
+      return res.status(503).json({ error: "Database is unreachable. Check DATABASE_URL and try again." });
+    }
+    if (err?.code === 'P2021' || err?.code === 'P2022') {
+      return res.status(500).json({ error: "Database schema is not ready. Run Prisma migrations, then try again." });
+    }
+    if (err?.message?.includes("SUPABASE_URL") || err?.message?.includes("SUPABASE_SERVICE_ROLE_KEY")) {
+      return res.status(500).json({ error: "Supabase service credentials are not configured." });
+    }
+    if (err?.status === 401 || err?.status === 403) {
+      return res.status(500).json({ error: "Supabase service role key is invalid or not allowed." });
+    }
+    res.status(500).json({ error: "Failed to create user. Check the server logs for the setup failure." });
   }
 };

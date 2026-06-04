@@ -1,5 +1,6 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
+RUN apk add --no-cache openssl
 
 COPY package.json package-lock.json ./
 COPY server/package.json server/package-lock.json ./server/
@@ -21,6 +22,7 @@ RUN cd server && npm run build
 
 FROM node:20-alpine
 WORKDIR /app
+RUN apk add --no-cache openssl
 COPY --from=builder /app/server/dist ./server/dist
 COPY --from=builder /app/client/dist ./client/dist
 COPY --from=builder /app/server/prisma ./server/prisma
@@ -28,4 +30,4 @@ COPY --from=builder /app/server/node_modules ./server/node_modules
 COPY --from=builder /app/server/package.json ./server/
 ENV PORT=7860
 EXPOSE 7860
-CMD node server/dist/server.js
+CMD sh -c "cd server && npx prisma migrate deploy || echo 'Migration skipped'; node dist/server.js"
