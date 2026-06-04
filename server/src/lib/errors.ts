@@ -29,7 +29,7 @@ export function sanitizeError(error: any): string {
   return 'An internal error occurred.';
 }
 
-export function errorStatus(error: any, defaultStatus = 400): number {
+export function errorStatus(error: any, defaultStatus = 500): number {
   return error?.code === 'P2025' ? 404 : defaultStatus;
 }
 
