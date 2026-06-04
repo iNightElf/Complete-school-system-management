@@ -73,14 +73,18 @@ export async function getPhotoUrl(bucket: string, path: string): Promise<string 
   const cached = signedUrlCache.get(key);
   if (cached && cached.expires > Date.now()) return cached.url;
 
-  const { data, error } = await getSupabase().storage
-    .from(bucket)
-    .createSignedUrl(path, 86400);
+  try {
+    const { data, error } = await getSupabase().storage
+      .from(bucket)
+      .createSignedUrl(path, 86400);
 
-  if (error || !data) return null;
-  const url = data.signedUrl;
-  signedUrlCache.set(key, { url, expires: Date.now() + SIGNED_URL_TTL });
-  return url;
+    if (error || !data) return null;
+    const url = data.signedUrl;
+    signedUrlCache.set(key, { url, expires: Date.now() + SIGNED_URL_TTL });
+    return url;
+  } catch {
+    return null;
+  }
 }
 
 export function getPublicUrl(bucket: string, path: string): string | null {

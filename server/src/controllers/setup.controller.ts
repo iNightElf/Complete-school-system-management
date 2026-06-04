@@ -51,21 +51,21 @@ export const initSetup = async (req: Request, res: Response) => {
 
     const hasAdmin = await hasValidAdmin();
     const setupToken = process.env.SETUP_TOKEN;
+    const role = hasAdmin ? "viewer" : "admin";
 
-    // In production, SETUP_TOKEN is required. If missing, refuse all registration attempts.
+    // In production, a SETUP_TOKEN must be configured to allow any registration.
     if (process.env.NODE_ENV === 'production' && !setupToken) {
       return res.status(403).json({ error: "Setup is not configured. Ask the server administrator to set SETUP_TOKEN." });
     }
 
-    if (setupToken) {
-      if (hasAdmin) {
-        return res.status(400).json({ error: "System already has an admin. Setup is not required." });
-      }
+    // Creating the first admin requires the setup token.
+    // Subsequent registrations create viewers and do not need a token.
+    if (!hasAdmin) {
       if (!token) {
-        return res.status(400).json({ error: "Setup token is required" });
+        return res.status(400).json({ error: "Setup token is required to create the first admin." });
       }
       const tokenBuf = Buffer.from(String(token));
-      const setupBuf = Buffer.from(setupToken);
+      const setupBuf = Buffer.from(setupToken!);
       const maxLen = Math.max(tokenBuf.length, setupBuf.length);
       const paddedToken = Buffer.alloc(maxLen, tokenBuf);
       const paddedSetup = Buffer.alloc(maxLen, setupBuf);
@@ -101,7 +101,6 @@ export const initSetup = async (req: Request, res: Response) => {
       }
     }
 
-    const role = hasAdmin ? "viewer" : "admin";
     const supabaseUser = await createAdminUser(email, password, name);
     if (!supabaseUser) {
       return res.status(500).json({ error: "Failed to create user in Supabase Auth" });

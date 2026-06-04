@@ -65,6 +65,18 @@ export default function StudentSection() {
     debouncedSearch && (s.name.toLowerCase().includes(debouncedSearch.toLowerCase()) || s.roll?.includes(debouncedSearch) || (s.class || '').toLowerCase().includes(debouncedSearch.toLowerCase()))
   );
 
+  const debugInfo = {
+    totalStudents: students.length,
+    session: sessionFilter,
+    sessionMatch: sessionStudents.length,
+    activeClass,
+    classMatch: classStudents.length,
+    filtered: filtered.length,
+    sampleStudent: students[0] ? { id: students[0].id, name: students[0].name, class: students[0].class, session: students[0].session, roll: students[0].roll } : null,
+    loading: loading.students,
+  };
+  console.log('[StudentSection debug]', JSON.stringify(debugInfo));
+
   const resetForm = () => {
     setForm({ className: '', roll: '', name: '', fatherName: '', motherName: '', contact: '' });
     setPhoto(null);

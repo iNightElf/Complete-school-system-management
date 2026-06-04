@@ -39,6 +39,7 @@ async function main() {
 
   // 3. Students
   let sCount = 0;
+  let sIdCounter = 1;
   for (const [ck, arr] of Object.entries(FB.students || {})) {
     const cls = classes[ck];
     if (!cls) continue;
@@ -54,6 +55,7 @@ async function main() {
           class: cls.name,
           classId: cls.id,
           roll,
+          studentId: `STU${String(sIdCounter++).padStart(4, "0")}`,
           name: s.name,
           fatherName: s.fatherName || s.father || null,
           motherName: s.motherName || s.mother || null,
