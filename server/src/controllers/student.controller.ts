@@ -5,7 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { sanitizeError, errorStatus, handleControllerError } from "../lib/errors.js";
 import { validate, createStudentSchema } from "../lib/validate.js";
 import { logAudit } from "../lib/audit.js";
-import { parsePhoto, detectMimeType } from "../lib/photo.js";
+import { parsePhoto, detectMimeType, getSignedPhotoUrl } from "../lib/photo.js";
 import { uploadPhoto, getSignedUrl, getPhotoUrl, deletePhoto } from "../lib/supabase.js";
 import { uploadPhotoAsync } from "../lib/queue.js";
 
@@ -51,7 +51,7 @@ export const getAllStudents = async (req: Request, res: Response) => {
       fatherName: s.fatherName,
       motherName: s.motherName,
       contact: s.contact,
-      photoUrl: s.photoPath ? await getPhotoUrl(BUCKET, s.photoPath) : null,
+      photoUrl: s.photoPath ? (await getPhotoUrl(BUCKET, s.photoPath) || getSignedPhotoUrl("students", s.id)) : (s.photo ? getSignedPhotoUrl("students", s.id) : null),
       hasPhoto: !!(s.photoPath || s.photo),
       hasGraduated: !!s.graduatedAt,
       createdAt: s.createdAt,

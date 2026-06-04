@@ -4,7 +4,7 @@ import { param } from "../lib/param.js";
 import { prisma } from "../lib/prisma.js";
 import { sanitizeError, errorStatus, handleControllerError } from "../lib/errors.js";
 import { validate, createTeacherSchema, createStaffSchema, createBookSchema } from "../lib/validate.js";
-import { parsePhoto, detectMimeType } from "../lib/photo.js";
+import { parsePhoto, detectMimeType, getSignedPhotoUrl } from "../lib/photo.js";
 import { uploadPhoto, getSignedUrl, getPhotoUrl, deletePhoto } from "../lib/supabase.js";
 import { uploadPhotoAsync } from "../lib/queue.js";
 import { logAudit } from "../lib/audit.js";
@@ -61,7 +61,7 @@ export const getAllTeachers = async (req: Request, res: Response) => {
       name: t.name,
       email: t.email,
       contact: t.contact,
-      photoUrl: t.photoPath ? await getPhotoUrl(PHOTO_BUCKET, t.photoPath) : null,
+      photoUrl: t.photoPath ? (await getPhotoUrl(PHOTO_BUCKET, t.photoPath) || getSignedPhotoUrl("teachers", t.id)) : (t.photo ? getSignedPhotoUrl("teachers", t.id) : null),
       hasPhoto: !!(t.photoPath || t.photo),
       createdAt: t.createdAt,
     })));
@@ -237,7 +237,7 @@ export const getAllStaff = async (req: Request, res: Response) => {
       name: s.name,
       email: s.email,
       contact: s.contact,
-      photoUrl: s.photoPath ? await getPhotoUrl(PHOTO_BUCKET, s.photoPath) : null,
+      photoUrl: s.photoPath ? (await getPhotoUrl(PHOTO_BUCKET, s.photoPath) || getSignedPhotoUrl("staff", s.id)) : (s.photo ? getSignedPhotoUrl("staff", s.id) : null),
       hasPhoto: !!(s.photoPath || s.photo),
       createdAt: s.createdAt,
     })));

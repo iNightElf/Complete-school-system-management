@@ -31,6 +31,7 @@ import * as academicYear from "./controllers/academicYear.controller.js";
 import * as category from "./controllers/category.controller.js";
 import { authenticate, authorizePermission } from "./middleware/auth.middleware.js";
 import { idempotent } from "./lib/idempotency.js";
+import { verifyPhotoToken, detectMimeType } from "./lib/photo.js";
 
 const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",").map(s => s.trim())
@@ -245,6 +246,26 @@ app.get("/health", async (_req, res) => {
     res.json({ status: "ok", database: "connected" });
   } catch {
     res.json({ status: "ok", database: "connecting" });
+  }
+});
+
+// ── Photo serving with signed tokens (no Bearer header needed — works with <img> tags) ──
+app.get("/api/photo/:entityType/:id/:token", async (req, res) => {
+  const { entityType, id, token } = req.params;
+  const result = verifyPhotoToken(token);
+  if (!result || result.entityType !== entityType || result.id !== id) {
+    return res.status(403).json({ error: "Invalid or expired photo token" });
+  }
+  const model = entityType === "students" ? "student" : entityType === "teachers" ? "teacher" : entityType === "staff" ? "staff" : null;
+  if (!model) return res.status(400).json({ error: "Invalid entity type" });
+  try {
+    const record = await (prisma as any)[model].findUnique({ where: { id }, select: { photo: true, photoPath: true } });
+    if (!record?.photo) return res.status(404).json({ error: "Photo not found" });
+    const mimeType = detectMimeType(record.photo);
+    if (!mimeType) return res.status(500).json({ error: "Unknown image format" });
+    res.set("Content-Type", mimeType).set("Cache-Control", "private, max-age=86400").send(record.photo);
+  } catch {
+    res.status(500).json({ error: "Failed to serve photo" });
   }
 });
 

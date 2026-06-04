@@ -73,15 +73,25 @@ export async function getPhotoUrl(bucket: string, path: string): Promise<string 
   const cached = signedUrlCache.get(key);
   if (cached && cached.expires > Date.now()) return cached.url;
 
+  // Try signed URL first, fall back to public URL (synchronous, no network call)
   try {
     const { data, error } = await getSupabase().storage
       .from(bucket)
       .createSignedUrl(path, 86400);
 
-    if (error || !data) return null;
-    const url = data.signedUrl;
-    signedUrlCache.set(key, { url, expires: Date.now() + SIGNED_URL_TTL });
-    return url;
+    if (!error && data) {
+      const url = data.signedUrl;
+      signedUrlCache.set(key, { url, expires: Date.now() + SIGNED_URL_TTL });
+      return url;
+    }
+  } catch {
+    // signed URL failed — fall through to public URL
+  }
+
+  // Fallback: public URL (synchronous, no HTTP call)
+  try {
+    const { data } = getSupabase().storage.from(bucket).getPublicUrl(path);
+    return data?.publicUrl || null;
   } catch {
     return null;
   }
