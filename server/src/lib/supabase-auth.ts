@@ -36,13 +36,18 @@ export async function getUserFromToken(accessToken: string) {
         emailVerified: !!su.email_confirmed_at,
       },
     });
+  } else if (!dbUser.emailVerified && su.email_confirmed_at) {
+    dbUser = await prisma.user.update({
+      where: { id: su.id },
+      data: { emailVerified: true },
+    });
   }
   return {
     id: su.id,
     email: su.email || "",
     name: dbUser.name,
     role: dbUser.role,
-    emailVerified: !!su.email_confirmed_at,
+    emailVerified: dbUser.emailVerified,
     image: null as string | null,
     createdAt: dbUser.createdAt,
     updatedAt: dbUser.updatedAt,
@@ -60,8 +65,8 @@ export async function createAdminUser(email: string, password: string, name: str
   if (data.user) {
     await prisma.user.upsert({
       where: { id: data.user.id },
-      update: { name, email, role: "admin", emailVerified: false },
-      create: { id: data.user.id, name, email, role: "admin", emailVerified: false },
+      update: { name, email, role: "admin", emailVerified: true },
+      create: { id: data.user.id, name, email, role: "admin", emailVerified: true },
     });
   }
   return data.user;
